@@ -9,7 +9,6 @@ import {
   Alert,
   StatusBar,
   RefreshControl,
-  ActivityIndicator,
   Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,9 +25,12 @@ import {
   Lock,
   LogOut,
   ChevronLeft,
+  ChevronDown,
+  ChevronUp,
   ShieldCheck,
   Building,
   Home,
+  KeyRound,
 } from 'lucide-react-native';
 
 export const ProfileScreen = ({ navigation }) => {
@@ -39,6 +41,8 @@ export const ProfileScreen = ({ navigation }) => {
   const [loadingSociety, setLoadingSociety] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Password change state
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -95,6 +99,7 @@ export const ProfileScreen = ({ navigation }) => {
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
+      setShowPasswordForm(false);
     } else {
       Alert.alert('Failed', res.message || 'Failed to update password.');
     }
@@ -123,37 +128,11 @@ export const ProfileScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#342C26" />
-
-      {/* Top Dark Header (Cohesive with Gate Entry & Announcements) */}
-      <View style={[styles.darkHeader, { paddingTop: Math.max(insets.top, 12) }]}>
-        <View style={styles.headerTopRow}>
-          <View style={styles.headerLeftCol}>
-            {navigation.canGoBack() && (
-              <TouchableOpacity
-                onPress={() => navigation.goBack()}
-                style={styles.backBtn}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <ChevronLeft size={22} color="#FFFFFF" />
-              </TouchableOpacity>
-            )}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.headerTitle}>
-                {isAdmin ? 'Account & Society' : 'Account & Security'}
-              </Text>
-              <Text style={styles.headerSubtitle}>
-                {isAdmin
-                  ? 'System administrator & active society details'
-                  : 'Manage credentials & unit profile'}
-              </Text>
-            </View>
-          </View>
-        </View>
-      </View>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -163,124 +142,328 @@ export const ProfileScreen = ({ navigation }) => {
           />
         }
       >
-        {isAdmin ? (
-          /* ========================================================== */
-          /* ADMIN ACCOUNT VIEW: FRONTEND IDENTICAL CONTENT             */
-          /* ========================================================== */
-          <View style={styles.adminCardsWrapper}>
-            {/* 1. SYSTEM ADMINISTRATOR CARD */}
-            <View style={styles.frontendGlassCard}>
+        {/* ========================================================== */}
+        {/* 1. TOP SOCIETY HERO COVER IMAGE BANNER                     */}
+        {/* ========================================================== */}
+        <View style={styles.heroCoverWrapper}>
+          <Image
+            source={require('../assets/images/community-hero.jpg')}
+            style={styles.heroCoverImage}
+            resizeMode="cover"
+          />
+          {/* Subtle gradient dark overlay */}
+          <View style={styles.heroGradientOverlay} />
+
+          {/* Optional Floating Back Button if opened from stack */}
+          {navigation.canGoBack() && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={[styles.floatingBackBtn, { top: Math.max(insets.top, 16) }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ChevronLeft size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+
+          {/* Society Badge on top right of cover */}
+          <View style={[styles.coverSocietyPill, { top: Math.max(insets.top, 16) }]}>
+            <Building2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
+            <Text style={styles.coverSocietyPillText} numberOfLines={1}>
+              {societyData?.name || user?.societyName || 'Suncity Paradise'}
+            </Text>
+          </View>
+        </View>
+
+        {/* ========================================================== */}
+        {/* 2. PROFILE ICON: HALF ON IMAGE, HALF ON CARD               */}
+        {/* ========================================================== */}
+        <View style={styles.avatarOverlapContainer}>
+          <View style={styles.avatarWrapper}>
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.avatarPhoto} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarInitialsText}>
+                  {getInitials(user?.fullName || user?.name || user?.full_name)}
+                </Text>
+              </View>
+            )}
+
+            {/* Online / Active Shield Badge */}
+            <View style={styles.avatarActiveBadge}>
+              <ShieldCheck size={14} color="#FFFFFF" />
+            </View>
+          </View>
+        </View>
+
+        {/* ========================================================== */}
+        {/* BODY CONTENT WRAPPER                                       */}
+        {/* ========================================================== */}
+        <View style={styles.bodyContent}>
+          {isAdmin ? (
+            /* ======================================================== */
+            /* 3. PERSONAL INFORMATION CARD (SYSTEM ADMINISTRATOR)      */
+            /* ======================================================== */
+            <View style={styles.glassCard}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardSectionLabel}>SYSTEM ADMINISTRATOR</Text>
-                <View style={styles.adminVerifiedBadge}>
-                  <ShieldCheck size={13} color={THEME.colors.clay} style={{ marginRight: 3 }} />
-                  <Text style={styles.adminVerifiedText}>Active</Text>
+                <View style={styles.rolePill}>
+                  <Text style={styles.rolePillText}>{user?.role || 'ADMIN'}</Text>
                 </View>
               </View>
 
-              <View style={styles.cardMainRow}>
-                {/* Square Avatar with Initials or Image */}
-                <View style={styles.squareAvatar}>
-                  {user?.avatarUrl ? (
-                    <Image source={{ uri: user.avatarUrl }} style={styles.avatarImg} />
-                  ) : (
-                    <Text style={styles.squareAvatarText}>
-                      {getInitials(user?.fullName || user?.name || user?.full_name)}
-                    </Text>
-                  )}
+              {/* Admin Name */}
+              <View style={styles.adminNameRow}>
+                <Text style={styles.adminFullName}>
+                  {user?.fullName || user?.name || user?.full_name || 'System Administrator'}
+                </Text>
+              </View>
+
+              {/* Personal Contact Details */}
+              <View style={styles.detailsGroup}>
+                <View style={styles.detailItem}>
+                  <Mail size={15} color={THEME.colors.clay} style={styles.detailIcon} />
+                  <Text style={styles.detailLabel}>Email:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {user?.email || 'admin@myvms.society'}
+                  </Text>
                 </View>
 
-                {/* Admin Info */}
-                <View style={styles.cardContentCol}>
-                  <View style={styles.nameBadgeRow}>
-                    <Text style={styles.profileName} numberOfLines={1}>
-                      {user?.fullName || user?.name || user?.full_name || 'Administrator'}
-                    </Text>
-                    <View style={styles.rolePill}>
-                      <Text style={styles.rolePillText}>{user?.role || 'ADMIN'}</Text>
-                    </View>
+                <View style={styles.detailItem}>
+                  <Phone size={15} color={THEME.colors.fernGreen} style={styles.detailIcon} />
+                  <Text style={styles.detailLabel}>Phone:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {user?.phone || '+91 98765 43210'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* ---------------------------------------------------- */}
+              {/* BUTTON: CHANGE PASSWORD                              */}
+              {/* ---------------------------------------------------- */}
+              <TouchableOpacity
+                style={styles.changePasswordBtn}
+                onPress={() => setShowPasswordForm(!showPasswordForm)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.changePasswordBtnLeft}>
+                  <View style={styles.keyIconWrap}>
+                    <KeyRound size={15} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.changePasswordBtnText}>Change Password</Text>
+                </View>
+                {showPasswordForm ? (
+                  <ChevronUp size={18} color={THEME.colors.clay} />
+                ) : (
+                  <ChevronDown size={18} color={THEME.colors.clay} />
+                )}
+              </TouchableOpacity>
+
+              {/* Expandable Password Change Inputs */}
+              {showPasswordForm && (
+                <View style={styles.passwordExpandableBox}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>CURRENT PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Enter current password"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                    />
                   </View>
 
-                  <View style={styles.detailsGroup}>
-                    {/* Email */}
-                    <View style={styles.detailItem}>
-                      <Mail size={14} color={THEME.colors.clay} style={styles.detailIcon} />
-                      <Text style={styles.detailLabel}>Email:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {user?.email || 'admin@myvms.society'}
-                      </Text>
-                    </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>NEW PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Minimum 6 characters"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                    />
+                  </View>
 
-                    {/* Phone */}
-                    <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.fernGreen} style={styles.detailIcon} />
-                      <Text style={styles.detailLabel}>Phone:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {user?.phone || '+91 98765 43210'}
-                      </Text>
-                    </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>CONFIRM NEW PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Re-type new password"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                    />
+                  </View>
+
+                  <PrimaryButton
+                    title="Update Password"
+                    onPress={handlePasswordChange}
+                    loading={changingPass}
+                    style={{ marginTop: 4 }}
+                  />
+                </View>
+              )}
+            </View>
+          ) : (
+            /* RESIDENT PERSONAL INFORMATION */
+            <View style={styles.glassCard}>
+              <View style={styles.cardHeaderRow}>
+                <Text style={styles.cardSectionLabel}>RESIDENT PERSONAL INFORMATION</Text>
+                <View style={styles.rolePill}>
+                  <Text style={styles.rolePillText}>{user?.role || 'RESIDENT'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.adminNameRow}>
+                <Text style={styles.adminFullName}>
+                  {user?.fullName || user?.full_name || 'Resident User'}
+                </Text>
+              </View>
+
+              <View style={styles.detailsGroup}>
+                <View style={styles.detailItem}>
+                  <Phone size={15} color={THEME.colors.clay} style={styles.detailIcon} />
+                  <Text style={styles.detailLabel}>Phone:</Text>
+                  <Text style={styles.detailVal}>{user?.phone || 'Not linked'}</Text>
+                </View>
+
+                <View style={styles.detailItem}>
+                  <Home size={15} color={THEME.colors.clay} style={styles.detailIcon} />
+                  <Text style={styles.detailLabel}>Unit / Home:</Text>
+                  <Text style={styles.detailVal}>
+                    {user?.flatNumber ? `Home ${user.flatNumber}` : 'Flat 10'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* BUTTON: CHANGE PASSWORD */}
+              <TouchableOpacity
+                style={styles.changePasswordBtn}
+                onPress={() => setShowPasswordForm(!showPasswordForm)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.changePasswordBtnLeft}>
+                  <View style={styles.keyIconWrap}>
+                    <KeyRound size={15} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.changePasswordBtnText}>Change Password</Text>
+                </View>
+                {showPasswordForm ? (
+                  <ChevronUp size={18} color={THEME.colors.clay} />
+                ) : (
+                  <ChevronDown size={18} color={THEME.colors.clay} />
+                )}
+              </TouchableOpacity>
+
+              {showPasswordForm && (
+                <View style={styles.passwordExpandableBox}>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>CURRENT PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Enter current password"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>NEW PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Minimum 6 characters"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={newPassword}
+                      onChangeText={setNewPassword}
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>CONFIRM NEW PASSWORD</Text>
+                    <TextInput
+                      style={styles.input}
+                      secureTextEntry
+                      placeholder="Re-type new password"
+                      placeholderTextColor={THEME.colors.textDim}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                    />
+                  </View>
+                  <PrimaryButton
+                    title="Update Password"
+                    onPress={handlePasswordChange}
+                    loading={changingPass}
+                    style={{ marginTop: 4 }}
+                  />
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ========================================================== */}
+          {/* 4. ACTIVE SOCIETY INFORMATION CARD                         */}
+          {/* ========================================================== */}
+          <View style={styles.glassCard}>
+            <View style={styles.cardHeaderRow}>
+              <Text style={styles.cardSectionLabel}>ACTIVE SOCIETY INFORMATION</Text>
+            </View>
+
+            <View style={styles.cardMainRow}>
+              {/* Square Society Icon Badge */}
+              <View style={styles.squareSocietyBadge}>
+                <Building2 size={28} color={THEME.colors.clay} />
+              </View>
+
+              {/* Society Info */}
+              <View style={styles.cardContentCol}>
+                <View style={styles.nameBadgeRow}>
+                  <Text style={styles.societyNameText} numberOfLines={1}>
+                    {societyData?.name || user?.societyName || 'Suncity Paradise'}
+                  </Text>
+                  <View style={styles.codePill}>
+                    <Text style={styles.codePillText}>
+                      Code: {societyData?.code || 'SOC-001'}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.detailsGroup}>
+                  {/* Address */}
+                  <View style={styles.detailItemTop}>
+                    <MapPin size={14} color={THEME.colors.clay} style={styles.detailIconTop} />
+                    <Text style={styles.detailLabel}>Address:</Text>
+                    <Text style={styles.detailValMultiline}>
+                      {societyData?.address || 'Main Campus, Sector 4'}
+                    </Text>
+                  </View>
+
+                  {/* Office Contact */}
+                  <View style={styles.detailItem}>
+                    <Phone size={14} color={THEME.colors.clay} style={styles.detailIcon} />
+                    <Text style={styles.detailLabel}>Office:</Text>
+                    <Text style={styles.detailVal} numberOfLines={1}>
+                      {societyData?.contact_number || '+91 98765 43210'}
+                    </Text>
+                  </View>
+
+                  {/* Helpline */}
+                  <View style={styles.detailItem}>
+                    <Phone size={14} color={THEME.colors.fernGreen} style={styles.detailIcon} />
+                    <Text style={styles.detailLabel}>Helpline:</Text>
+                    <Text style={styles.detailVal} numberOfLines={1}>
+                      {societyData?.emergency_number || '+91 91234 56789 / 112'}
+                    </Text>
                   </View>
                 </View>
               </View>
             </View>
 
-            {/* 2. ACTIVE SOCIETY INFORMATION CARD */}
-            <View style={styles.frontendGlassCard}>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardSectionLabel}>ACTIVE SOCIETY INFORMATION</Text>
-              </View>
-
-              <View style={styles.cardMainRow}>
-                {/* Square Society Icon Badge */}
-                <View style={styles.squareSocietyBadge}>
-                  <Building2 size={28} color={THEME.colors.clay} />
-                </View>
-
-                {/* Society Info */}
-                <View style={styles.cardContentCol}>
-                  <View style={styles.nameBadgeRow}>
-                    <Text style={styles.profileName} numberOfLines={1}>
-                      {societyData?.name || user?.societyName || 'Suncity Paradise'}
-                    </Text>
-                    <View style={styles.codePill}>
-                      <Text style={styles.codePillText}>
-                        Code: {societyData?.code || 'SOC-001'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.detailsGroup}>
-                    {/* Address */}
-                    <View style={styles.detailItemTop}>
-                      <MapPin size={14} color={THEME.colors.clay} style={styles.detailIconTop} />
-                      <Text style={styles.detailLabel}>Address:</Text>
-                      <Text style={styles.detailValMultiline}>
-                        {societyData?.address || 'Main Campus, Sector 4'}
-                      </Text>
-                    </View>
-
-                    {/* Office Contact */}
-                    <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.clay} style={styles.detailIcon} />
-                      <Text style={styles.detailLabel}>Office:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {societyData?.contact_number || '+91 98765 43210'}
-                      </Text>
-                    </View>
-
-                    {/* Helpline */}
-                    <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.fernGreen} style={styles.detailIcon} />
-                      <Text style={styles.detailLabel}>Helpline:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {societyData?.emergency_number || '+91 91234 56789 / 112'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-
-              {/* Quick shortcut to Edit Society Configurations */}
+            {/* Quick button to Configure Society Settings (Admin only) */}
+            {isAdmin && (
               <TouchableOpacity
                 onPress={() => navigation.navigate('Settings')}
                 style={styles.manageSocietyBtn}
@@ -294,115 +477,17 @@ export const ProfileScreen = ({ navigation }) => {
                   style={{ transform: [{ rotate: '180deg' }] }}
                 />
               </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          /* ========================================================== */
-          /* NON-ADMIN / RESIDENT VIEW                                  */
-          /* ========================================================== */
-          <View style={styles.residentProfileCard}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarText}>
-                {(user?.fullName || user?.full_name || 'U').charAt(0).toUpperCase()}
-              </Text>
-            </View>
-
-            <Text style={styles.residentProfileName}>
-              {user?.fullName || user?.full_name || 'Resident User'}
-            </Text>
-            <View style={styles.residentRoleBadge}>
-              <Text style={styles.residentRoleText}>{user?.role || 'RESIDENT'}</Text>
-            </View>
-
-            <View style={styles.infoDivider} />
-
-            <View style={styles.infoRow}>
-              <Phone size={16} color={THEME.colors.clay} />
-              <Text style={styles.infoLabel}>Phone:</Text>
-              <Text style={styles.infoVal}>{user?.phone || 'Not linked'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Building2 size={16} color={THEME.colors.clay} />
-              <Text style={styles.infoLabel}>Society:</Text>
-              <Text style={styles.infoVal}>{user?.societyName || 'Suncity Paradise'}</Text>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Home size={16} color={THEME.colors.clay} />
-              <Text style={styles.infoLabel}>Unit / Home:</Text>
-              <Text style={styles.infoVal}>
-                {user?.flatNumber ? `Home ${user.flatNumber}` : 'Flat 10'}
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {/* ========================================================== */}
-        {/* CHANGE PASSWORD CARD (SHARED)                              */}
-        {/* ========================================================== */}
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconWrap}>
-              <Lock size={18} color={THEME.colors.clay} />
-            </View>
-            <View>
-              <Text style={styles.sectionTitle}>Change Password</Text>
-              <Text style={styles.sectionSubtitle}>Update your login credentials securely</Text>
-            </View>
+            )}
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>CURRENT PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Enter current password"
-              placeholderTextColor={THEME.colors.textDim}
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>NEW PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Minimum 6 characters"
-              placeholderTextColor={THEME.colors.textDim}
-              value={newPassword}
-              onChangeText={setNewPassword}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>CONFIRM NEW PASSWORD</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Re-type new password"
-              placeholderTextColor={THEME.colors.textDim}
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-            />
-          </View>
-
-          <PrimaryButton
-            title="Update Password"
-            onPress={handlePasswordChange}
-            loading={changingPass}
-            style={{ marginTop: 6 }}
-          />
+          {/* ========================================================== */}
+          {/* 5. LOGOUT ACTION BUTTON                                    */}
+          {/* ========================================================== */}
+          <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} activeOpacity={0.85}>
+            <LogOut size={18} color="#DC2626" />
+            <Text style={styles.logoutText}>Sign Out from Device</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* ========================================================== */}
-        {/* SIGN OUT ACTION                                            */}
-        {/* ========================================================== */}
-        <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} activeOpacity={0.8}>
-          <LogOut size={18} color="#DC2626" />
-          <Text style={styles.logoutText}>Sign Out from Device</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -413,60 +498,124 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: THEME.colors.background,
   },
-  /* Top Dark Header */
-  darkHeader: {
-    backgroundColor: '#342C26',
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  headerLeftCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    backgroundColor: 'rgba(255, 255, 255, 0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    borderRadius: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.72)',
-    marginTop: 2,
-  },
   scrollContent: {
-    padding: 16,
     paddingBottom: 110,
   },
 
-  /* Admin Cards Wrapper */
-  adminCardsWrapper: {
-    gap: 16,
-    marginBottom: 16,
+  /* 1. Hero Cover Image Banner */
+  heroCoverWrapper: {
+    width: '100%',
+    height: 185,
+    position: 'relative',
+    backgroundColor: '#342C26',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    overflow: 'hidden',
+  },
+  heroCoverImage: {
+    width: '100%',
+    height: '100%',
+  },
+  heroGradientOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(52, 44, 38, 0.32)',
+  },
+  floatingBackBtn: {
+    position: 'absolute',
+    left: 16,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  coverSocietyPill: {
+    position: 'absolute',
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    maxWidth: 200,
+  },
+  coverSocietyPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
   },
 
-  /* Frontend Identical Glass Card */
-  frontendGlassCard: {
+  /* 2. Avatar Overlap (Half on Hero, Half on Body) */
+  avatarOverlapContainer: {
+    alignItems: 'center',
+    marginTop: -46, // Half of 92px height
+    zIndex: 20,
+    marginBottom: 8,
+  },
+  avatarWrapper: {
+    width: 92,
+    height: 92,
+    borderRadius: 46,
+    backgroundColor: THEME.colors.clay,
+    borderWidth: 4,
+    borderColor: THEME.colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#403630',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 8,
+    position: 'relative',
+  },
+  avatarPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 44,
+  },
+  avatarPlaceholder: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 44,
+    backgroundColor: THEME.colors.clay,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitialsText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 28,
+    letterSpacing: 0.5,
+  },
+  avatarActiveBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#15803D',
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 2.5,
+    borderColor: THEME.colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  /* Body Content */
+  bodyContent: {
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+
+  /* Glass Card */
+  glassCard: {
     backgroundColor: THEME.colors.white,
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 18,
     borderWidth: 1.5,
     borderColor: THEME.colors.sand,
@@ -476,7 +625,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 14,
+    marginBottom: 12,
     paddingBottom: 8,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(214, 194, 161, 0.25)',
@@ -487,84 +636,6 @@ const styles = StyleSheet.create({
     color: THEME.colors.clay,
     letterSpacing: 0.8,
     textTransform: 'uppercase',
-  },
-  adminVerifiedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(196, 154, 108, 0.12)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: 'rgba(196, 154, 108, 0.3)',
-  },
-  adminVerifiedText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: THEME.colors.clay,
-  },
-  cardMainRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 14,
-  },
-
-  /* Square Avatar */
-  squareAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
-    backgroundColor: THEME.colors.clay,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: THEME.colors.sand,
-    flexShrink: 0,
-    ...THEME.shadows.card,
-  },
-  avatarImg: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
-  },
-  squareAvatarText: {
-    color: '#FFFFFF',
-    fontWeight: '900',
-    fontSize: 20,
-    letterSpacing: 0.5,
-  },
-
-  /* Square Society Badge */
-  squareSocietyBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 14,
-    backgroundColor: 'rgba(196, 154, 108, 0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: THEME.colors.sand,
-    flexShrink: 0,
-    ...THEME.shadows.card,
-  },
-
-  /* Card Content Column */
-  cardContentCol: {
-    flex: 1,
-    minWidth: 0,
-  },
-  nameBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8,
-  },
-  profileName: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: THEME.colors.darkBrown,
-    flexShrink: 1,
   },
   rolePill: {
     backgroundColor: 'rgba(196, 154, 108, 0.18)',
@@ -580,33 +651,28 @@ const styles = StyleSheet.create({
     color: THEME.colors.clayDark,
     textTransform: 'uppercase',
   },
-  codePill: {
-    backgroundColor: 'rgba(107, 142, 90, 0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(107, 142, 90, 0.3)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
+  adminNameRow: {
+    marginBottom: 10,
   },
-  codePillText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#15803D',
+  adminFullName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
   },
 
-  /* Detail Rows Group */
+  /* Details Group */
   detailsGroup: {
-    gap: 6,
+    gap: 8,
   },
   detailItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   detailItemTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 6,
+    gap: 8,
   },
   detailIcon: {
     flexShrink: 0,
@@ -622,7 +688,7 @@ const styles = StyleSheet.create({
     minWidth: 54,
   },
   detailVal: {
-    fontSize: 12,
+    fontSize: 13,
     color: THEME.colors.textMuted,
     flex: 1,
     fontWeight: '500',
@@ -635,131 +701,42 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  /* Manage Society Quick Button */
-  manageSocietyBtn: {
+  /* Added Button: Change Password */
+  changePasswordBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(196, 154, 108, 0.08)',
+    backgroundColor: 'rgba(196, 154, 108, 0.1)',
     borderWidth: 1,
-    borderColor: 'rgba(196, 154, 108, 0.25)',
-    borderRadius: 10,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
+    borderColor: 'rgba(196, 154, 108, 0.3)',
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     marginTop: 14,
   },
-  manageSocietyText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: THEME.colors.clayDark,
-    flex: 1,
-  },
-
-  /* Non-Admin Resident Card */
-  residentProfileCard: {
-    backgroundColor: THEME.colors.white,
-    borderRadius: THEME.radius.xl,
-    padding: 22,
-    borderWidth: 1,
-    borderColor: THEME.colors.sand,
-    alignItems: 'center',
-    marginBottom: 16,
-    ...THEME.shadows.card,
-  },
-  avatarCircle: {
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: THEME.colors.clay,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  avatarText: {
-    fontSize: 28,
-    fontWeight: '900',
-    color: THEME.colors.white,
-  },
-  residentProfileName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: THEME.colors.darkBrown,
-    marginBottom: 4,
-  },
-  residentRoleBadge: {
-    backgroundColor: 'rgba(196, 154, 108, 0.15)',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: THEME.radius.full,
-    borderWidth: 1,
-    borderColor: THEME.colors.sand,
-    marginBottom: 16,
-  },
-  residentRoleText: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: THEME.colors.clayDark,
-    letterSpacing: 0.5,
-  },
-  infoDivider: {
-    width: '100%',
-    height: 1,
-    backgroundColor: 'rgba(214, 194, 161, 0.3)',
-    marginBottom: 12,
-  },
-  infoRow: {
+  changePasswordBtnLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
-    paddingVertical: 6,
     gap: 8,
   },
-  infoLabel: {
-    fontSize: 13,
-    color: THEME.colors.textMuted,
-    width: 90,
-  },
-  infoVal: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: THEME.colors.darkBrown,
-    flex: 1,
-  },
-
-  /* Password Section Card */
-  sectionCard: {
-    backgroundColor: THEME.colors.white,
-    borderRadius: 16,
-    padding: 18,
-    borderWidth: 1.5,
-    borderColor: THEME.colors.sand,
-    marginBottom: 16,
-    ...THEME.shadows.card,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 16,
-  },
-  sectionIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+  keyIconWrap: {
+    width: 26,
+    height: 26,
+    borderRadius: 6,
+    backgroundColor: 'rgba(196, 154, 108, 0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sectionTitle: {
-    fontSize: 15,
+  changePasswordBtnText: {
+    fontSize: 13,
     fontWeight: '800',
-    color: THEME.colors.darkBrown,
+    color: THEME.colors.clayDark,
   },
-  sectionSubtitle: {
-    fontSize: 11,
-    fontWeight: '500',
-    color: THEME.colors.textMuted,
-    marginTop: 1,
+  passwordExpandableBox: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(214, 194, 161, 0.3)',
   },
   inputGroup: {
     marginBottom: 12,
@@ -783,18 +760,86 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  /* Sign Out Button */
+  /* Society Card Main Row */
+  cardMainRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 14,
+  },
+  squareSocietyBadge: {
+    width: 60,
+    height: 60,
+    borderRadius: 14,
+    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: THEME.colors.sand,
+    flexShrink: 0,
+    ...THEME.shadows.card,
+  },
+  cardContentCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nameBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  societyNameText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+    flexShrink: 1,
+  },
+  codePill: {
+    backgroundColor: 'rgba(107, 142, 90, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 90, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  codePillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+  manageSocietyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(196, 154, 108, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(196, 154, 108, 0.25)',
+    borderRadius: 10,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginTop: 14,
+  },
+  manageSocietyText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.clayDark,
+    flex: 1,
+  },
+
+  /* 5. Logout Button */
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#FEE2E2',
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#FCA5A5',
-    borderRadius: THEME.radius.md,
-    height: 48,
+    borderRadius: 14,
+    height: 50,
     gap: 8,
     marginTop: 4,
+    ...THEME.shadows.card,
   },
   logoutText: {
     fontSize: 14,
