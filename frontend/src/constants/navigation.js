@@ -40,11 +40,11 @@ export const ROLE_NAVIGATION = {
     { title: 'Family', path: '/dashboard/family-members', icon: Users },
     { title: 'Workers', path: '/dashboard/workers', icon: Briefcase },
     { title: 'Permissions', path: '/dashboard/permissions', icon: ShieldCheck },
-    { title: 'Visitors', path: '/dashboard/visitors', icon: UserCheck },
+    { title: 'Gate Entry', path: '/dashboard/visitors', icon: DoorOpen },
     { title: 'Committee', path: '/dashboard/committee', icon: Award },
     { title: 'Announcements', path: '/dashboard/announcements', icon: Megaphone },
     { title: 'Security/Gates', path: '/dashboard/gates', icon: DoorOpen },
-    { title: 'Profile', path: '/dashboard/profile', icon: User },
+    { title: 'Account', path: '/dashboard/profile', icon: User },
   ],
 
   [ROLES.TENANT]: [
@@ -52,11 +52,11 @@ export const ROLE_NAVIGATION = {
     { title: 'Family', path: '/dashboard/family-members', icon: Users },
     { title: 'Workers', path: '/dashboard/workers', icon: Briefcase },
     { title: 'Permissions', path: '/dashboard/permissions', icon: ShieldCheck },
-    { title: 'Visitors', path: '/dashboard/visitors', icon: UserCheck },
+    { title: 'Gate Entry', path: '/dashboard/visitors', icon: DoorOpen },
     { title: 'Committee', path: '/dashboard/committee', icon: Award },
     { title: 'Announcements', path: '/dashboard/announcements', icon: Megaphone },
     { title: 'Security/Gates', path: '/dashboard/gates', icon: DoorOpen },
-    { title: 'Profile', path: '/dashboard/profile', icon: User },
+    { title: 'Account', path: '/dashboard/profile', icon: User },
   ],
 
   [ROLES.FAMILY_MEMBER]: [
@@ -64,24 +64,24 @@ export const ROLE_NAVIGATION = {
     { title: 'Family', path: '/dashboard/family-members', icon: Users },
     { title: 'Workers', path: '/dashboard/workers', icon: Briefcase },
     { title: 'Permissions', path: '/dashboard/permissions', icon: ShieldCheck },
-    { title: 'Visitors', path: '/dashboard/visitors', icon: UserCheck },
+    { title: 'Gate Entry', path: '/dashboard/visitors', icon: DoorOpen },
     { title: 'Committee', path: '/dashboard/committee', icon: Award },
     { title: 'Announcements', path: '/dashboard/announcements', icon: Megaphone },
     { title: 'Security/Gates', path: '/dashboard/gates', icon: DoorOpen },
-    { title: 'Profile', path: '/dashboard/profile', icon: User },
+    { title: 'Account', path: '/dashboard/profile', icon: User },
   ],
 
   [ROLES.SECURITY]: [
     { title: 'Security Dashboard', path: '/dashboard/security', icon: Shield, exact: true },
     { title: 'Gate Entry', path: '/dashboard/visitors', icon: DoorOpen },
     { title: 'Gate Activity', path: '/dashboard/gates', icon: Activity },
-    { title: 'Profile', path: '/dashboard/profile', icon: User },
+    { title: 'Account', path: '/dashboard/profile', icon: User },
   ],
 
   [ROLES.COMMITTEE_MEMBER]: [
     { title: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, exact: true },
     { title: 'Committee', path: '/dashboard/committee', icon: Award },
     { title: 'Announcements', path: '/dashboard/announcements', icon: Megaphone },
-    { title: 'Profile', path: '/dashboard/profile', icon: User },
+    { title: 'Account', path: '/dashboard/profile', icon: User },
   ],
 };

@@ -258,7 +258,7 @@ export default function AppRoutes() {
                 ROLES.SECURITY,
                 ROLES.COMMITTEE_MEMBER,
               ]}
-              moduleName="Profile Settings"
+              moduleName="Account"
             >
               <ProfilePage />
             </RoleRoute>
