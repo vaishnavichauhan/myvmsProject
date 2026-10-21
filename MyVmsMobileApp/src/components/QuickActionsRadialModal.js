@@ -1,13 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View,
-  Text,
   Modal,
   TouchableOpacity,
   StyleSheet,
   Animated,
   Dimensions,
-  Platform,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -26,13 +24,15 @@ import {
   Package,
 } from 'lucide-react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 /**
- * Animated Radial / Fan-out Quick Actions Menu
+ * Animated Radial Half-Circle Quick Actions Menu
  * Inspired by modern radial floating navigation (Ali Celebi Pinterest style).
- * Displays 6 modules for ADMIN (Society, Resident, Workers, Security, Gates, Committee)
- * with the exact icons matching the frontend navigation reference.
+ * Displays pure circular icon buttons radiating in a half-circle (semi-circle arc)
+ * above the center navigation action button without text labels.
+ * Matches frontend module icons:
+ * Society, Resident, Workers, Security, Gates, Committee
  */
 export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
   const insets = useSafeAreaInsets();
@@ -46,7 +46,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       Animated.spring(animValue, {
         toValue: 1,
         friction: 6,
-        tension: 50,
+        tension: 48,
         useNativeDriver: true,
       }).start();
     } else {
@@ -57,7 +57,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
   const handleDismiss = (targetScreen) => {
     Animated.timing(animValue, {
       toValue: 0,
-      duration: 160,
+      duration: 150,
       useNativeDriver: true,
     }).start(() => {
       onClose();
@@ -67,7 +67,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     });
   };
 
-  // 6 Admin Quick Actions matching frontend icons exactly
+  // 6 Admin Quick Actions matching frontend icons & colors
   const adminActions = [
     {
       id: 'society',
@@ -147,23 +147,37 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
 
   const actions = isAdmin ? adminActions : residentActions;
 
-  // Split into 2 tiers of 3 items for a balanced radial fan-out arc
-  const topTier = actions.slice(0, 3);
-  const bottomTier = actions.slice(3, 6);
+  // Responsive half-circle radius
+  const RADIUS = Math.min(SCREEN_WIDTH * 0.35, 130);
+
+  // Compute half-circle arc coordinates
+  const actionItemsWithCoords = useMemo(() => {
+    const count = actions.length;
+    if (count === 0) return [];
+    if (count === 1) {
+      return [{ ...actions[0], targetX: 0, targetY: -RADIUS }];
+    }
+    const startAngle = 165;
+    const endAngle = 15;
+    const step = (startAngle - endAngle) / (count - 1);
+
+    return actions.map((item, index) => {
+      const angleDeg = startAngle - index * step;
+      const angleRad = (angleDeg * Math.PI) / 180;
+      const targetX = RADIUS * Math.cos(angleRad);
+      const targetY = -RADIUS * Math.sin(angleRad);
+      return {
+        ...item,
+        angleDeg,
+        targetX,
+        targetY,
+      };
+    });
+  }, [actions, RADIUS]);
 
   const backdropOpacity = animValue.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 1],
-  });
-
-  const contentScale = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.35, 1],
-  });
-
-  const contentTranslateY = animValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [60, 0],
   });
 
   const closeRotate = animValue.interpolate({
@@ -173,95 +187,96 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
 
   if (!visible) return null;
 
+  const centerBottom = Math.max(insets.bottom, 10) + 25;
+
   return (
-    <Modal visible={visible} transparent animationType="none" onRequestClose={() => handleDismiss()}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={() => handleDismiss()}
+    >
       <View style={styles.modalRoot}>
         {/* Semi-transparent dark blur backdrop */}
         <TouchableWithoutFeedback onPress={() => handleDismiss()}>
           <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
         </TouchableWithoutFeedback>
 
-        {/* Floating Radial Fan-out Container */}
-        <Animated.View
-          style={[
-            styles.radialWrapper,
-            {
-              paddingBottom: Math.max(insets.bottom, 12),
-              transform: [{ scale: contentScale }, { translateY: contentTranslateY }],
-              opacity: backdropOpacity,
-            },
-          ]}
+        {/* Center Anchor Point - Aligned with the bottom tab bar plus button */}
+        <View
+          style={[styles.centerAnchor, { bottom: centerBottom }]}
           pointerEvents="box-none"
         >
-          {/* Header Title */}
-          <View style={styles.headerInfo}>
-            <View style={styles.categoryPill}>
-              <Text style={styles.categoryPillText}>
-                {isAdmin ? 'ADMIN QUICK NAVIGATION' : 'QUICK SHORTCUTS'}
-              </Text>
-            </View>
-            <Text style={styles.menuTitle}>Fast Actions</Text>
-            <Text style={styles.menuSubtitle}>Tap any module to open instantly</Text>
-          </View>
+          {/* Half-Circle Radiating Module Buttons */}
+          {actionItemsWithCoords.map((item) => {
+            const translateX = animValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, item.targetX],
+            });
 
-          {/* Radial Buttons Container (2-tier fan-out arc) */}
-          <View style={styles.fanOutCluster}>
-            {/* Tier 1: Top Arc (3 buttons) */}
-            <View style={styles.tierRowTop}>
-              {topTier.map((item) => (
-                <View key={item.id} style={styles.actionItemContainer}>
-                  <TouchableOpacity
-                    onPress={() => handleDismiss(item.screen)}
-                    style={[styles.circularButton, { borderColor: `${item.color}55` }]}
-                    activeOpacity={0.8}
-                  >
-                    <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
-                      <item.icon size={25} color={item.color} />
-                    </View>
-                  </TouchableOpacity>
-                  <View style={styles.labelPill}>
-                    <Text style={styles.labelPillText}>{item.title}</Text>
-                  </View>
-                </View>
-              ))}
-            </View>
+            const translateY = animValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, item.targetY],
+            });
 
-            {/* Tier 2: Lower Arc (3 buttons) */}
-            {bottomTier.length > 0 && (
-              <View style={styles.tierRowBottom}>
-                {bottomTier.map((item) => (
-                  <View key={item.id} style={styles.actionItemContainer}>
-                    <TouchableOpacity
-                      onPress={() => handleDismiss(item.screen)}
-                      style={[styles.circularButton, { borderColor: `${item.color}55` }]}
-                      activeOpacity={0.8}
-                    >
-                      <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
-                        <item.icon size={25} color={item.color} />
-                      </View>
-                    </TouchableOpacity>
-                    <View style={styles.labelPill}>
-                      <Text style={styles.labelPillText}>{item.title}</Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
+            const scale = animValue.interpolate({
+              inputRange: [0, 0.7, 1],
+              outputRange: [0.1, 1.1, 1],
+            });
 
-            {/* Center Close Floating Action Button (replacing the + button) */}
-            <View style={styles.closeBtnWrapper}>
-              <TouchableOpacity
-                onPress={() => handleDismiss()}
-                activeOpacity={0.85}
-                style={styles.closeButton}
+            const opacity = animValue.interpolate({
+              inputRange: [0, 0.25, 1],
+              outputRange: [0, 1, 1],
+            });
+
+            return (
+              <Animated.View
+                key={item.id}
+                style={[
+                  styles.radialItemWrapper,
+                  {
+                    transform: [{ translateX }, { translateY }, { scale }],
+                    opacity,
+                  },
+                ]}
+                pointerEvents="box-none"
               >
-                <Animated.View style={{ transform: [{ rotate: closeRotate }] }}>
-                  <X size={26} color="#FFFFFF" strokeWidth={2.8} />
-                </Animated.View>
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel={item.title}
+                  onPress={() => handleDismiss(item.screen)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.circularButton,
+                    {
+                      borderColor: item.color,
+                      shadowColor: item.color,
+                    },
+                  ]}
+                >
+                  <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
+                    <item.icon size={24} color={item.color} strokeWidth={2.4} />
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          })}
+
+          {/* Center Close Floating Action Button (X) */}
+          <View style={styles.closeBtnWrapper}>
+            <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Close quick actions"
+              onPress={() => handleDismiss()}
+              activeOpacity={0.85}
+              style={styles.closeButton}
+            >
+              <Animated.View style={{ transform: [{ rotate: closeRotate }] }}>
+                <X size={26} color="#FFFFFF" strokeWidth={2.8} />
+              </Animated.View>
+            </TouchableOpacity>
           </View>
-        </Animated.View>
+        </View>
       </View>
     </Modal>
   );
@@ -274,122 +289,63 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(22, 17, 14, 0.72)',
+    backgroundColor: 'rgba(22, 17, 14, 0.70)',
   },
-  radialWrapper: {
-    width: '100%',
+  centerAnchor: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 54,
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
-  headerInfo: {
+  radialItemWrapper: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    top: 1,
+    left: (SCREEN_WIDTH - 52) / 2,
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  categoryPill: {
-    backgroundColor: 'rgba(196, 154, 108, 0.25)',
-    borderWidth: 1,
-    borderColor: 'rgba(196, 154, 108, 0.5)',
-    paddingHorizontal: 12,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  categoryPillText: {
-    color: '#D6C2A1',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  menuTitle: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -0.3,
-  },
-  menuSubtitle: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.75)',
-    marginTop: 2,
-  },
-
-  /* Fan-out cluster */
-  fanOutCluster: {
-    width: '100%',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-  },
-  tierRowTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '94%',
-    marginBottom: 16,
-  },
-  tierRowBottom: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    width: '88%',
-    marginBottom: 22,
-  },
-  actionItemContainer: {
-    alignItems: 'center',
-    width: 80,
+    justifyContent: 'center',
   },
   circularButton: {
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: THEME.colors.white,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.32,
+    shadowRadius: 8,
     elevation: 9,
-    marginBottom: 6,
   },
   iconInnerCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  labelPill: {
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.15)',
-  },
-  labelPillText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-
-  /* Center Close Button */
   closeBtnWrapper: {
+    width: 54,
+    height: 54,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 6,
-    marginBottom: 10,
   },
   closeButton: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: THEME.colors.clay,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 4,
+    borderWidth: 3.5,
     borderColor: THEME.colors.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 10,
   },
