@@ -143,7 +143,7 @@ export default function AppRoutes() {
         <Route
           path="settings"
           element={
-            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Society Settings">
+            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Account">
               <SettingsPage />
             </RoleRoute>
           }

@@ -18,15 +18,26 @@ import {
   Phone,
   MapPin,
   BadgeCheck,
+  AlertCircle,
+  X,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { societyApi } from '../api/societyApi';
 
 export default function SettingsPage() {
-  const { user, systemHealth, checkHealth } = useAuthStore();
+  const { user, systemHealth, checkHealth, changePassword } = useAuthStore();
 
   const [societies, setSocieties] = useState([]);
   const [selectedSociety, setSelectedSociety] = useState(null);
+
+  // Change Password Modal state
+  const [showChangePassModal, setShowChangePassModal] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passMsg, setPassMsg] = useState(null);
+  const [passError, setPassError] = useState(null);
+  const [submittingPass, setSubmittingPass] = useState(false);
 
   const [settings, setSettings] = useState({
     societyName: '',
@@ -42,6 +53,42 @@ export default function SettingsPage() {
   });
 
   const [saved, setSaved] = useState(false);
+
+  const handleChangePasswordSubmit = async (e) => {
+    e.preventDefault();
+    setPassError(null);
+    setPassMsg(null);
+
+    if (newPassword !== confirmPassword) {
+      setPassError('New passwords do not match.');
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPassError('New password must be at least 6 characters.');
+      return;
+    }
+
+    setSubmittingPass(true);
+    try {
+      const res = await changePassword(currentPassword, newPassword);
+      if (res && res.success) {
+        setPassMsg('Password changed successfully!');
+        setCurrentPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setTimeout(() => {
+          setShowChangePassModal(false);
+          setPassMsg(null);
+        }, 1800);
+      } else {
+        setPassError(res?.message || 'Failed to change password.');
+      }
+    } catch (err) {
+      setPassError(err.message || 'Failed to change password.');
+    } finally {
+      setSubmittingPass(false);
+    }
+  };
 
   useEffect(() => {
     const fetchSocietyData = async () => {
@@ -126,17 +173,41 @@ export default function SettingsPage() {
               flexShrink: 0,
             }}
           >
-            <Settings style={{ width: 26, height: 26, color: '#fff' }} />
+            <User style={{ width: 26, height: 26, color: '#fff' }} />
           </div>
           <div>
             <h1 style={{ fontSize: '1.65rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
-              System & Society Settings
+              Account
             </h1>
             <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              Perimeter security policies, barrier automation & society profile
+              System administrator credentials, active society profile & security rules
             </p>
           </div>
         </div>
+
+        {/* Change Password Header Action Button */}
+        <button
+          type="button"
+          onClick={() => setShowChangePassModal(true)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: '12px',
+            background: 'var(--color-white)',
+            border: '1.5px solid var(--border-card)',
+            color: 'var(--color-dark-brown)',
+            fontSize: '0.88rem',
+            fontWeight: 700,
+            boxShadow: 'var(--shadow-sm)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          <Lock size={16} color="var(--color-clay)" />
+          <span>Change Password</span>
+        </button>
       </div>
 
       {saved && (
@@ -177,75 +248,104 @@ export default function SettingsPage() {
             boxShadow: 'var(--shadow-sm)',
             display: 'flex',
             flexDirection: 'column',
+            justifyContent: 'space-between',
             gap: 14,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-clay)', letterSpacing: '0.05em' }}>
-              System Administrator
-            </span>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-            {/* Square Avatar */}
-            <div
-              style={{
-                width: 60,
-                height: 60,
-                borderRadius: 14,
-                background: user?.avatarUrl ? `url(${user.avatarUrl}) center/cover` : 'var(--grad-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#FFFFFF',
-                fontWeight: 800,
-                fontSize: '1.25rem',
-                boxShadow: 'var(--shadow-sm)',
-                border: '1.5px solid var(--border-card)',
-                flexShrink: 0,
-              }}
-            >
-              {!user?.avatarUrl && (
-                user?.fullName
-                  ? user.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-                  : <User size={28} color="#fff" />
-              )}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-clay)', letterSpacing: '0.05em' }}>
+                System Administrator
+              </span>
+              <span
+                style={{
+                  background: 'rgba(196, 154, 108, 0.18)',
+                  color: 'var(--color-clay)',
+                  border: '1px solid rgba(196, 154, 108, 0.35)',
+                  padding: '2px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                }}
+              >
+                {user?.role || 'ADMIN'}
+              </span>
             </div>
 
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                  {user?.fullName || user?.name || 'Administrator'}
-                </h3>
-                <span
-                  style={{
-                    background: 'rgba(196, 154, 108, 0.18)',
-                    color: 'var(--color-clay)',
-                    border: '1px solid rgba(196, 154, 108, 0.35)',
-                    padding: '2px 8px',
-                    borderRadius: '6px',
-                    fontSize: '0.7rem',
-                    fontWeight: 800,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {user?.role || 'ADMIN'}
-                </span>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+              {/* Square Avatar */}
+              <div
+                style={{
+                  width: 60,
+                  height: 60,
+                  borderRadius: 14,
+                  background: user?.avatarUrl ? `url(${user.avatarUrl}) center/cover` : 'var(--grad-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#FFFFFF',
+                  fontWeight: 800,
+                  fontSize: '1.25rem',
+                  boxShadow: 'var(--shadow-sm)',
+                  border: '1.5px solid var(--border-card)',
+                  flexShrink: 0,
+                }}
+              >
+                {!user?.avatarUrl && (
+                  user?.fullName
+                    ? user.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                    : <User size={28} color="#fff" />
+                )}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Mail size={14} color="var(--color-clay)" style={{ flexShrink: 0 }} />
-                  <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Email:</span>
-                  <span style={{ color: 'var(--text-main)' }}>{user?.email || 'admin@myvms.society'}</span>
+
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                    {user?.fullName || user?.name || 'Administrator'}
+                  </h3>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Phone size={14} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
-                  <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Phone:</span>
-                  <span>{user?.phone || '+91 98765 43210'}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Mail size={14} color="var(--color-clay)" style={{ flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Email:</span>
+                    <span style={{ color: 'var(--text-main)' }}>{user?.email || 'admin@myvms.society'}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Phone size={14} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
+                    <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Phone:</span>
+                    <span>{user?.phone || '+91 98765 43210'}</span>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* Change Password Button inside Card */}
+          <button
+            type="button"
+            onClick={() => setShowChangePassModal(true)}
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: '9px 14px',
+              borderRadius: '10px',
+              background: 'rgba(196, 154, 108, 0.1)',
+              border: '1px solid rgba(196, 154, 108, 0.3)',
+              color: 'var(--color-clay)',
+              fontSize: '0.82rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              marginTop: 6,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <Key size={14} />
+            <span>Change Password</span>
+          </button>
         </div>
 
         {/* Society Information Card */}
@@ -418,6 +518,230 @@ export default function SettingsPage() {
 
 
       </form>
+
+      {/* Change Password Modal */}
+      {showChangePassModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.55)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 9999,
+            padding: 16,
+          }}
+          onClick={() => setShowChangePassModal(false)}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: 440,
+              background: 'var(--color-white)',
+              borderRadius: 16,
+              border: '1.5px solid var(--border-card)',
+              boxShadow: 'var(--shadow-lg)',
+              padding: 24,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.15)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                  }}
+                >
+                  <Lock size={18} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                    Change Password
+                  </h3>
+                  <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Update your account credentials
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowChangePassModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {passMsg && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.4)',
+                  color: 'var(--color-fern-green)',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 14,
+                  fontWeight: 600,
+                }}
+              >
+                <CheckCircle2 size={16} />
+                <span>{passMsg}</span>
+              </div>
+            )}
+
+            {passError && (
+              <div
+                style={{
+                  padding: '10px 14px',
+                  borderRadius: 10,
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: 'var(--color-error)',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginBottom: 14,
+                  fontWeight: 600,
+                }}
+              >
+                <AlertCircle size={16} />
+                <span>{passError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleChangePasswordSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginBottom: 6 }}>
+                  Current Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border-card)',
+                    background: 'var(--color-sand-well)',
+                    fontSize: '0.9rem',
+                    color: 'var(--color-dark-brown)',
+                    boxSizing: 'border-box',
+                  }}
+                  placeholder="Enter current password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginBottom: 6 }}>
+                  New Password * (Min 6 chars)
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border-card)',
+                    background: 'var(--color-sand-well)',
+                    fontSize: '0.9rem',
+                    color: 'var(--color-dark-brown)',
+                    boxSizing: 'border-box',
+                  }}
+                  placeholder="Enter new password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginBottom: 6 }}>
+                  Confirm New Password *
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 10,
+                    border: '1px solid var(--border-card)',
+                    background: 'var(--color-sand-well)',
+                    fontSize: '0.9rem',
+                    color: 'var(--color-dark-brown)',
+                    boxSizing: 'border-box',
+                  }}
+                  placeholder="Re-enter new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowChangePassModal(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-card)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingPass}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'var(--color-clay)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                    boxShadow: 'var(--shadow-sm)',
+                  }}
+                >
+                  {submittingPass ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
