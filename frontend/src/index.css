@@ -1,0 +1,444 @@
+/* ========================================================
+   MYVMS - Premium Earthy Sandy UI/UX Design System
+   ======================================================== */
+
+:root {
+  /* 1. Core Color Theme (User Mandated) */
+  --color-background: #F5F0E6;
+  /* Sandy Beige — Main background */
+  --color-clay: #C49A6C;
+  /* Clay Brown — Primary buttons & highlights */
+  --color-dark-brown: #403630;
+  /* Dark Brown — Text and headings */
+  --color-text: #403630;
+  /* Base typography color */
+  --color-sky-blue: #87CEEB;
+  /* Sky Blue — Links & interactive accents */
+  --color-fern-green: #6B8E5A;
+  /* Fern Green — Secondary buttons & accents */
+  --color-sand: #D6C2A1;
+  /* Light Sand — Borders & secondary backgrounds */
+  --color-white: #FFFFFF;
+  /* White — Cards and content sections */
+
+  /* Typography */
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Background Palette */
+  --bg-primary: var(--color-background);
+  --bg-secondary: var(--color-white);
+  --bg-tertiary: #FAF5ED;
+  --bg-card: var(--color-white);
+  --bg-card-hover: #FDFBF7;
+  --bg-glass: rgba(255, 255, 255, 0.94);
+  --bg-sand-light: rgba(214, 194, 161, 0.22);
+  --bg-sand-well: #FAF5ED;
+
+  /* Borders & Dividers */
+  --border-subtle: #D6C2A1;
+  --border-card: #D6C2A1;
+  --border-focus: var(--color-clay);
+
+  /* Primary Brand: Warm Terracotta Clay */
+  --primary: var(--color-clay);
+  --primary-hover: #B58A59;
+  --primary-light: rgba(196, 154, 108, 0.16);
+  --primary-glow: rgba(196, 154, 108, 0.28);
+
+  /* Secondary Brand: Fern Green */
+  --secondary: var(--color-fern-green);
+  --secondary-hover: #5A7B4B;
+  --secondary-light: rgba(107, 142, 90, 0.16);
+
+  /* Accents & Status */
+  --accent-cyan: #0284C7;
+  --accent-sky: var(--color-sky-blue);
+  --accent-emerald: var(--color-fern-green);
+  --accent-amber: #D97706;
+  --accent-rose: #DC2626;
+  --accent-blue: #0284C7;
+  --accent-violet: #8B5CF6;
+  --accent-clay: var(--color-clay);
+  --accent-sand: var(--color-sand);
+
+  /* Text Colors */
+  --text-heading: #403630;
+  --text-main: #403630;
+  --text-muted: #6E5D53;
+  --text-dim: #8E7C70;
+  --text-inverse: #FFFFFF;
+
+  /* Gradients */
+  --grad-primary: linear-gradient(135deg, #C49A6C 0%, #B08253 100%);
+  --grad-fern: linear-gradient(135deg, #6B8E5A 0%, #577747 100%);
+  --grad-card: linear-gradient(180deg, #FFFFFF 0%, #FAF6EE 100%);
+  --grad-badge: linear-gradient(135deg, rgba(196, 154, 108, 0.15) 0%, rgba(135, 206, 235, 0.15) 100%);
+  --grad-surface: radial-gradient(circle at 50% 0%, rgba(196, 154, 108, 0.08) 0%, rgba(245, 240, 230, 0) 70%);
+
+  /* Warm Architectural Shadows */
+  --shadow-sm: 0 1px 3px 0 rgba(64, 54, 48, 0.05), 0 1px 2px -1px rgba(64, 54, 48, 0.03);
+  --shadow-md: 0 4px 14px -2px rgba(64, 54, 48, 0.07), 0 2px 6px -2px rgba(64, 54, 48, 0.04);
+  --shadow-lg: 0 12px 28px -4px rgba(64, 54, 48, 0.09), 0 4px 10px -2px rgba(64, 54, 48, 0.04);
+  --shadow-glow: 0 0 25px rgba(196, 154, 108, 0.25);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  /* Transitions */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 400ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Base Reset & Typography */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--color-background);
+  color: var(--text-main);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background-image: var(--grad-surface);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  color: var(--text-heading);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+a.text-link {
+  color: #0284C7;
+  font-weight: 600;
+  transition: color var(--transition-fast);
+}
+
+a.text-link:hover {
+  color: var(--color-clay);
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Panels & Cards (Warm Elegance) */
+.glass-panel,
+.card-luxury {
+  background: var(--color-white) !important;
+  border: 1px solid var(--border-card) !important;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md) !important;
+  color: var(--text-main);
+  transition: box-shadow var(--transition-normal), transform var(--transition-fast);
+}
+
+.glass-nav {
+  background: #F5F0E6 !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 0.5px solid var(--border-card) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+/* Common Layout Elements */
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  background-color: var(--color-background);
+}
+
+.main-content {
+  flex: 1;
+}
+
+/* Role Badges Tailored to Earthy Palette */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  transition: all var(--transition-fast);
+}
+
+.badge-ADMIN {
+  background: rgba(196, 154, 108, 0.2);
+  color: #8C5D2B;
+  border: 1px solid rgba(196, 154, 108, 0.5);
+}
+
+.badge-OWNER {
+  background: rgba(196, 154, 108, 0.16);
+  color: #9C6C38;
+  border: 1px solid rgba(196, 154, 108, 0.4);
+}
+
+.badge-TENANT {
+  background: rgba(135, 206, 235, 0.25);
+  color: #0369A1;
+  border: 1px solid rgba(135, 206, 235, 0.5);
+}
+
+.badge-FAMILY_MEMBER {
+  background: rgba(107, 142, 90, 0.18);
+  color: #4D6B3E;
+  border: 1px solid rgba(107, 142, 90, 0.4);
+}
+
+.badge-SECURITY {
+  background: rgba(214, 194, 161, 0.35);
+  color: #6B4E26;
+  border: 1px solid rgba(214, 194, 161, 0.7);
+}
+
+.badge-COMMITTEE_MEMBER {
+  background: rgba(107, 142, 90, 0.2);
+  color: #4D6B3E;
+  border: 1px solid rgba(107, 142, 90, 0.45);
+}
+
+/* Interactive Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 10px 18px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: none;
+  font-size: 0.925rem;
+  white-space: nowrap;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+/* Primary Button: Clay Brown */
+.btn-primary {
+  background: var(--color-clay) !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 14px 0 rgba(196, 154, 108, 0.35) !important;
+  border: 1px solid rgba(176, 130, 83, 0.3) !important;
+}
+
+.btn-primary:hover {
+  background: var(--primary-hover) !important;
+  box-shadow: 0 6px 18px rgba(196, 154, 108, 0.45) !important;
+}
+
+/* Secondary Button: Fern Green */
+.btn-secondary {
+  background: var(--color-fern-green) !important;
+  color: #FFFFFF !important;
+  border: 1px solid rgba(90, 123, 75, 0.3) !important;
+  box-shadow: 0 2px 8px rgba(107, 142, 90, 0.25) !important;
+}
+
+.btn-secondary:hover {
+  background: var(--secondary-hover) !important;
+  box-shadow: 0 4px 14px rgba(107, 142, 90, 0.35) !important;
+}
+
+/* Outline Button: Clean Sand & White */
+.btn-outline {
+  background: var(--color-white) !important;
+  color: var(--color-dark-brown) !important;
+  border: 1px solid var(--border-card) !important;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn-outline:hover {
+  color: var(--color-dark-brown) !important;
+  border-color: var(--color-clay) !important;
+  background: var(--bg-tertiary) !important;
+}
+
+/* Danger Button */
+.btn-danger {
+  background: rgba(220, 38, 38, 0.1) !important;
+  color: #DC2626 !important;
+  border: 1px solid rgba(220, 38, 38, 0.3) !important;
+}
+
+.btn-danger:hover {
+  background: rgba(220, 38, 38, 0.18) !important;
+}
+
+/* Input Fields */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.input-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-dark-brown);
+  letter-spacing: 0.01em;
+}
+
+.input-field {
+  width: 100%;
+  padding: 11px 14px;
+  background: #FFFFFF !important;
+  border: 1px solid var(--border-card) !important;
+  border-radius: var(--radius-md);
+  color: var(--text-main) !important;
+  font-size: 0.95rem;
+  transition: all var(--transition-fast);
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: var(--color-clay) !important;
+  box-shadow: 0 0 0 3px rgba(196, 154, 108, 0.25) !important;
+}
+
+.input-field::placeholder {
+  color: var(--text-dim) !important;
+}
+
+select.input-field,
+select {
+  color: var(--text-main, #403630) !important;
+  background-color: #FFFFFF !important;
+}
+
+select option {
+  background-color: #FFFFFF !important;
+  color: #403630 !important;
+  padding: 8px 12px;
+}
+
+select option:hover,
+select option:focus,
+select option:checked {
+  background-color: #FAF5ED !important;
+  color: #C49A6C !important;
+}
+
+/* Pulse Indicator */
+.pulse-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-fern-green);
+  box-shadow: 0 0 0 0 rgba(107, 142, 90, 0.7);
+  animation: pulse-ring 2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(107, 142, 90, 0.7);
+  }
+
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 8px rgba(107, 142, 90, 0);
+  }
+
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(107, 142, 90, 0);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin,
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--transition-smooth) forwards;
+}
+
+/* Responsive Grid Helpers */
+.grid-cols-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+/* Scrollbar in Earthy Theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-background);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sand);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-clay);
+}
