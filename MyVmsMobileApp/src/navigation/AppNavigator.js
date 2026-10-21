@@ -10,6 +10,7 @@ import { ROLES } from '../constants/roles';
 // Custom Curved Tab Bar Component
 import { CustomCurvedTabBar } from '../components/CustomCurvedTabBar';
 import { CustomIcon } from '../components/CustomIcon';
+import { QuickActionsRadialModal } from '../components/QuickActionsRadialModal';
 
 // Screens
 import { LandingScreen } from '../screens/LandingScreen';
@@ -70,86 +71,12 @@ function MainTabNavigator({ navigation }) {
         <Tab.Screen name="AccountTab" component={ProfileScreen} />
       </Tab.Navigator>
 
-      {/* Center (+) Floating Action Quick Sheet */}
-      <Modal visible={quickActionVisible} transparent animationType="fade">
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setQuickActionVisible(false)}
-        >
-          <View style={styles.sheetContainer}>
-            <View style={styles.sheetDragPill} />
-            <Text style={styles.sheetTitle}>Quick Actions</Text>
-            <Text style={styles.sheetSubtitle}>Society fast shortcuts</Text>
-
-            <View style={styles.actionsList}>
-              <TouchableOpacity
-                onPress={() => {
-                  setQuickActionVisible(false);
-                  navigation.navigate('Visitors');
-                }}
-                style={styles.actionItem}
-              >
-                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(2, 132, 199, 0.15)' }]}>
-                  <CustomIcon name="userCheck" size={22} color="#0284c7" />
-                </View>
-                <View style={styles.actionTextBox}>
-                  <Text style={styles.actionName}>New Visitor Pass</Text>
-                  <Text style={styles.actionDesc}>Pre-clear an arriving guest or contractor</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setQuickActionVisible(false);
-                  navigation.navigate('CourierDelivery');
-                }}
-                style={styles.actionItem}
-              >
-                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(107, 142, 90, 0.15)' }]}>
-                  <CustomIcon name="package" size={22} color={THEME.colors.fernGreen} />
-                </View>
-                <View style={styles.actionTextBox}>
-                  <Text style={styles.actionName}>Courier & Deliveries</Text>
-                  <Text style={styles.actionDesc}>View parcels and approve gate riders</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setQuickActionVisible(false);
-                  navigation.navigate('FamilyMembers');
-                }}
-                style={styles.actionItem}
-              >
-                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
-                  <CustomIcon name="users" size={22} color={THEME.colors.clay} />
-                </View>
-                <View style={styles.actionTextBox}>
-                  <Text style={styles.actionName}>Add Family Member</Text>
-                  <Text style={styles.actionDesc}>Register household residents</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                onPress={() => {
-                  setQuickActionVisible(false);
-                  navigation.navigate('Workers');
-                }}
-                style={styles.actionItem}
-              >
-                <View style={[styles.actionIconBox, { backgroundColor: 'rgba(217, 119, 6, 0.15)' }]}>
-                  <CustomIcon name="briefcase" size={22} color="#D97706" />
-                </View>
-                <View style={styles.actionTextBox}>
-                  <Text style={styles.actionName}>Domestic Help Pass</Text>
-                  <Text style={styles.actionDesc}>Manage daily maid or driver passes</Text>
-                </View>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Center (+) Floating Action Radial Arc Menu (Pinterest Animated Navigation style) */}
+      <QuickActionsRadialModal
+        visible={quickActionVisible}
+        onClose={() => setQuickActionVisible(false)}
+        navigation={navigation}
+      />
     </>
   );
 }
@@ -182,6 +109,7 @@ export default function AppNavigator() {
             <Stack.Screen name="Workers" component={WorkersScreen} />
             <Stack.Screen name="Permissions" component={PermissionsScreen} />
             <Stack.Screen name="Gates" component={GatesScreen} />
+            <Stack.Screen name="SecurityGate" component={SecurityGateScreen} />
             <Stack.Screen name="Committee" component={CommitteeScreen} />
             <Stack.Screen name="CourierDelivery" component={CourierDeliveryScreen} />
             <Stack.Screen name="Residents" component={ResidentsScreen} />
