@@ -180,7 +180,9 @@ export const SettingsScreen = ({ navigation }) => {
                   <View style={styles.detailsGroup}>
                     {/* Email */}
                     <View style={styles.detailItem}>
-                      <Mail size={14} color={THEME.colors.clay} style={styles.detailIcon} />
+                      <View style={styles.detailIconBox}>
+                        <Mail size={13} color={THEME.colors.clay} />
+                      </View>
                       <Text style={styles.detailLabel}>Email:</Text>
                       <Text style={styles.detailVal} numberOfLines={1}>
                         {user?.email || 'admin@myvms.society'}
@@ -189,7 +191,9 @@ export const SettingsScreen = ({ navigation }) => {
 
                     {/* Phone */}
                     <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.fernGreen} style={styles.detailIcon} />
+                      <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                        <Phone size={13} color={THEME.colors.fernGreen} />
+                      </View>
                       <Text style={styles.detailLabel}>Phone:</Text>
                       <Text style={styles.detailVal} numberOfLines={1}>
                         {user?.phone || '+91 98765 43210'}
@@ -209,7 +213,7 @@ export const SettingsScreen = ({ navigation }) => {
               <View style={styles.cardMainRow}>
                 {/* Square Society Icon Badge */}
                 <View style={styles.squareSocietyBadge}>
-                  <Building2 size={28} color={THEME.colors.clay} />
+                  <Building2 size={28} color="#FFFFFF" />
                 </View>
 
                 {/* Society Info */}
@@ -228,7 +232,9 @@ export const SettingsScreen = ({ navigation }) => {
                   <View style={styles.detailsGroup}>
                     {/* Address */}
                     <View style={styles.detailItemTop}>
-                      <MapPin size={14} color={THEME.colors.clay} style={styles.detailIconTop} />
+                      <View style={styles.detailIconBox}>
+                        <MapPin size={13} color={THEME.colors.clay} />
+                      </View>
                       <Text style={styles.detailLabel}>Address:</Text>
                       <Text style={styles.detailValMultiline}>
                         {address || 'Main Campus, Sector 4'}
@@ -237,7 +243,9 @@ export const SettingsScreen = ({ navigation }) => {
 
                     {/* Office Contact */}
                     <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.clay} style={styles.detailIcon} />
+                      <View style={styles.detailIconBox}>
+                        <Phone size={13} color={THEME.colors.clay} />
+                      </View>
                       <Text style={styles.detailLabel}>Office:</Text>
                       <Text style={styles.detailVal} numberOfLines={1}>
                         {primaryPhone || '+91 98765 43210'}
@@ -246,7 +254,9 @@ export const SettingsScreen = ({ navigation }) => {
 
                     {/* Helpline */}
                     <View style={styles.detailItem}>
-                      <Phone size={14} color={THEME.colors.fernGreen} style={styles.detailIcon} />
+                      <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                        <Phone size={13} color={THEME.colors.fernGreen} />
+                      </View>
                       <Text style={styles.detailLabel}>Helpline:</Text>
                       <Text style={styles.detailVal} numberOfLines={1}>
                         {emergencyPhone || '+91 91234 56789 / 112'}
@@ -499,13 +509,17 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 14,
-    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+    backgroundColor: THEME.colors.clay,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1.5,
-    borderColor: THEME.colors.sand,
+    borderColor: 'rgba(255, 255, 255, 0.7)',
     flexShrink: 0,
-    ...THEME.shadows.card,
+    shadowColor: '#403630',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    elevation: 4,
   },
 
   /* Card Content Column */
@@ -561,12 +575,12 @@ const styles = StyleSheet.create({
   detailItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   detailItemTop: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 6,
+    gap: 8,
   },
   detailIcon: {
     flexShrink: 0,
@@ -574,6 +588,18 @@ const styles = StyleSheet.create({
   detailIconTop: {
     flexShrink: 0,
     marginTop: 2,
+  },
+  detailIconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 7,
+    backgroundColor: 'rgba(196, 154, 108, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  detailIconBoxGreen: {
+    backgroundColor: 'rgba(107, 142, 90, 0.16)',
   },
   detailLabel: {
     fontSize: 12,
