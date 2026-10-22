@@ -146,7 +146,8 @@ export const WorkersScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN' || user?.role === 'RESIDENTIAL_ADMIN';
-  const isResident = !isAdmin; // OWNER, TENANT, FAMILY_MEMBER
+  const isSecurity = user?.role === 'SECURITY';
+  const isResident = !isAdmin && !isSecurity; // OWNER, TENANT, FAMILY_MEMBER
 
   // Data states
   const [workers, setWorkers] = useState([]);
@@ -896,17 +897,19 @@ export const WorkersScreen = ({ navigation }) => {
           </View>
 
           {/* Action button on right side of search */}
-          <TouchableOpacity
-            id="btn-register-helper"
-            style={styles.btnRegisterHelper}
-            activeOpacity={0.85}
-            onPress={() => handleOpenAddModal()}
-          >
-            <Plus size={15} color="#FFFFFF" />
-            <Text style={styles.btnRegisterHelperText} numberOfLines={1}>
-              {isAdmin ? 'Register Society Helper' : 'Add Worker to Home'}
-            </Text>
-          </TouchableOpacity>
+          {!isSecurity && (
+            <TouchableOpacity
+              id="btn-register-helper"
+              style={styles.btnRegisterHelper}
+              activeOpacity={0.85}
+              onPress={() => handleOpenAddModal()}
+            >
+              <Plus size={15} color="#FFFFFF" />
+              <Text style={styles.btnRegisterHelperText} numberOfLines={1}>
+                {isAdmin ? 'Register Society Helper' : 'Add Worker to Home'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Dropdown for Type Trigger */}

@@ -50,9 +50,23 @@ export const storage = {
 
   async clearSession() {
     try {
-      await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+      if (typeof AsyncStorage.removeMany === 'function') {
+        await AsyncStorage.removeMany([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+      } else if (typeof AsyncStorage.multiRemove === 'function') {
+        await AsyncStorage.multiRemove([STORAGE_KEYS.TOKEN, STORAGE_KEYS.USER]);
+      } else {
+        await Promise.all([
+          AsyncStorage.removeItem(STORAGE_KEYS.TOKEN),
+          AsyncStorage.removeItem(STORAGE_KEYS.USER),
+        ]);
+      }
     } catch (e) {
-      console.error('Failed to clear session:', e);
+      try {
+        await AsyncStorage.removeItem(STORAGE_KEYS.TOKEN);
+        await AsyncStorage.removeItem(STORAGE_KEYS.USER);
+      } catch (err) {
+        console.error('Failed to clear session:', err);
+      }
     }
   },
 

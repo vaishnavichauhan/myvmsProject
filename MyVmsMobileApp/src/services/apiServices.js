@@ -240,5 +240,21 @@ export const securityApi = {
   resetSecurityStaffPassword: (id, newPassword) =>
     apiClient.post(`/security/${id}/reset-password`, { newPassword }),
   deleteSecurityStaff: (id) => apiClient.delete(`/security/${id}`),
+
+  // Security Gate Operations
+  getGateDashboard: (societyId) => {
+    const qs = societyId && societyId !== 'ALL' ? `?societyId=${societyId}` : '';
+    return apiClient.get(`/security/gate/dashboard${qs}`);
+  },
+  searchHomes: (query, societyId) => {
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    if (societyId && societyId !== 'ALL') params.append('societyId', societyId);
+    const qs = params.toString();
+    return apiClient.get(`/security/gate/search-homes${qs ? `?${qs}` : ''}`);
+  },
+  recordGateEntry: (data) => apiClient.post('/security/gate/entry', data),
+  recordGateExit: (id) => apiClient.patch(`/security/gate/exit/${id}`),
+  contactResident: (data) => apiClient.post('/security/gate/contact-resident', data),
 };
 

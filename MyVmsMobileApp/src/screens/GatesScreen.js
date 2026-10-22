@@ -642,8 +642,8 @@ export const GatesScreen = ({ navigation }) => {
   return (
     <View style={styles.container}>
       <HeaderBar
-        title={isAdmin ? 'Society Gates & Security' : 'Society Gates & Assigned Security'}
-        showBack
+        title={isSecurity ? 'Gate Activity' : (isAdmin ? 'Society Gates & Security' : 'Society Gates & Assigned Security')}
+        showBack={!isSecurity && navigation?.canGoBack ? navigation.canGoBack() : false}
       />
 
       {/* Pinned / Non-scrolling Top Section (Action buttons, banner, search, and dropdowns) */}
@@ -672,86 +672,11 @@ export const GatesScreen = ({ navigation }) => {
             </>
           )}
 
-          {isSecurity && (
-            <TouchableOpacity
-              style={styles.openConsoleHeaderBtn}
-              onPress={() => navigation.navigate('SecurityGate')}
-              activeOpacity={0.8}
-            >
-              <CustomIcon name="shield" size={14} color="#FFFFFF" />
-              <Text style={styles.openConsoleHeaderBtnText}>Gate Console</Text>
-            </TouchableOpacity>
-          )}
+
         </View>
 
         {/* Security Guard Duty Assignment Banner (If role is SECURITY) */}
-        {isSecurity && (
-          <View
-            style={[
-              styles.securityDutyBanner,
-              myAssignedGate ? styles.dutyBannerAssigned : styles.dutyBannerUnassigned,
-            ]}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View
-                style={[
-                  styles.dutyShieldIconBox,
-                  { backgroundColor: myAssignedGate ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)' },
-                ]}
-              >
-                <CustomIcon
-                  name="shieldCheck"
-                  size={24}
-                  color={myAssignedGate ? '#10b981' : '#f59e0b'}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.dutyBannerPreTitle,
-                    { color: myAssignedGate ? '#059669' : '#d97706' },
-                  ]}
-                >
-                  SECURITY GUARD DUTY ASSIGNMENT
-                </Text>
 
-                {myAssignedGate ? (
-                  <>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                      <Text style={styles.dutyGateTitle}>
-                        {myAssignedGate.name || myAssignedGate.gate_name}
-                      </Text>
-                      <View style={styles.dutyGateNumBadge}>
-                        <Text style={styles.dutyGateNumBadgeText}>
-                          Gate #{myAssignedGate.gate_number || myAssignedGate.id}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.dutyGateSubText}>
-                      📍 {myAssignedGate.location || 'Society Perimeter'} • 🕒 {myAssignedGate.shift || 'Morning'} Shift
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.dutyNoGateTitle}>
-                      No Specific Gate Assigned for Your Shift Today
-                    </Text>
-                    <Text style={styles.dutyNoGateSubText}>
-                      Please consult the Society Administrator or duty supervisor.
-                    </Text>
-                  </>
-                )}
-              </View>
-            </View>
-
-            <TouchableOpacity
-              style={styles.dutyOpenConsoleBtn}
-              onPress={() => navigation.navigate('SecurityGate')}
-            >
-              <Text style={styles.dutyOpenConsoleBtnText}>Open Security Gate Console ➔</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Toast Notifications */}
         {errorMsg && (

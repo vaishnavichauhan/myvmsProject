@@ -42,6 +42,7 @@ import {
 import { THEME } from '../constants/theme';
 import { securityApi, societyApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
+import { SecurityHomeScreen } from './SecurityHomeScreen';
 
 // Shift options matching frontend
 const SHIFT_OPTIONS = [
@@ -100,6 +101,11 @@ const defaultEditForm = {
 export const SecurityGateScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
+
+  if (user?.role === 'SECURITY') {
+    return <SecurityHomeScreen navigation={navigation} />;
+  }
+
   const isAdmin = !user?.role || user?.role === 'ADMIN' || user?.role === 'RESIDENTIAL_ADMIN';
 
   // Data states

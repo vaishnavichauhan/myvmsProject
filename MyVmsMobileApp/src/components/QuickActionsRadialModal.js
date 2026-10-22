@@ -38,6 +38,12 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
+  const isSecurity = user?.role === ROLES.SECURITY || user?.role === 'SECURITY';
+
+  if (isSecurity) {
+    return null;
+  }
+
   const isAdmin = user?.role === ROLES.ADMIN || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
 
   const animValue = useRef(new Animated.Value(0)).current;

@@ -236,9 +236,10 @@ class SecurityService {
     }
 
     let staff = null;
+    let assignedGate = null;
     if (user.role === 'SECURITY') {
       staff = await SecurityRepository.findByUserId(user.id);
-      const assignedGate = await GateRepository.findAssignedGateForSecurity(user.id);
+      assignedGate = await GateRepository.findAssignedGateForSecurity(user.id);
       if (!assignedGate) {
         throw ApiError.forbidden('You are not currently assigned to any gate checkpoint. Only security officers stationed at a gate with Entry Registration enabled can register entries.');
       }
@@ -257,7 +258,8 @@ class SecurityService {
 
     return SecurityRepository.recordVisitorGateEntry({
       society_id: targetSocietyId,
-      security_staff_id: staff?.id || 1,
+      security_staff_id: staff?.id || null,
+      gate_id: data.gate_id || assignedGate?.gate_id || null,
       name: data.name,
       phone: data.phone,
       home_id: data.home_id,

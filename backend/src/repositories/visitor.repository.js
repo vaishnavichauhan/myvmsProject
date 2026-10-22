@@ -142,6 +142,20 @@ class VisitorRepository {
         visitorId = newVis.insertId;
       }
 
+      // Resolve valid gate_id
+      let resolvedGateId = gate_id;
+      if (!resolvedGateId) {
+        const [activeGates] = await connection.query(
+          'SELECT id FROM gates WHERE society_id = ? AND status = "ACTIVE" ORDER BY id ASC LIMIT 1',
+          [society_id]
+        );
+        resolvedGateId = activeGates[0]?.id || null;
+      }
+      if (!resolvedGateId) {
+        const [anyGates] = await connection.query('SELECT id FROM gates LIMIT 1');
+        resolvedGateId = anyGates[0]?.id || null;
+      }
+
       // 2. Generate OTP
       const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
 
@@ -157,7 +171,7 @@ class VisitorRepository {
         [
           visitorId,
           home_id,
-          gate_id || null,
+          gate_id || resolvedGateId || null,
           security_staff_id || null,
           resident_user_id || null,
           approved_by_user_id || null,
@@ -178,25 +192,27 @@ class VisitorRepository {
         gateStatus = 'APPROVED';
       }
 
-      await connection.query(
-        `INSERT INTO gate_entries (
-          society_id, gate_id, security_staff_id, entry_person_type,
-          person_name, person_phone, target_home_id, vehicle_number,
-          entry_time, direction, reference_id, status
-        ) VALUES (?, ?, ?, 'VISITOR', ?, ?, ?, ?, ?, 'IN', ?, ?)`,
-        [
-          society_id,
-          gate_id || 1,
-          security_staff_id || null,
-          name.trim(),
-          phone.trim(),
-          home_id,
-          vehicle_number ? vehicle_number.trim().toUpperCase() : null,
-          checkInTime || new Date(),
-          entryId,
-          gateStatus,
-        ]
-      );
+      if (resolvedGateId) {
+        await connection.query(
+          `INSERT INTO gate_entries (
+            society_id, gate_id, security_staff_id, entry_person_type,
+            person_name, person_phone, target_home_id, vehicle_number,
+            entry_time, direction, reference_id, status
+          ) VALUES (?, ?, ?, 'VISITOR', ?, ?, ?, ?, ?, 'IN', ?, ?)`,
+          [
+            society_id,
+            resolvedGateId,
+            security_staff_id || null,
+            name.trim(),
+            phone.trim(),
+            home_id,
+            vehicle_number ? vehicle_number.trim().toUpperCase() : null,
+            checkInTime || new Date(),
+            entryId,
+            gateStatus,
+          ]
+        );
+      }
 
       await connection.commit();
       return this.findById(entryId);

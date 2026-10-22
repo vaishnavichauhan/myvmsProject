@@ -129,7 +129,7 @@ class VisitorService {
       visitor_type,
       vehicle_number: vehicle_number ? vehicle_number.trim().toUpperCase() : null,
       photo_url: photo_url || null,
-      gate_id: gate_id || null,
+      gate_id: gateId || null,
       security_staff_id: staffId,
       resident_user_id: resident_user_id || permCheck.selected_resident?.user_id || null,
       approved_by_user_id: approvedBy,

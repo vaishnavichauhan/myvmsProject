@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../constants/theme';
 import { CustomIcon } from './CustomIcon';
+import { useAuthStore } from '../store/authStore';
+import { ROLES } from '../constants/roles';
 
 /**
  * Custom Curved Bottom Tab Bar
@@ -11,14 +13,27 @@ import { CustomIcon } from './CustomIcon';
  * - Floating elevated center action button (+)
  * - Clean icon + label alignment with active color accent
  */
-export const CustomCurvedTabBar = ({ state, descriptors, navigation, onCenterActionPress }) => {
+export const CustomCurvedTabBar = ({
+  state,
+  descriptors,
+  navigation,
+  onCenterActionPress,
+  disabledCenterAction,
+}) => {
   const insets = useSafeAreaInsets();
+  const { user } = useAuthStore();
+
+  const isSecurity =
+    user?.role === ROLES.SECURITY || user?.role === 'SECURITY';
+  const isCenterDisabled = Boolean(disabledCenterAction || isSecurity);
 
   const tabIcons = {
     HomeTab: { icon: 'home', label: 'Home' },
     GateEntryTab: { icon: 'doorOpen', label: 'Gate Entry' },
     VisitorsTab: { icon: 'doorOpen', label: 'Gate Entry' },
     AnnouncementsTab: { icon: 'megaphone', label: 'Announcement' },
+    GateActivityTab: { icon: 'activity', label: 'Gate Activity' },
+    GatesTab: { icon: 'activity', label: 'Gate Activity' },
     AccountTab: { icon: 'person', label: 'Account' },
   };
 
@@ -34,11 +49,26 @@ export const CustomCurvedTabBar = ({ state, descriptors, navigation, onCenterAct
         {/* Center Floating Plus Button */}
         <View style={styles.centerButtonContainer}>
           <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={onCenterActionPress}
-            style={styles.floatingCenterButton}
+            activeOpacity={isCenterDisabled ? 1 : 0.85}
+            onPress={isCenterDisabled ? undefined : onCenterActionPress}
+            disabled={isCenterDisabled}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isCenterDisabled }}
+            accessibilityLabel={
+              isCenterDisabled
+                ? 'Quick actions disabled for security role'
+                : 'Quick Actions'
+            }
+            style={[
+              styles.floatingCenterButton,
+              isCenterDisabled && styles.floatingCenterButtonDisabled,
+            ]}
           >
-            <CustomIcon name="plus" size={24} color={THEME.colors.white} />
+            <CustomIcon
+              name="plus"
+              size={24}
+              color={isCenterDisabled ? THEME.colors.textDim : THEME.colors.white}
+            />
           </TouchableOpacity>
         </View>
 
@@ -172,5 +202,12 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: THEME.colors.background,
     ...THEME.shadows.float,
+  },
+  floatingCenterButtonDisabled: {
+    backgroundColor: '#D6C2A1',
+    borderColor: '#EFE6D8',
+    opacity: 0.5,
+    elevation: 0,
+    shadowOpacity: 0,
   },
 });

@@ -459,6 +459,7 @@ export default function VisitorsPage() {
         purpose: `Vehicle Gate Movement (${vehicleForm.vehicle_type})`,
         vehicle_number: vehicleForm.vehicle_number.trim().toUpperCase(),
         entry_type: 'VEHICLE',
+        gate_id: assignedGateInfo?.id || null,
       });
       showNotice('success', `Vehicle ${vehicleForm.vehicle_number.toUpperCase()} barrier opened and logged.`);
       setActiveModal(null);

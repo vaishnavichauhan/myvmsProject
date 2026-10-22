@@ -707,11 +707,26 @@ class SecurityRepository {
     try {
       await connection.beginTransaction();
 
+      // Resolve valid gate_id
+      let resolvedGateId = data.gate_id || null;
+      if (!resolvedGateId) {
+        const [activeGates] = await connection.query(
+          'SELECT id FROM gates WHERE society_id = ? AND status = "ACTIVE" ORDER BY id ASC LIMIT 1',
+          [data.society_id]
+        );
+        resolvedGateId = activeGates[0]?.id || null;
+      }
+      if (!resolvedGateId) {
+        const [anyGates] = await connection.query('SELECT id FROM gates LIMIT 1');
+        resolvedGateId = anyGates[0]?.id || null;
+      }
+
       // 1. Find or create visitor in directory
       let visitorId;
+      const phoneToUse = (data.phone && data.phone.trim() !== 'N/A' && data.phone.trim() !== '') ? data.phone.trim() : '9999999999';
       const [existingVis] = await connection.query(
         'SELECT id FROM visitors WHERE society_id = ? AND phone = ? LIMIT 1',
-        [data.society_id, data.phone.trim()]
+        [data.society_id, phoneToUse]
       );
 
       if (existingVis.length > 0) {
@@ -720,7 +735,7 @@ class SecurityRepository {
         const [newVis] = await connection.query(
           `INSERT INTO visitors (society_id, full_name, phone, visitor_type, vehicle_number)
            VALUES (?, ?, ?, ?, ?)`,
-          [data.society_id, data.name.trim(), data.phone.trim(), data.visitor_type || 'GUEST', data.vehicle_number || null]
+          [data.society_id, data.name.trim(), phoneToUse, data.visitor_type || 'GUEST', data.vehicle_number || null]
         );
         visitorId = newVis.insertId;
       }
@@ -734,14 +749,41 @@ class SecurityRepository {
         ) VALUES (?, ?, ?, ?, ?, ?, 'APPROVED', ?, CURRENT_TIMESTAMP, 'INSIDE')`,
         [
           visitorId,
-          data.home_id,
-          data.security_staff_id || 1,
-          data.gate_id || 1,
+          data.home_id || null,
+          data.security_staff_id || null,
+          resolvedGateId,
           data.entry_type === 'PRE_APPROVED' ? 'PRE_APPROVED' : 'GATE_REQUESTED',
           data.purpose || 'Personal Visit',
           otpCode,
         ]
       );
+
+      // 3. Record in gate_entries table for activity logs if resolvedGateId is valid
+      if (resolvedGateId) {
+        let personType = 'VISITOR';
+        if (data.entry_type === 'COURIER') personType = 'COURIER';
+        else if (data.entry_type === 'DELIVERY') personType = 'DELIVERY';
+        else if (data.entry_type === 'WORKER') personType = 'WORKER';
+
+        await connection.query(
+          `INSERT INTO gate_entries (
+            society_id, gate_id, security_staff_id, entry_person_type,
+            person_name, person_phone, target_home_id, vehicle_number,
+            entry_time, direction, reference_id, status
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 'IN', ?, 'APPROVED')`,
+          [
+            data.society_id,
+            resolvedGateId,
+            data.security_staff_id || null,
+            personType,
+            data.name.trim(),
+            phoneToUse,
+            data.home_id || null,
+            data.vehicle_number ? data.vehicle_number.trim().toUpperCase() : null,
+            entryResult.insertId,
+          ]
+        );
+      }
 
       await connection.commit();
       return {

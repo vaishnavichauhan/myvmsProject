@@ -27,6 +27,7 @@ import { CommitteeScreen } from '../screens/CommitteeScreen';
 import { CourierDeliveryScreen } from '../screens/CourierDeliveryScreen';
 import { AdminDashboardScreen } from '../screens/AdminDashboardScreen';
 import { SecurityGateScreen } from '../screens/SecurityGateScreen';
+import { SecurityHomeScreen } from '../screens/SecurityHomeScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { ResidentsScreen } from '../screens/ResidentsScreen';
@@ -40,14 +41,15 @@ const Tab = createBottomTabNavigator();
 function MainTabNavigator({ navigation }) {
   const { user } = useAuthStore();
   const [quickActionVisible, setQuickActionVisible] = useState(false);
+  const isSecurity = user?.role === ROLES.SECURITY || user?.role === 'SECURITY';
 
   // Determine initial home component based on user role
   const getHomeComponent = () => {
     if (user?.role === ROLES.ADMIN) {
       return AdminDashboardScreen;
     }
-    if (user?.role === ROLES.SECURITY) {
-      return SecurityGateScreen;
+    if (isSecurity) {
+      return SecurityHomeScreen;
     }
     return MyHomeScreen;
   };
@@ -58,7 +60,12 @@ function MainTabNavigator({ navigation }) {
         tabBar={(props) => (
           <CustomCurvedTabBar
             {...props}
-            onCenterActionPress={() => setQuickActionVisible(true)}
+            disabledCenterAction={isSecurity}
+            onCenterActionPress={() => {
+              if (!isSecurity) {
+                setQuickActionVisible(true);
+              }
+            }}
           />
         )}
         screenOptions={{
@@ -67,16 +74,22 @@ function MainTabNavigator({ navigation }) {
       >
         <Tab.Screen name="HomeTab" component={getHomeComponent()} />
         <Tab.Screen name="GateEntryTab" component={VisitorsScreen} />
-        <Tab.Screen name="AnnouncementsTab" component={AnnouncementsScreen} />
+        {isSecurity ? (
+          <Tab.Screen name="GateActivityTab" component={GatesScreen} />
+        ) : (
+          <Tab.Screen name="AnnouncementsTab" component={AnnouncementsScreen} />
+        )}
         <Tab.Screen name="AccountTab" component={ProfileScreen} />
       </Tab.Navigator>
 
       {/* Center (+) Floating Action Radial Arc Menu (Pinterest Animated Navigation style) */}
-      <QuickActionsRadialModal
-        visible={quickActionVisible}
-        onClose={() => setQuickActionVisible(false)}
-        navigation={navigation}
-      />
+      {!isSecurity && (
+        <QuickActionsRadialModal
+          visible={quickActionVisible}
+          onClose={() => setQuickActionVisible(false)}
+          navigation={navigation}
+        />
+      )}
     </>
   );
 }
