@@ -1029,21 +1029,9 @@ export default function WorkersPage() {
                     {w.assignment_id && (
                       <>
                         <button
-                          id={`btn-edit-worker-${w.assignment_id || w.worker_id || w.id}`}
-                          onClick={() => {
-                            setSelectedAssignment(w);
-                            setEditForm({
-                              expected_time_in: w.expected_time_in ? String(w.expected_time_in).slice(0, 5) : '08:00',
-                              expected_time_out: w.expected_time_out ? String(w.expected_time_out).slice(0, 5) : '19:00',
-                              status: w.assignment_status || 'ACTIVE',
-                              name: w.full_name,
-                              phone: w.phone,
-                              address: w.address || '',
-                              worker_type: w.worker_type,
-                            });
-                            setShowEditModal(true);
-                          }}
-                          className="btn btn-outline"
+                          id={`btn-delete-worker-${w.assignment_id || w.worker_id || w.id}`}
+                          onClick={() => handleRemoveWorkerFromHome(w)}
+                          className="btn btn-danger"
                           style={{
                             flex: 1,
                             padding: '8px 12px',
@@ -1054,26 +1042,10 @@ export default function WorkersPage() {
                             justifyContent: 'center',
                             gap: '6px',
                           }}
-                          title="Edit worker details, timings, and status"
-                        >
-                          <Edit2 size={13} />
-                          <span>Edit</span>
-                        </button>
-
-                        <button
-                          id={`btn-delete-worker-${w.assignment_id || w.worker_id || w.id}`}
-                          onClick={() => handleRemoveWorkerFromHome(w)}
-                          className="btn btn-danger"
-                          style={{
-                            padding: '8px 12px',
-                            fontSize: '0.8rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
                           title="Remove worker from this home"
                         >
                           <Trash2 size={14} />
+                          <span>{isAdmin ? 'Delete' : 'Remove'}</span>
                         </button>
                       </>
                     )}

@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useMemo } from 'react';
 import {
   View,
+  Text,
   Modal,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Animated,
   Dimensions,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../constants/theme';
@@ -113,35 +114,28 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     },
   ];
 
-  // Resident / Non-Admin Quick Actions
+  // Resident / Owner / Family Member Quick Actions (worker, committee, security/gate)
   const residentActions = [
-    {
-      id: 'visitors',
-      title: 'Visitor Pass',
-      icon: UserCheck,
-      screen: 'Visitors',
-      color: '#0284C7',
-    },
-    {
-      id: 'courier',
-      title: 'Deliveries',
-      icon: Package,
-      screen: 'CourierDelivery',
-      color: '#10B981',
-    },
-    {
-      id: 'family',
-      title: 'Family',
-      icon: Users,
-      screen: 'FamilyMembers',
-      color: '#C49A6C',
-    },
     {
       id: 'workers',
       title: 'Workers',
       icon: Briefcase,
       screen: 'Workers',
-      color: '#D97706',
+      color: '#D97706', // Amber
+    },
+    {
+      id: 'committee',
+      title: 'Committee',
+      icon: Award,
+      screen: 'Committee',
+      color: '#F59E0B', // Gold
+    },
+    {
+      id: 'security_gate',
+      title: 'Security / Gate',
+      icon: DoorOpen,
+      screen: 'Gates',
+      color: '#0284C7', // Sky Blue
     },
   ];
 
@@ -157,6 +151,23 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     if (count === 1) {
       return [{ ...actions[0], targetX: 0, targetY: -RADIUS }];
     }
+    if (count === 3) {
+      // Elegant elevated upper dome for 3 items: Left (145°), Center (90°), Right (35°)
+      const angles = [145, 90, 35];
+      return actions.map((item, index) => {
+        const angleDeg = angles[index];
+        const angleRad = (angleDeg * Math.PI) / 180;
+        const targetX = RADIUS * Math.cos(angleRad);
+        const targetY = -RADIUS * Math.sin(angleRad);
+        return {
+          ...item,
+          angleDeg,
+          targetX,
+          targetY,
+        };
+      });
+    }
+
     const startAngle = 165;
     const endAngle = 15;
     const step = (startAngle - endAngle) / (count - 1);
@@ -185,6 +196,9 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     outputRange: ['0deg', '90deg'],
   });
 
+  const isSmallSet = actions.length <= 4;
+  const itemWrapperWidth = isSmallSet ? 104 : 54;
+
   if (!visible) return null;
 
   const centerBottom = Math.max(insets.bottom, 10) + 25;
@@ -198,9 +212,18 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     >
       <View style={styles.modalRoot}>
         {/* Semi-transparent dark blur backdrop */}
-        <TouchableWithoutFeedback onPress={() => handleDismiss()}>
-          <Animated.View style={[styles.backdrop, { opacity: backdropOpacity }]} />
-        </TouchableWithoutFeedback>
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={() => handleDismiss()}
+        >
+          <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              styles.backdrop,
+              { opacity: backdropOpacity },
+            ]}
+          />
+        </Pressable>
 
         {/* Center Anchor Point - Aligned with the bottom tab bar plus button */}
         <View
@@ -221,7 +244,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
 
             const scale = animValue.interpolate({
               inputRange: [0, 0.7, 1],
-              outputRange: [0.1, 1.1, 1],
+              outputRange: [0.1, 1.08, 1],
             });
 
             const opacity = animValue.interpolate({
@@ -235,6 +258,8 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
                 style={[
                   styles.radialItemWrapper,
                   {
+                    width: itemWrapperWidth,
+                    left: (SCREEN_WIDTH - itemWrapperWidth) / 2,
                     transform: [{ translateX }, { translateY }, { scale }],
                     opacity,
                   },
@@ -246,17 +271,29 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
                   accessibilityLabel={item.title}
                   onPress={() => handleDismiss(item.screen)}
                   activeOpacity={0.8}
-                  style={[
-                    styles.circularButton,
-                    {
-                      borderColor: item.color,
-                      shadowColor: item.color,
-                    },
-                  ]}
+                  style={styles.itemTouchable}
                 >
-                  <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
-                    <item.icon size={24} color={item.color} strokeWidth={2.4} />
+                  <View
+                    style={[
+                      styles.circularButton,
+                      {
+                        borderColor: item.color,
+                        shadowColor: item.color,
+                      },
+                    ]}
+                  >
+                    <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
+                      <item.icon size={24} color={item.color} strokeWidth={2.4} />
+                    </View>
                   </View>
+
+                  {isSmallSet && (
+                    <View style={styles.labelBadge}>
+                      <Text style={styles.labelText} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </Animated.View>
             );
@@ -288,8 +325,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(22, 17, 14, 0.70)',
+    backgroundColor: 'rgba(22, 17, 14, 0.65)',
   },
   centerAnchor: {
     position: 'absolute',
@@ -301,32 +337,54 @@ const styles = StyleSheet.create({
   },
   radialItemWrapper: {
     position: 'absolute',
-    width: 52,
-    height: 52,
-    top: 1,
-    left: (SCREEN_WIDTH - 52) / 2,
+    height: 84,
+    top: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  itemTouchable: {
     alignItems: 'center',
     justifyContent: 'center',
   },
   circularButton: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     backgroundColor: THEME.colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    borderWidth: 2.2,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.32,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 9,
   },
   iconInnerCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  labelBadge: {
+    marginTop: 5,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(215, 203, 191, 0.85)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
+    elevation: 4,
+  },
+  labelText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+    textAlign: 'center',
   },
   closeBtnWrapper: {
     width: 54,

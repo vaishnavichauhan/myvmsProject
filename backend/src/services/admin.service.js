@@ -88,6 +88,12 @@ class AdminService {
       ${societyId ? 'AND ge.society_id = ?' : ''}
     `, societyId ? [societyId] : []);
 
+    const [totalAnnouncementsRow] = await pool.query(`
+      SELECT COUNT(*) AS total 
+      FROM announcements
+      ${societyId ? 'WHERE society_id = ?' : ''}
+    `, societyId ? [societyId] : []);
+
     // Society general info
     const [societyRow] = await pool.query(`
       SELECT id, name, code, society_type, address, contact_number, status
@@ -111,6 +117,7 @@ class AdminService {
       securityStaff: Number(securityRow[0]?.total || 0),
       workers: Number(workersRow[0]?.total || 0),
       committeeMembers: Number(committeeRow[0]?.total || 0),
+      announcements: Number(totalAnnouncementsRow[0]?.total || 0),
       todayVisitors: Number(todayVisitorsRow[0]?.total || 0),
       todayDeliveries: Number(todayDeliveriesRow[0]?.total || 0),
       todayGateEntries: Number(todayGateEntriesRow[0]?.total || 0),

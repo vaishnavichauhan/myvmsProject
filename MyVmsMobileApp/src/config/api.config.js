@@ -6,8 +6,9 @@ import { Platform } from 'react-native';
  * For physical devices, set LAN_IP to your development machine's local IP address (e.g. '192.168.1.5').
  */
 const BACKEND_PORT = 5050;
-const LAN_IP = null; // Set to your computer IP (e.g. '192.168.1.15') for physical devices
+const LAN_IP = '192.168.1.14'; // Set to your computer IP (e.g. '192.168.1.15') for physical devices
 
+const MAC_IP = '192.168.1.10';
 const getBaseUrl = () => {
   if (LAN_IP) {
     return `http://${LAN_IP}:${BACKEND_PORT}/api/v1`;

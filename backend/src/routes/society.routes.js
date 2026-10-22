@@ -11,9 +11,9 @@ const router = Router();
 // Society Routes
 // ==========================================
 
-// Read access for Society Directory (Admin & Security)
-router.get('/', authMiddleware, roleMiddleware(ROLES.ADMIN, ROLES.SECURITY), SocietyController.getAll);
-router.get('/:id', authMiddleware, roleMiddleware(ROLES.ADMIN, ROLES.SECURITY), SocietyController.getById);
+// Read access for Society Directory (All authenticated users: Admin, Security, Resident, Family Member)
+router.get('/', authMiddleware, SocietyController.getAll);
+router.get('/:id', authMiddleware, SocietyController.getById);
 
 // Admin-Only mutation access (Only ADMIN can create/edit/delete society)
 router.post(

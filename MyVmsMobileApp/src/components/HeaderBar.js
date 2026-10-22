@@ -19,15 +19,26 @@ export const HeaderBar = ({
       <View style={styles.leftContainer}>
         {showBack && (
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => {
+              if (navigation.canGoBack()) {
+                navigation.goBack();
+              } else {
+                navigation.navigate('MainTabs');
+              }
+            }}
             style={styles.backButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
             <CustomIcon name="chevronLeft" size={26} color={THEME.colors.darkBrown} />
           </TouchableOpacity>
         )}
         <View style={styles.titleWrapper}>
-          <Text style={styles.title} numberOfLines={1}>
+          <Text
+            style={styles.title}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.78}
+          >
             {title}
           </Text>
           {subtitle ? (
@@ -82,7 +93,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   title: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
     color: THEME.colors.darkBrown,
     letterSpacing: -0.3,

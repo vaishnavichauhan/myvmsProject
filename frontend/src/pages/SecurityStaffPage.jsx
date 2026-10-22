@@ -492,9 +492,9 @@ export default function SecurityStaffPage() {
               outline: 'none',
             }}
           >
-            <option value="ALL">All Statuses</option>
-            <option value="ACTIVE">Active Only</option>
-            <option value="INACTIVE">Inactive Only</option>
+            <option value="ALL">All Status</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
           </select>
         </div>
       </div>

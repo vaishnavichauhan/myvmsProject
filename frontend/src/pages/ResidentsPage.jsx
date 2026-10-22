@@ -1040,6 +1040,7 @@ export default function ResidentsPage() {
                       <option value="VILLA">VILLA</option>
                       <option value="PENTHOUSE">PENTHOUSE</option>
                       <option value="STUDIO">STUDIO</option>
+                      <option value="OTHER">OTHER</option>
                     </select>
                   </div>
                 </div>

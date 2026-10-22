@@ -308,7 +308,7 @@ class FamilyMemberRepository {
     // 1. Home Info
     const [homeRows] = await pool.query(
       `SELECT h.id, h.society_id, h.home_number, h.building_or_wing, h.floor, h.home_type, h.occupancy_status,
-              s.name AS society_name, s.address AS society_address, s.contact_number AS society_contact,
+              s.name AS society_name, s.code AS society_code, s.address AS society_address, s.contact_number AS society_contact,
               s.emergency_number AS society_emergency
        FROM homes h
        JOIN societies s ON h.society_id = s.id
@@ -462,12 +462,12 @@ class FamilyMemberRepository {
         security_phone: firstGuard?.security_phone || null,
         assigned_security: firstGuard
           ? {
-              name: gateGuards.map((x) => x.security_name).join(', '),
-              shift: firstGuard.shift || 'Morning',
-              phone: firstGuard.security_phone,
-              badge_number: firstGuard.badge_number || null,
-              status: firstGuard.assignment_status || 'ON_DUTY',
-            }
+            name: gateGuards.map((x) => x.security_name).join(', '),
+            shift: firstGuard.shift || 'Morning',
+            phone: firstGuard.security_phone,
+            badge_number: firstGuard.badge_number || null,
+            status: firstGuard.assignment_status || 'ON_DUTY',
+          }
           : null,
       };
     });
@@ -511,6 +511,30 @@ class FamilyMemberRepository {
     );
     const todayVisitorsCount = todayCountRows[0]?.count || 0;
 
+    // 12. Security staff count for the society
+    const [securityStaffRows] = await pool.query(
+      `SELECT COUNT(*) AS count FROM security_staff WHERE society_id = ? AND status != 'INACTIVE'`,
+      [societyId]
+    );
+    const uniqueGuardIds = new Set(assignmentRows.map((a) => a.security_staff_id));
+    const securityStaffCount = Number(securityStaffRows[0]?.count) || uniqueGuardIds.size || 0;
+
+    // 13. Gate Entry statistics (Total, Inside, Outside) for this home
+    const [gateStatsRows] = await pool.query(
+      `SELECT 
+         COUNT(*) AS total_count,
+         COALESCE(SUM(CASE WHEN (status IN ('INSIDE', 'ENTERED') AND check_out_time IS NULL) THEN 1 ELSE 0 END), 0) AS inside_count,
+         COALESCE(SUM(CASE WHEN (status IN ('EXITED', 'CHECKED_OUT') OR check_out_time IS NOT NULL) THEN 1 ELSE 0 END), 0) AS outside_count
+       FROM visitor_entries
+       WHERE home_id = ?`,
+      [homeId]
+    );
+    const gateEntryStats = {
+      total: Number(gateStatsRows[0]?.total_count) || 0,
+      inside: Number(gateStatsRows[0]?.inside_count) || 0,
+      outside: Number(gateStatsRows[0]?.outside_count) || 0,
+    };
+
     return {
       home,
       primaryResident,
@@ -523,6 +547,8 @@ class FamilyMemberRepository {
       visitors,
       courierDeliveries,
       todayVisitorsCount,
+      securityStaffCount,
+      gateEntryStats,
     };
   }
 }

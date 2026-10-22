@@ -411,7 +411,7 @@ export default function SettingsPage() {
                   <MapPin size={14} color="var(--color-clay)" style={{ flexShrink: 0, marginTop: 2 }} />
                   <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 55 }}>Address:</span>
                   <span style={{ color: 'var(--text-main)' }}>
-                    {selectedSociety?.address || settings.address || 'Main Campus, Sector 4'}
+                    {selectedSociety?.address || settings.address || ''}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -87,16 +87,20 @@ export const workerApi = {
     const qs = new URLSearchParams(params).toString();
     return apiClient.get(`/workers${qs ? `?${qs}` : ''}`);
   },
-  searchWorkers: (workerType = null, search = null, homeId = null) => {
+  searchWorkers: (workerType = null, search = null, homeId = null, societyId = null) => {
     const params = {};
     if (workerType && workerType !== 'ALL') params.worker_type = workerType;
     if (search) params.search = search;
     if (homeId) params.homeId = homeId;
+    if (societyId && societyId !== 'ALL') params.societyId = societyId;
     const qs = new URLSearchParams(params).toString();
     return apiClient.get(`/workers/search${qs ? `?${qs}` : ''}`);
   },
   createWorker: (data) => apiClient.post('/workers', data),
+  createNewWorker: (data) => apiClient.post('/workers', data),
   addExistingWorker: (data) => apiClient.post('/workers/assign', data),
+  updateAssignment: (assignmentId, data) => apiClient.put(`/workers/assignments/${assignmentId}`, data),
+  removeWorker: (assignmentId) => apiClient.delete(`/workers/assignments/${assignmentId}`),
   deleteWorker: (id) => apiClient.delete(`/workers/${id}`),
 };
 
@@ -128,10 +132,23 @@ export const announcementApi = {
  * 8. Committee API
  */
 export const committeeApi = {
+  getCommittees: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/committee/committees${qs ? `?${qs}` : ''}`);
+  },
+  createCommittee: (data) => apiClient.post('/committee/committees', data),
+  updateCommittee: (id, data) => apiClient.put(`/committee/committees/${id}`, data),
+  deleteCommittee: (id) => apiClient.delete(`/committee/committees/${id}`),
+  getHomeOccupants: (homeId) => apiClient.get(`/committee/home-occupants/${homeId}`),
   getCommitteeMembers: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return apiClient.get(`/committee${qs ? `?${qs}` : ''}`);
   },
+  getCommitteeMemberById: (id) => apiClient.get(`/committee/${id}`),
+  createCommitteeMember: (data) => apiClient.post('/committee', data),
+  updateCommitteeMember: (id, data) => apiClient.put(`/committee/${id}`, data),
+  deleteCommitteeMember: (id) => apiClient.delete(`/committee/${id}`),
+  checkMyPermissions: () => apiClient.get('/committee/my-permissions'),
 };
 
 /**
@@ -143,9 +160,12 @@ export const gateApi = {
     return apiClient.get(`/gates${qs ? `?${qs}` : ''}`);
   },
   getGateById: (id) => apiClient.get(`/gates/${id}`),
+  getMyAssignedGate: () => apiClient.get('/gates/assigned/me'),
   createGate: (data) => apiClient.post('/gates', data),
   updateGate: (id, data) => apiClient.put(`/gates/${id}`, data),
   deleteGate: (id) => apiClient.delete(`/gates/${id}`),
+  assignSecurityStaff: (data) => apiClient.post('/gates/assign', data),
+  unassignSecurityStaff: (assignmentId) => apiClient.delete(`/gates/assignments/${assignmentId}`),
 };
 
 /**
@@ -165,8 +185,60 @@ export const societyApi = {
   },
   getSocietyById: (id) => apiClient.get(`/societies/${id}`),
   updateSociety: (id, data) => apiClient.put(`/societies/${id}`, data),
+  deleteSociety: (id, permanent = false) => apiClient.delete(`/societies/${id}?permanent=${permanent}`),
   getAllHomes: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
     return apiClient.get(`/homes${qs ? `?${qs}` : ''}`);
   },
+  getHomesBySociety: (societyId, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/societies/${societyId}/homes${qs ? `?${qs}` : ''}`);
+  },
+  createHome: (societyId, data) => apiClient.post(`/societies/${societyId}/homes`, data),
+  batchGenerateHomes: (societyId, config) => apiClient.post(`/societies/${societyId}/homes/batch`, config),
+  deleteHome: (id) => apiClient.delete(`/homes/${id}`),
+  updateHome: (id, data) => apiClient.put(`/homes/${id}`, data),
 };
+
+/**
+ * 12. Resident Management API
+ */
+export const residentApi = {
+  getResidents: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/residents${qs ? `?${qs}` : ''}`);
+  },
+  getResidentById: (id) => apiClient.get(`/residents/${id}`),
+  createResident: (data) => apiClient.post('/residents', data),
+  updateResident: (id, data) => apiClient.put(`/residents/${id}`, data),
+  updateResidentStatus: (id, status) =>
+    apiClient.request(`/residents/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+  resetResidentPassword: (id, newPassword) =>
+    apiClient.post(`/residents/${id}/reset-password`, { newPassword }),
+  deleteResident: (id) => apiClient.delete(`/residents/${id}`),
+};
+
+/**
+ * 13. Security Staff & Watchman API
+ */
+export const securityApi = {
+  getSecurityStaff: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/security${qs ? `?${qs}` : ''}`);
+  },
+  getSecurityStaffById: (id) => apiClient.get(`/security/${id}`),
+  createSecurityStaff: (data) => apiClient.post('/security', data),
+  updateSecurityStaff: (id, data) => apiClient.put(`/security/${id}`, data),
+  updateSecurityStaffStatus: (id, status) =>
+    apiClient.request(`/security/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    }),
+  resetSecurityStaffPassword: (id, newPassword) =>
+    apiClient.post(`/security/${id}/reset-password`, { newPassword }),
+  deleteSecurityStaff: (id) => apiClient.delete(`/security/${id}`),
+};
+

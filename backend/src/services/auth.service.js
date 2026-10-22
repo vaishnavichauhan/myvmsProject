@@ -40,7 +40,10 @@ class AuthService {
     let societyDetails = null;
     const socId = homeDetails?.society_id || user.society_id;
     if (socId) {
-      const [socRows] = await pool.query('SELECT name, code FROM societies WHERE id = ?', [socId]);
+      const [socRows] = await pool.query(
+        'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email FROM societies WHERE id = ?',
+        [socId]
+      );
       if (socRows.length > 0) {
         societyDetails = socRows[0];
       }
@@ -50,7 +53,7 @@ class AuthService {
     const payload = {
       id: user.id,
       role: user.role,
-      societyId: user.society_id,
+      societyId: user.society_id || homeDetails?.society_id || societyDetails?.id || null,
       homeId: homeDetails?.home_id || null,
       email: user.email,
       phone: user.phone,
@@ -64,19 +67,26 @@ class AuthService {
     // Security: Never return password in API response
     const userSafe = {
       id: user.id,
-      societyId: user.society_id,
+      societyId: user.society_id || homeDetails?.society_id || societyDetails?.id || null,
       fullName: user.full_name,
       email: user.email,
       phone: user.phone,
       role: user.role,
       avatarUrl: user.avatar_url || null,
       flatNumber: homeDetails?.home_number || user.flat_number,
+      unitNumber: homeDetails?.home_number || user.flat_number,
       blockOrTower: homeDetails?.building_or_wing || user.block_or_tower,
-      floor: homeDetails?.floor || null,
+      wing: homeDetails?.building_or_wing || user.block_or_tower,
+      floor: homeDetails?.floor !== undefined ? homeDetails.floor : null,
       homeType: homeDetails?.home_type || null,
       homeId: homeDetails?.home_id || null,
+      occupancyStatus: homeDetails?.occupancy_status || null,
       societyName: societyDetails?.name || homeDetails?.society_name || null,
       societyCode: societyDetails?.code || null,
+      societyAddress: societyDetails?.address || societyDetails?.address_line1 || null,
+      societyContactNumber: societyDetails?.contact_number || societyDetails?.contact_phone || null,
+      societyEmergencyNumber: societyDetails?.emergency_number || null,
+      society: societyDetails || null,
       residentType: homeDetails?.resident_type || null,
       relationship: homeDetails?.relationship || null,
       status: user.status,
@@ -137,7 +147,10 @@ class AuthService {
     let societyDetails = null;
     const socId = homeDetails?.society_id || user.society_id;
     if (socId) {
-      const [socRows] = await pool.query('SELECT name, code FROM societies WHERE id = ?', [socId]);
+      const [socRows] = await pool.query(
+        'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email FROM societies WHERE id = ?',
+        [socId]
+      );
       if (socRows.length > 0) {
         societyDetails = socRows[0];
       }
@@ -145,19 +158,26 @@ class AuthService {
 
     return {
       id: user.id,
-      societyId: user.society_id || homeDetails?.society_id || null,
+      societyId: user.society_id || homeDetails?.society_id || societyDetails?.id || null,
       fullName: user.full_name,
       email: user.email,
       phone: user.phone,
       role: user.role,
       avatarUrl: user.avatar_url || null,
       flatNumber: homeDetails?.home_number || user.flat_number,
+      unitNumber: homeDetails?.home_number || user.flat_number,
       blockOrTower: homeDetails?.building_or_wing || user.block_or_tower,
-      floor: homeDetails?.floor || null,
+      wing: homeDetails?.building_or_wing || user.block_or_tower,
+      floor: homeDetails?.floor !== undefined ? homeDetails.floor : null,
       homeType: homeDetails?.home_type || null,
       homeId: homeDetails?.home_id || null,
+      occupancyStatus: homeDetails?.occupancy_status || null,
       societyName: societyDetails?.name || homeDetails?.society_name || null,
       societyCode: societyDetails?.code || null,
+      societyAddress: societyDetails?.address || societyDetails?.address_line1 || null,
+      societyContactNumber: societyDetails?.contact_number || societyDetails?.contact_phone || null,
+      societyEmergencyNumber: societyDetails?.emergency_number || null,
+      society: societyDetails || null,
       residentType: homeDetails?.resident_type || null,
       relationship: homeDetails?.relationship || null,
       status: user.status,

@@ -30,6 +30,7 @@ import {
   Award,
   ShieldCheck,
   Briefcase,
+  Megaphone,
 } from 'lucide-react-native';
 import { adminApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
@@ -69,6 +70,7 @@ export const AdminDashboardScreen = ({ navigation }) => {
     securityStaff: 6,
     workers: 0,
     committeeMembers: 1,
+    announcements: 0,
     todayVisitors: 0,
     todayDeliveries: 0,
     todayGateEntries: 0,
@@ -119,7 +121,7 @@ export const AdminDashboardScreen = ({ navigation }) => {
       icon: Building2,
       iconColor: THEME.colors.clay,
       iconBg: 'rgba(196, 154, 108, 0.15)',
-      screen: 'Residents',
+      screen: 'Settings',
     },
     {
       id: 'occupied-homes',
@@ -165,17 +167,17 @@ export const AdminDashboardScreen = ({ navigation }) => {
       iconBg: 'rgba(135, 206, 235, 0.25)',
       screen: 'Residents',
     },
-    {
-      id: 'family-members',
-      title: 'Family Members',
-      value: stats.familyMembers ?? 2,
-      subtitle: 'Verified household dependents',
-      valueColor: '#403630',
-      icon: UserCheck,
-      iconColor: THEME.colors.clay,
-      iconBg: 'rgba(196, 154, 108, 0.15)',
-      screen: 'FamilyMembers',
-    },
+    // {
+    //   id: 'family-members',
+    //   title: 'Family Members',
+    //   value: stats.familyMembers ?? 2,
+    //   subtitle: 'Verified household dependents',
+    //   valueColor: '#403630',
+    //   icon: UserCheck,
+    //   iconColor: THEME.colors.clay,
+    //   iconBg: 'rgba(196, 154, 108, 0.15)',
+    //   screen: 'FamilyMembers',
+    // },
     {
       id: 'security-staff',
       title: 'Security Staff',
@@ -208,6 +210,17 @@ export const AdminDashboardScreen = ({ navigation }) => {
       iconColor: THEME.colors.clay,
       iconBg: 'rgba(196, 154, 108, 0.2)',
       screen: 'Committee',
+    },
+    {
+      id: 'announcements',
+      title: 'Announcements',
+      value: stats.announcements ?? (announcementCount || 0),
+      subtitle: 'Circulars, notices & events',
+      valueColor: '#f59e0b',
+      icon: Megaphone,
+      iconColor: '#f59e0b',
+      iconBg: 'rgba(245, 158, 11, 0.15)',
+      screen: 'Announcements',
     },
     {
       id: 'today-visitors',

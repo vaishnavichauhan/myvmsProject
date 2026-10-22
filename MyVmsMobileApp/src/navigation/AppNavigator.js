@@ -114,6 +114,7 @@ export default function AppNavigator() {
             <Stack.Screen name="CourierDelivery" component={CourierDeliveryScreen} />
             <Stack.Screen name="Residents" component={ResidentsScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
+            <Stack.Screen name="Society" component={SettingsScreen} />
             <Stack.Screen name="Reports" component={ReportsScreen} />
             <Stack.Screen name="Visitors" component={VisitorsScreen} />
             <Stack.Screen name="Announcements" component={AnnouncementsScreen} />

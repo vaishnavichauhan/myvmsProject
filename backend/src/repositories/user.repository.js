@@ -205,7 +205,7 @@ class UserRepository {
     if (role === 'OWNER' || role === 'TENANT') {
       const query = `
         SELECT r.id AS resident_id, r.home_id, r.resident_type,
-               h.home_number, h.building_or_wing, h.floor, h.home_type,
+               h.home_number, h.building_or_wing, h.floor, h.home_type, h.occupancy_status,
                s.id AS society_id, s.name AS society_name
         FROM residents r
         JOIN homes h ON r.home_id = h.id
@@ -218,7 +218,7 @@ class UserRepository {
     } else if (role === 'FAMILY_MEMBER') {
       const query = `
         SELECT fm.id AS family_member_id, fm.home_id, fm.relationship,
-               h.home_number, h.building_or_wing, h.floor, h.home_type,
+               h.home_number, h.building_or_wing, h.floor, h.home_type, h.occupancy_status,
                s.id AS society_id, s.name AS society_name,
                r.id AS primary_resident_id
         FROM family_members fm

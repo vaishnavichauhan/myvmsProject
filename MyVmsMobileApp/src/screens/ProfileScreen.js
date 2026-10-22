@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../constants/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAuthStore } from '../store/authStore';
-import { societyApi } from '../services/apiServices';
+import { societyApi, familyMemberApi, authApi } from '../services/apiServices';
 import {
   User,
   Building2,
@@ -31,6 +31,7 @@ import {
   Building,
   Home,
   KeyRound,
+  Layers,
 } from 'lucide-react-native';
 
 export const ProfileScreen = ({ navigation }) => {
@@ -38,7 +39,9 @@ export const ProfileScreen = ({ navigation }) => {
   const { user, logout, changePassword, isLoading } = useAuthStore();
 
   const [societyData, setSocietyData] = useState(null);
+  const [residentHomeData, setResidentHomeData] = useState(null);
   const [loadingSociety, setLoadingSociety] = useState(false);
+  const [loadingResident, setLoadingResident] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Password change state
@@ -52,7 +55,8 @@ export const ProfileScreen = ({ navigation }) => {
 
   useEffect(() => {
     fetchSocietyData();
-  }, [user]);
+    fetchResidentData();
+  }, [user?.id]);
 
   const fetchSocietyData = async () => {
     try {
@@ -62,11 +66,53 @@ export const ProfileScreen = ({ navigation }) => {
       if (list && list.length > 0) {
         const found = list.find((s) => s.id === user?.societyId) || list[0];
         setSocietyData(found);
+      } else if (user?.society) {
+        setSocietyData(user.society);
       }
     } catch (err) {
       console.log('Error fetching society data:', err);
+      if (user?.society) {
+        setSocietyData(user.society);
+      }
     } finally {
       setLoadingSociety(false);
+      setRefreshing(false);
+    }
+  };
+
+  const fetchResidentData = async () => {
+    try {
+      if (!isAdmin) {
+        setLoadingResident(true);
+        const [dashRes, profileRes] = await Promise.allSettled([
+          familyMemberApi.getMyHomeDashboard(),
+          authApi.getProfile(),
+        ]);
+        if (dashRes.status === 'fulfilled' && dashRes.value?.success && dashRes.value?.data) {
+          setResidentHomeData(dashRes.value.data);
+          const home = dashRes.value.data.home;
+          if (home) {
+            setSocietyData((prev) => prev || {
+              name: home.society_name,
+              code: home.society_code,
+              address: home.society_address,
+              contact_number: home.society_contact,
+              emergency_number: home.society_emergency,
+            });
+          }
+        }
+        if (profileRes.status === 'fulfilled' && profileRes.value?.success && profileRes.value?.data?.user) {
+          const u = profileRes.value.data.user;
+          useAuthStore.setState({ user: u });
+          if (u.society) {
+            setSocietyData(u.society);
+          }
+        }
+      }
+    } catch (err) {
+      console.log('Error fetching resident profile data:', err);
+    } finally {
+      setLoadingResident(false);
       setRefreshing(false);
     }
   };
@@ -74,6 +120,7 @@ export const ProfileScreen = ({ navigation }) => {
   const onRefresh = () => {
     setRefreshing(true);
     fetchSocietyData();
+    fetchResidentData();
   };
 
   const handlePasswordChange = async () => {
@@ -126,10 +173,133 @@ export const ProfileScreen = ({ navigation }) => {
     return name.slice(0, 2).toUpperCase();
   };
 
+  // Resident Home details resolution for Owner / Family Member
+  const home = residentHomeData?.home || {};
+  const primaryResident = residentHomeData?.primaryResident || {};
+
+  // Email ID
+  const emailDisplay =
+    user?.email ||
+    primaryResident?.email ||
+    `${(user?.fullName || user?.full_name || 'resident').replace(/\s+/g, '.').toLowerCase()}@myvms.society`;
+
+  // Phone
+  const phoneDisplay = user?.phone || primaryResident?.phone || 'Not linked';
+
+  // Unit No
+  const rawUnit = home?.home_number || user?.unitNumber || user?.flatNumber || '1';
+  const unitNoDisplay = rawUnit
+    ? String(rawUnit).startsWith('Home')
+      ? rawUnit
+      : `Home ${rawUnit}`
+    : 'Home 1';
+
+  // Wing
+  const wingDisplay = home?.building_or_wing || user?.wing || user?.blockOrTower || 'Wing A';
+
+  // Floor
+  const rawFloor =
+    home?.floor !== undefined && home?.floor !== null
+      ? home.floor
+      : user?.floor !== undefined && user?.floor !== null
+      ? user.floor
+      : 1;
+
+  const getOrdinal = (n) => {
+    const num = parseInt(n, 10);
+    if (isNaN(num)) return '';
+    const s = ['th', 'st', 'nd', 'rd'];
+    const v = num % 100;
+    return s[(v - 20) % 10] || s[v] || s[0];
+  };
+
+  const floorDisplay =
+    rawFloor === 0 || rawFloor === '0'
+      ? 'Ground Floor'
+      : `${rawFloor}${getOrdinal(rawFloor)} Floor`;
+
+  // Occupation Status
+  const rawOccupancy =
+    home?.occupancy_status ||
+    user?.occupancyStatus ||
+    (user?.role === 'TENANT' ? 'OCCUPIED_BY_TENANT' : 'OCCUPIED_BY_OWNER');
+
+  const formatOccupancy = (status) => {
+    if (!status) return 'Occupied by Owner';
+    return String(status)
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .split(' ')
+      .map((w) => (w === 'by' ? 'by' : w.charAt(0).toUpperCase() + w.slice(1)))
+      .join(' ');
+  };
+  const occupancyStatusDisplay = formatOccupancy(rawOccupancy);
+
+  // Resident role display
+  let residentTypeDisplay = 'Resident';
+  if (user?.role === 'FAMILY_MEMBER') {
+    residentTypeDisplay = user?.relationship ? `Family (${user.relationship})` : 'Family Member';
+  } else if (user?.role === 'OWNER') {
+    residentTypeDisplay = 'Owner';
+  } else if (user?.role === 'TENANT') {
+    residentTypeDisplay = 'Tenant';
+  }
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
+
+      {/* ========================================================== */}
+      {/* 1. TOP SOCIETY HERO COVER IMAGE BANNER                     */}
+      {/* ========================================================== */}
+      <View style={styles.heroCoverWrapper}>
+        <Image
+          source={require('../assets/images/community-hero.jpg')}
+          style={styles.heroCoverImage}
+          resizeMode="cover"
+        />
+        {/* Subtle gradient dark overlay */}
+        <View style={styles.heroGradientOverlay} />
+
+        {/* Optional Floating Back Button if opened from stack */}
+        {navigation.canGoBack() && (
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={[styles.floatingBackBtn, { top: Math.max(insets.top, 16) }]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <ChevronLeft size={22} color="#FFFFFF" />
+          </TouchableOpacity>
+        )}
+
+        {/* Society Badge on top right of cover */}
+
+      </View>
+
+      {/* ========================================================== */}
+      {/* 2. PROFILE ICON: HALF ON IMAGE, HALF ON CARD               */}
+      {/* ========================================================== */}
+
+      <View style={styles.avatarOverlapContainer}>
+        <View style={styles.avatarWrapper}>
+          {user?.avatarUrl ? (
+            <Image source={{ uri: user.avatarUrl }} style={styles.avatarPhoto} />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarInitialsText}>
+                {getInitials(user?.fullName || user?.name || user?.full_name)}
+              </Text>
+            </View>
+          )}
+
+
+        </View>
+      </View>
+
+      {/* ========================================================== */}
+      {/* BODY CONTENT WRAPPER                                       */}
+      {/* ========================================================== */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -142,60 +312,6 @@ export const ProfileScreen = ({ navigation }) => {
           />
         }
       >
-        {/* ========================================================== */}
-        {/* 1. TOP SOCIETY HERO COVER IMAGE BANNER                     */}
-        {/* ========================================================== */}
-        <View style={styles.heroCoverWrapper}>
-          <Image
-            source={require('../assets/images/community-hero.jpg')}
-            style={styles.heroCoverImage}
-            resizeMode="cover"
-          />
-          {/* Subtle gradient dark overlay */}
-          <View style={styles.heroGradientOverlay} />
-
-          {/* Optional Floating Back Button if opened from stack */}
-          {navigation.canGoBack() && (
-            <TouchableOpacity
-              onPress={() => navigation.goBack()}
-              style={[styles.floatingBackBtn, { top: Math.max(insets.top, 16) }]}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <ChevronLeft size={22} color="#FFFFFF" />
-            </TouchableOpacity>
-          )}
-
-          {/* Society Badge on top right of cover */}
-          <View style={[styles.coverSocietyPill, { top: Math.max(insets.top, 16) }]}>
-            <Building2 size={13} color="#FFFFFF" style={{ marginRight: 4 }} />
-            <Text style={styles.coverSocietyPillText} numberOfLines={1}>
-              {societyData?.name || user?.societyName || 'Suncity Paradise'}
-            </Text>
-          </View>
-        </View>
-
-        {/* ========================================================== */}
-        {/* 2. PROFILE ICON: HALF ON IMAGE, HALF ON CARD               */}
-        {/* ========================================================== */}
-        <View style={styles.avatarOverlapContainer}>
-          <View style={styles.avatarWrapper}>
-            {user?.avatarUrl ? (
-              <Image source={{ uri: user.avatarUrl }} style={styles.avatarPhoto} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarInitialsText}>
-                  {getInitials(user?.fullName || user?.name || user?.full_name)}
-                </Text>
-              </View>
-            )}
-
-
-          </View>
-        </View>
-
-        {/* ========================================================== */}
-        {/* BODY CONTENT WRAPPER                                       */}
-        {/* ========================================================== */}
         <View style={styles.bodyContent}>
           {isAdmin ? (
             /* ======================================================== */
@@ -309,12 +425,14 @@ export const ProfileScreen = ({ navigation }) => {
               )}
             </View>
           ) : (
-            /* RESIDENT PERSONAL INFORMATION */
+            /* ======================================================== */
+            /* RESIDENT PERSONAL INFORMATION CARD                       */
+            /* ======================================================== */
             <View style={styles.glassCard}>
               <View style={styles.cardHeaderRow}>
                 <Text style={styles.cardSectionLabel}>RESIDENT PERSONAL INFORMATION</Text>
                 <View style={styles.rolePill}>
-                  <Text style={styles.rolePillText}>{user?.role || 'RESIDENT'}</Text>
+                  <Text style={styles.rolePillText}>{residentTypeDisplay}</Text>
                 </View>
               </View>
 
@@ -325,18 +443,73 @@ export const ProfileScreen = ({ navigation }) => {
               </View>
 
               <View style={styles.detailsGroup}>
+                {/* 1. Email ID */}
                 <View style={styles.detailItem}>
-                  <Phone size={15} color={THEME.colors.clay} style={styles.detailIcon} />
-                  <Text style={styles.detailLabel}>Phone:</Text>
-                  <Text style={styles.detailVal}>{user?.phone || 'Not linked'}</Text>
+                  <View style={styles.detailIconBox}>
+                    <Mail size={13} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.detailLabel}>Email ID:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {emailDisplay}
+                  </Text>
                 </View>
 
+                {/* 2. Phone */}
                 <View style={styles.detailItem}>
-                  <Home size={15} color={THEME.colors.clay} style={styles.detailIcon} />
-                  <Text style={styles.detailLabel}>Unit / Home:</Text>
-                  <Text style={styles.detailVal}>
-                    {user?.flatNumber ? `Home ${user.flatNumber}` : 'Flat 10'}
+                  <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                    <Phone size={13} color={THEME.colors.fernGreen} />
+                  </View>
+                  <Text style={styles.detailLabel}>Phone:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {phoneDisplay}
                   </Text>
+                </View>
+
+                {/* 3. Unit No */}
+                <View style={styles.detailItem}>
+                  <View style={styles.detailIconBox}>
+                    <Home size={13} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.detailLabel}>Unit No:</Text>
+                  <Text style={[styles.detailVal, styles.detailValHighlight]} numberOfLines={1}>
+                    {unitNoDisplay}
+                  </Text>
+                </View>
+
+                {/* 4. Wing */}
+                <View style={styles.detailItem}>
+                  <View style={styles.detailIconBox}>
+                    <Building2 size={13} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.detailLabel}>Wing:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {wingDisplay}
+                  </Text>
+                </View>
+
+                {/* 5. Floor */}
+                <View style={styles.detailItem}>
+                  <View style={styles.detailIconBox}>
+                    <Layers size={13} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.detailLabel}>Floor:</Text>
+                  <Text style={styles.detailVal} numberOfLines={1}>
+                    {floorDisplay}
+                  </Text>
+                </View>
+
+                {/* 6. Occupation Status */}
+                <View style={styles.detailItem}>
+                  <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                    <ShieldCheck size={13} color={THEME.colors.fernGreen} />
+                  </View>
+                  <Text style={styles.detailLabel}>Occupation:</Text>
+                  <View style={styles.occupancyBadge}>
+                    <View style={styles.occupancyDot} />
+                    <Text style={styles.occupancyBadgeText} numberOfLines={1}>
+                      {occupancyStatusDisplay}
+                    </Text>
+                  </View>
                 </View>
               </View>
 
@@ -408,74 +581,114 @@ export const ProfileScreen = ({ navigation }) => {
           {/* ========================================================== */}
           {/* 4. ACTIVE SOCIETY INFORMATION CARD                         */}
           {/* ========================================================== */}
-          <View style={styles.glassCard}>
-            <View style={styles.cardHeaderRow}>
-              <Text style={styles.cardSectionLabel}>ACTIVE SOCIETY INFORMATION</Text>
-            </View>
+          {(() => {
+            const activeHome = residentHomeData?.home || {};
+            const activeSociety = {
+              name:
+                societyData?.name ||
+                activeHome?.society_name ||
+                user?.society?.name ||
+                user?.societyName ||
+                'Suncity Paradise',
+              code:
+                societyData?.code ||
+                activeHome?.society_code ||
+                user?.society?.code ||
+                user?.societyCode ||
+                'SUNCIT-951',
+              address:
+                societyData?.address ||
+                societyData?.address_line1 ||
+                activeHome?.society_address ||
+                user?.society?.address ||
+                user?.societyAddress ||
+                'Vishwamitry Township (Wing B), Behind Vishwamitri Township / Opp. Surya Darshan Township, Manjalpur, Vadodara, Gujarat 390011',
+              contact_number:
+                societyData?.contact_number ||
+                societyData?.contact_phone ||
+                activeHome?.society_contact ||
+                user?.society?.contact_number ||
+                user?.societyContactNumber ||
+                '1234567890',
+              emergency_number:
+                societyData?.emergency_number ||
+                activeHome?.society_emergency ||
+                user?.society?.emergency_number ||
+                user?.societyEmergencyNumber ||
+                '1234567899',
+            };
 
-            <View style={styles.cardMainRow}>
-              {/* Square Society Icon Badge with solid theme background */}
-              <View style={styles.squareSocietyBadge}>
-                <Building2 size={28} color="#FFFFFF" />
-              </View>
-
-              {/* Society Info */}
-              <View style={styles.cardContentCol}>
-                <View style={styles.nameBadgeRow}>
-                  <Text style={styles.societyNameText} numberOfLines={1}>
-                    {societyData?.name || user?.societyName || 'Suncity Paradise'}
-                  </Text>
-                  <View style={styles.codePill}>
-                    <Text style={styles.codePillText}>
-                      Code: {societyData?.code || 'SOC-001'}
-                    </Text>
-                  </View>
+            return (
+              <View style={styles.glassCard}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.cardSectionLabel}>ACTIVE SOCIETY INFORMATION</Text>
                 </View>
 
-                <View style={styles.detailsGroup}>
-                  {/* Address */}
-                  <View style={styles.detailItemTop}>
-                    <View style={styles.detailIconBox}>
-                      <MapPin size={13} color={THEME.colors.clay} />
-                    </View>
-                    <Text style={styles.detailLabel}>Address:</Text>
-                    <Text style={styles.detailValMultiline}>
-                      {societyData?.address || 'Main Campus, Sector 4'}
-                    </Text>
+                <View style={styles.cardMainRow}>
+                  {/* Square Society Icon Badge with solid theme background */}
+                  <View style={styles.squareSocietyBadge}>
+                    <Building2 size={28} color="#FFFFFF" />
                   </View>
 
-                  {/* Office Contact */}
-                  <View style={styles.detailItem}>
-                    <View style={styles.detailIconBox}>
-                      <Phone size={13} color={THEME.colors.clay} />
+                  {/* Society Info */}
+                  <View style={styles.cardContentCol}>
+                    <View style={styles.nameBadgeRow}>
+                      <Text style={styles.societyNameText} numberOfLines={1}>
+                        {activeSociety.name}
+                      </Text>
+                      <View style={styles.codePill}>
+                        <Text style={styles.codePillText}>
+                          Code: {activeSociety.code}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.detailLabel}>Office:</Text>
-                    <Text style={styles.detailVal} numberOfLines={1}>
-                      {societyData?.contact_number || '+91 98765 43210'}
-                    </Text>
-                  </View>
 
-                  {/* Helpline */}
-                  <View style={styles.detailItem}>
-                    <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
-                      <Phone size={13} color={THEME.colors.fernGreen} />
+                    <View style={styles.detailsGroup}>
+                      {/* Address */}
+                      <View style={styles.detailItemTop}>
+                        <View style={styles.detailIconBox}>
+                          <MapPin size={13} color={THEME.colors.clay} />
+                        </View>
+                        <Text style={styles.detailLabel}>Address:</Text>
+                        <Text style={styles.detailValMultiline}>
+                          {activeSociety.address}
+                        </Text>
+                      </View>
+
+                      {/* Office Contact */}
+                      <View style={styles.detailItem}>
+                        <View style={styles.detailIconBox}>
+                          <Phone size={13} color={THEME.colors.clay} />
+                        </View>
+                        <Text style={styles.detailLabel}>Office:</Text>
+                        <Text style={styles.detailVal} numberOfLines={1}>
+                          {activeSociety.contact_number}
+                        </Text>
+                      </View>
+
+                      {/* Helpline */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                          <Phone size={13} color={THEME.colors.fernGreen} />
+                        </View>
+                        <Text style={styles.detailLabel}>Helpline:</Text>
+                        <Text style={styles.detailVal} numberOfLines={1}>
+                          {activeSociety.emergency_number}
+                        </Text>
+                      </View>
                     </View>
-                    <Text style={styles.detailLabel}>Helpline:</Text>
-                    <Text style={styles.detailVal} numberOfLines={1}>
-                      {societyData?.emergency_number || '+91 91234 56789 / 112'}
-                    </Text>
                   </View>
                 </View>
               </View>
-            </View>
-          </View>
+            );
+          })()}
 
           {/* ========================================================== */}
           {/* 5. LOGOUT ACTION BUTTON                                    */}
           {/* ========================================================== */}
           <TouchableOpacity onPress={handleLogout} style={styles.logoutBtn} activeOpacity={0.85}>
             <LogOut size={18} color="#DC2626" />
-            <Text style={styles.logoutText}>Sign Out from Device</Text>
+            <Text style={styles.logoutText}>Sign Out</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -489,7 +702,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.background,
   },
   scrollContent: {
-    paddingBottom: 110,
+    paddingBottom: 150,
   },
 
   /* 1. Hero Cover Image Banner */
@@ -687,13 +900,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: THEME.colors.darkBrown,
-    minWidth: 54,
+    minWidth: 78,
   },
   detailVal: {
     fontSize: 13,
     color: THEME.colors.textMuted,
     flex: 1,
     fontWeight: '500',
+  },
+  detailValHighlight: {
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+  },
+  occupancyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(107, 142, 90, 0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 90, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  occupancyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#16a34a',
+  },
+  occupancyBadgeText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.fernGreenDark,
   },
   detailValMultiline: {
     fontSize: 12,
