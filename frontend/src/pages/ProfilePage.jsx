@@ -627,7 +627,7 @@ export default function ProfilePage() {
                     <span>{roleTheme.label}</span>
                     <span>•</span>
                     <span style={{ color: 'var(--color-clay)', fontWeight: 700 }}>
-                      {profile.societyName || 'Suncity Paradise'}
+                      {profile.societyName || 'No Society Registered'}
                     </span>
                     {profile.flatNumber && (
                       <>
@@ -1048,7 +1048,7 @@ export default function ProfilePage() {
                         Residential Complex
                       </span>
                       <div style={{ fontSize: '0.98rem', fontWeight: 800, color: 'var(--color-dark-brown)', marginTop: 2 }}>
-                        {profile.societyName || 'Suncity Paradise'}
+                        {profile.societyName || 'No Society Registered'}
                       </div>
                     </div>
 

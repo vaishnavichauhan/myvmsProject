@@ -11,6 +11,7 @@ const router = Router();
 router.post('/login', AuthController.login);
 router.post('/logout', AuthController.logout);
 router.post('/register', AuthController.register);
+router.get('/test-users', AuthController.getTestUsers);
 
 // Protected APIs (Requires valid Bearer JWT via authMiddleware)
 router.get('/me', authMiddleware, AuthController.me);

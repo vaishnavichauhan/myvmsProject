@@ -96,14 +96,16 @@ class AdminService {
 
     // Society general info
     const [societyRow] = await pool.query(`
-      SELECT id, name, code, society_type, address, contact_number, status
+      SELECT id, name, code, society_type, total_homes, address, contact_number, status
       FROM societies
       ${societyId ? 'WHERE id = ?' : 'ORDER BY id ASC LIMIT 1'}
     `, societyId ? [societyId] : []);
 
-    const totalHomes = Number(homesRow[0]?.totalHomes || 0);
+    const societyTotal = Number(societyRow[0]?.total_homes || 0);
+    const dbTotalHomes = Number(homesRow[0]?.totalHomes || 0);
+    const totalHomes = societyTotal > 0 ? societyTotal : dbTotalHomes;
     const occupiedHomes = Number(homesRow[0]?.occupiedHomes || 0);
-    const vacantHomes = Number(homesRow[0]?.vacantHomes || 0);
+    const vacantHomes = Math.max(0, totalHomes - occupiedHomes);
     const ownerOccupied = Number(homesRow[0]?.ownerOccupied || 0);
     const tenantOccupied = Number(homesRow[0]?.tenantOccupied || 0);
 

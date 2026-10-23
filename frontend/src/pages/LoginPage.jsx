@@ -1,13 +1,72 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { Building2, Lock, Phone, AlertCircle, ArrowRight, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import {
+  Building2,
+  Lock,
+  Phone,
+  AlertCircle,
+  ArrowRight,
+  ShieldCheck,
+  CheckCircle2,
+  User,
+  Users,
+  Shield,
+  Home,
+  Sparkles,
+  Zap,
+} from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { ROLES, ROLE_CONFIG } from '../constants/roles';
+import { authApi } from '../api/authApi';
 
-// Admin credentials for sign in
-const DEMO_ACCOUNTS = {
-  [ROLES.ADMIN]: { phone: '9800000000', password: 'Password@123', label: 'Admin (System Administrator)' },
-};
+// Fallback demo accounts if API hasn't resolved
+const FALLBACK_USERS = [
+  {
+    id: 1,
+    full_name: 'System Administrator',
+    phone: '9800000000',
+    role: ROLES.ADMIN,
+    password: 'Password@123',
+    flat_number: 'Admin Office',
+    society_name: 'Main Society',
+  },
+  {
+    id: 643,
+    full_name: 'PravinBhai',
+    phone: '1212121212',
+    role: ROLES.OWNER,
+    password: '123456',
+    flat_number: 'Home 1',
+    society_name: 'Plam glory',
+  },
+  {
+    id: 644,
+    full_name: 'Amitbhai',
+    phone: '1231231231',
+    role: ROLES.OWNER,
+    password: '123456',
+    flat_number: 'Home 2',
+    society_name: 'Plam glory',
+  },
+  {
+    id: 645,
+    full_name: 'MaganBhai',
+    phone: '1234123412',
+    role: ROLES.TENANT,
+    password: '123456',
+    flat_number: 'Home 3',
+    society_name: 'Plam glory',
+  },
+  {
+    id: 646,
+    full_name: 'BahadurSing',
+    phone: '1111122222',
+    role: ROLES.SECURITY,
+    password: '123456',
+    flat_number: 'Main Gate',
+    society_name: 'Plam glory',
+  },
+];
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -16,15 +75,38 @@ export default function LoginPage() {
 
   const [phoneOrEmail, setPhoneOrEmail] = useState('9800000000');
   const [password, setPassword] = useState('Password@123');
-  const [selectedRole, setSelectedRole] = useState(ROLES.ADMIN);
+  const [activeUserPhone, setActiveUserPhone] = useState('9800000000');
   const [localError, setLocalError] = useState(null);
+
+  // Dynamic user list
+  const [usersList, setUsersList] = useState(FALLBACK_USERS);
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState('ALL');
+  const [loggingInUserId, setLoggingInUserId] = useState(null);
+
+  // Fetch all active users from database
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await authApi.getTestUsers();
+        if (res.data?.users && res.data.users.length > 0) {
+          setUsersList(res.data.users);
+        }
+      } catch (err) {
+        console.warn('Using fallback test users:', err.message);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   useEffect(() => {
     const roleParam = searchParams.get('role');
-    if (roleParam && DEMO_ACCOUNTS[roleParam]) {
-      handleSelectDemoRole(roleParam);
+    if (roleParam) {
+      const match = usersList.find((u) => u.role === roleParam);
+      if (match) {
+        handleSelectUser(match);
+      }
     }
-  }, [searchParams]);
+  }, [searchParams, usersList]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -32,12 +114,25 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const handleSelectDemoRole = (roleKey) => {
-    setSelectedRole(roleKey);
-    setPhoneOrEmail(DEMO_ACCOUNTS[roleKey].phone);
-    setPassword(DEMO_ACCOUNTS[roleKey].password);
+  const handleSelectUser = (userItem) => {
+    setActiveUserPhone(userItem.phone);
+    setPhoneOrEmail(userItem.phone);
+    setPassword(userItem.password || '123456');
     clearError();
     setLocalError(null);
+  };
+
+  const handleQuickLogin = async (userItem) => {
+    handleSelectUser(userItem);
+    setLoggingInUserId(userItem.id);
+    clearError();
+    setLocalError(null);
+
+    const res = await login(userItem.phone, userItem.password || '123456');
+    setLoggingInUserId(null);
+    if (res.success) {
+      navigate('/dashboard');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -56,6 +151,29 @@ export default function LoginPage() {
     }
   };
 
+  // Filtered users
+  const filteredUsers = usersList.filter((u) => {
+    if (selectedRoleFilter === 'ALL') return true;
+    return u.role === selectedRoleFilter;
+  });
+
+  const getRoleBadgeStyle = (role) => {
+    switch (role) {
+      case ROLES.ADMIN:
+        return { bg: 'rgba(251, 113, 133, 0.15)', color: '#fb7185', label: 'Admin' };
+      case ROLES.OWNER:
+        return { bg: 'rgba(129, 140, 248, 0.15)', color: '#818cf8', label: 'Owner' };
+      case ROLES.TENANT:
+        return { bg: 'rgba(34, 211, 238, 0.15)', color: '#22d3ee', label: 'Tenant' };
+      case ROLES.SECURITY:
+        return { bg: 'rgba(16, 185, 129, 0.15)', color: '#10b981', label: 'Security' };
+      case ROLES.COMMITTEE_MEMBER:
+        return { bg: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', label: 'Committee' };
+      default:
+        return { bg: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', label: role };
+    }
+  };
+
   return (
     <div
       className="app-container"
@@ -71,31 +189,216 @@ export default function LoginPage() {
         className="glass-panel animate-fade-in"
         style={{
           width: '100%',
-          maxWidth: '920px',
+          maxWidth: '1080px',
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))',
           overflow: 'hidden',
           borderRadius: 'var(--radius-xl)',
           border: '1px solid var(--border-card)',
-          boxShadow: '0 16px 40px -10px rgba(64, 54, 48, 0.12)',
+          boxShadow: '0 20px 50px -10px rgba(64, 54, 48, 0.16)',
           background: 'var(--color-white)',
         }}
       >
-        {/* Visual Brand Column with Architectural Image */}
+        {/* Left Column: Quick Test Users Selection */}
         <div
           style={{
-            position: 'relative',
-            minHeight: '380px',
-            background: `linear-gradient(180deg, rgba(64, 54, 48, 0.35) 0%, rgba(64, 54, 48, 0.75) 100%), url(/images/community-hero.jpg) center/cover no-repeat`,
-            padding: '40px 32px',
+            background: 'var(--bg-secondary)',
+            borderRight: '1px solid var(--border-card)',
+            padding: '32px 28px',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
-            color: '#FFFFFF',
+            gap: '16px',
+            maxHeight: '680px',
+            overflowY: 'auto',
           }}
         >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: 'rgba(196, 154, 108, 0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--color-clay)',
+                }}
+              >
+                <Zap size={18} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Test Accounts
+                </h3>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Click to fill or test any portal instantly
+                </div>
+              </div>
+            </div>
+
+            <span
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 700,
+                background: 'rgba(196, 154, 108, 0.12)',
+                color: 'var(--color-clay)',
+                padding: '3px 8px',
+                borderRadius: 'var(--radius-full)',
+              }}
+            >
+              {filteredUsers.length} Users
+            </span>
+          </div>
+
+          {/* Role Filter Tabs */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {['ALL', ROLES.ADMIN, ROLES.OWNER, ROLES.TENANT, ROLES.SECURITY].map((role) => {
+              const isSelected = selectedRoleFilter === role;
+              return (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setSelectedRoleFilter(role)}
+                  style={{
+                    background: isSelected ? 'var(--color-clay)' : 'transparent',
+                    color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                    border: '1px solid var(--border-card)',
+                    borderRadius: 'var(--radius-full)',
+                    padding: '4px 10px',
+                    fontSize: '0.75rem',
+                    fontWeight: isSelected ? 700 : 500,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {role === 'ALL' ? 'All Roles' : role}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* User Cards List */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {filteredUsers.map((userItem) => {
+              const isSelected = activeUserPhone === userItem.phone;
+              const isLoggingIn = loggingInUserId === userItem.id;
+              const badge = getRoleBadgeStyle(userItem.role);
+
+              return (
+                <div
+                  key={userItem.id}
+                  style={{
+                    border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
+                    borderRadius: 'var(--radius-md)',
+                    background: isSelected ? 'rgba(196, 154, 108, 0.08)' : 'var(--bg-primary)',
+                    padding: '12px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: '10px',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.7rem',
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: '4px',
+                          background: badge.bg,
+                          color: badge.color,
+                        }}
+                      >
+                        {badge.label}
+                      </span>
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: '0.86rem',
+                          color: 'var(--text-main)',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {userItem.full_name}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      <span>📱 <strong>{userItem.phone}</strong></span>
+                      <span>🔑 {userItem.password || '123456'}</span>
+                      {userItem.flat_number && (
+                        <span>• 🏠 {userItem.flat_number}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Quick Action Buttons */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelectUser(userItem)}
+                      style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border-card)',
+                        color: 'var(--text-main)',
+                        borderRadius: '6px',
+                        padding: '5px 8px',
+                        fontSize: '0.72rem',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                      title="Fill in credentials"
+                    >
+                      Fill
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isLoading}
+                      onClick={() => handleQuickLogin(userItem)}
+                      style={{
+                        background: 'var(--color-clay)',
+                        border: 'none',
+                        color: '#ffffff',
+                        borderRadius: '6px',
+                        padding: '5px 10px',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        boxShadow: '0 2px 6px rgba(196, 154, 108, 0.3)',
+                      }}
+                      title="1-Click Login"
+                    >
+                      {isLoggingIn ? (
+                        <span>...</span>
+                      ) : (
+                        <>
+                          <span>Login</span>
+                          <ArrowRight size={11} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right Column: Sign In Form */}
+        <div style={{ padding: '38px 36px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           {/* Top Brand Tag */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px' }}>
             <div
               style={{
                 width: '38px',
@@ -105,85 +408,28 @@ export default function LoginPage() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                boxShadow: '0 4px 12px rgba(196, 154, 108, 0.35)',
               }}
             >
               <Building2 size={22} color="#ffffff" />
             </div>
             <div>
-              <div style={{ fontSize: '1.2rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF' }}>MYVMS</div>
-              <div style={{ fontSize: '0.7rem', color: 'var(--color-sand)', letterSpacing: '0.04em' }}>COMMUNITY PLATFORM</div>
+              <div style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em', color: 'var(--color-dark-brown)' }}>
+                MYVMS
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--color-clay)', letterSpacing: '0.04em', fontWeight: 700 }}>
+                SOCIETY MANAGEMENT SYSTEM
+              </div>
             </div>
           </div>
 
-          {/* Center Message */}
-          <div style={{ marginTop: 'auto', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '1.65rem', fontWeight: 800, lineHeight: 1.25, color: '#FFFFFF', marginBottom: '8px' }}>
-              Smart Society Living
-            </h2>
-            <p style={{ fontSize: '0.85rem', color: 'rgba(255, 255, 255, 0.9)', lineHeight: 1.5 }}>
-              Seamless resident authorizations, real-time security gate logging, domestic staff permits, and community circulars.
-            </p>
-          </div>
-
-
-        </div>
-
-        {/* Form Column */}
-        <div style={{ padding: '38px 36px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
           <div style={{ marginBottom: '22px' }}>
-            <h3 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--color-dark-brown)', marginBottom: '4px' }}>
+            <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--color-dark-brown)', marginBottom: '4px' }}>
               Sign in to Portal
             </h3>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Enter your registered phone number and credentials.
+              Select a test account on the left or enter credentials manually.
             </p>
-          </div>
-
-          {/* Quick Admin Access Fill Button */}
-          <div style={{ marginBottom: '20px' }}>
-            {Object.keys(DEMO_ACCOUNTS).map((roleKey) => {
-              const isSelected = selectedRole === roleKey;
-              return (
-                <button
-                  key={roleKey}
-                  type="button"
-                  id={`role-btn-${roleKey.toLowerCase()}`}
-                  onClick={() => handleSelectDemoRole(roleKey)}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-card)',
-                    background: isSelected ? 'rgba(196, 154, 108, 0.16)' : 'var(--bg-tertiary)',
-                    color: isSelected ? 'var(--color-dark-brown)' : 'var(--text-muted)',
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    transition: 'all var(--transition-fast)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ShieldCheck size={16} color="var(--color-clay)" />
-                    <span>Auto-Fill Admin: <strong>{DEMO_ACCOUNTS[roleKey].phone}</strong></span>
-                  </div>
-                  <span
-                    style={{
-                      fontSize: '0.7rem',
-                      background: 'var(--color-clay)',
-                      color: '#FFFFFF',
-                      padding: '2px 8px',
-                      borderRadius: 'var(--radius-full)',
-                    }}
-                  >
-                    Quick Fill
-                  </span>
-                </button>
-              );
-            })}
           </div>
 
           {/* Error Alert */}
@@ -232,7 +478,9 @@ export default function LoginPage() {
                 <label className="input-label" htmlFor="input-password">
                   Password
                 </label>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>Default: Password@123</span>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
+                  Default: Password@123 / 123456
+                </span>
               </div>
               <div style={{ position: 'relative' }}>
                 <input

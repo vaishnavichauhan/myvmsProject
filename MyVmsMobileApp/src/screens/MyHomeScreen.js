@@ -70,15 +70,15 @@ export const MyHomeScreen = ({ navigation }) => {
   const securityStaffCount = rawSecurityCount !== undefined && rawSecurityCount !== null
     ? rawSecurityCount
     : (() => {
-        const guardSet = new Set();
-        gates.forEach((g) => {
-          (g.assigned_guards || []).forEach((guard) => {
-            if (guard.security_staff_id) guardSet.add(guard.security_staff_id);
-            else if (guard.security_name) guardSet.add(guard.security_name);
-          });
+      const guardSet = new Set();
+      gates.forEach((g) => {
+        (g.assigned_guards || []).forEach((guard) => {
+          if (guard.security_staff_id) guardSet.add(guard.security_staff_id);
+          else if (guard.security_name) guardSet.add(guard.security_name);
         });
-        return guardSet.size || (gates.length > 0 ? 2 : 0);
-      })();
+      });
+      return guardSet.size || (gates.length > 0 ? 2 : 0);
+    })();
 
   const rawGateStats = data?.gateEntryStats;
   const gateStats = rawGateStats || (() => {
@@ -286,11 +286,11 @@ export const MyHomeScreen = ({ navigation }) => {
                   <View style={styles.societyInfoCol}>
                     <View style={styles.societyNameRow}>
                       <Text style={styles.societyName} numberOfLines={1}>
-                        {home.society_name || data?.society?.name || user?.societyName || 'Suncity Paradise'}
+                        {home.society_name || data?.society?.name || user?.societyName || ''}
                       </Text>
                       <View style={styles.codePill}>
                         <Text style={styles.codePillText}>
-                          Code: {home.society_code || user?.societyCode || user?.society?.code || 'SUNCIT-951'}
+                          Code: {home.society_code || user?.societyCode || user?.society?.code || ''}
                         </Text>
                       </View>
                     </View>

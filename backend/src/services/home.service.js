@@ -40,9 +40,12 @@ class HomeService {
       occupancy_status: data.occupancy_status || 'VACANT',
     });
 
-    // Update society total_homes count
+    // Update society total_homes count (only grow capacity, never shrink)
     const totalCount = await HomeRepository.countBySociety(societyId);
-    await SocietyRepository.update(societyId, { total_homes: totalCount });
+    const soc = await SocietyRepository.findById(societyId);
+    if (soc && totalCount > (soc.total_homes || 0)) {
+      await SocietyRepository.update(societyId, { total_homes: totalCount });
+    }
 
     return newHome;
   }
@@ -89,9 +92,11 @@ class HomeService {
       await HomeRepository.bulkCreate(societyId, homesToInsert);
     }
 
-    // Refresh society total_homes
+    // Refresh society total_homes (only grow, do not shrink)
     const totalCount = await HomeRepository.countBySociety(societyId);
-    await SocietyRepository.update(societyId, { total_homes: totalCount });
+    if (totalCount > (society.total_homes || 0)) {
+      await SocietyRepository.update(societyId, { total_homes: totalCount });
+    }
 
     return {
       message: `Successfully created ${homesToInsert.length} homes in society.`,

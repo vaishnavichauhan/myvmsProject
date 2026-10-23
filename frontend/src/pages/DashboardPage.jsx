@@ -516,7 +516,7 @@ export default function DashboardPage() {
         >
           <img
             src="/images/community-hero.jpg"
-            alt={data?.society?.name || 'Suncity Paradise Architecture'}
+            alt={data?.society?.name || ''}
             style={{
               width: '100%',
               height: '100%',

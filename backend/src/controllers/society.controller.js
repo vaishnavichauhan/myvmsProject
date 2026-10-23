@@ -58,7 +58,7 @@ class SocietyController {
    */
   static async delete(req, res, next) {
     try {
-      const hardDelete = req.query.permanent === 'true';
+      const hardDelete = req.query.permanent !== 'false';
       const result = await SocietyService.deleteSociety(req.params.id, hardDelete);
       return ApiResponse.success(res, result.message, null);
     } catch (error) {

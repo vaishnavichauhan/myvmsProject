@@ -43,4 +43,9 @@ export const authApi = {
    * System health and MySQL status
    */
   getHealth: () => apiClient.get('/health'),
+
+  /**
+   * Fetch active users for instant login testing
+   */
+  getTestUsers: () => apiClient.get('/auth/test-users'),
 };

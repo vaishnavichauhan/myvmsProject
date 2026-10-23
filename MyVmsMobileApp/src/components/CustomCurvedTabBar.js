@@ -34,7 +34,9 @@ export const CustomCurvedTabBar = ({
     AnnouncementsTab: { icon: 'megaphone', label: 'Announcement' },
     GateActivityTab: { icon: 'activity', label: 'Gate Activity' },
     GatesTab: { icon: 'activity', label: 'Gate Activity' },
-    AccountTab: { icon: 'person', label: 'Account' },
+    AccountTab: { icon: 'person', label: 'Profile' },
+    ProfileTab: { icon: 'person', label: 'Profile' },
+    SettingsTab: { icon: 'person', label: 'Profile' },
   };
 
   return (

@@ -23,7 +23,7 @@ export const ReportsScreen = ({ navigation }) => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.summaryCard}>
           <Text style={styles.summaryTitle}>Society Traffic Audit Overview</Text>
-          <Text style={styles.summarySubtitle}>Real-time metrics for Suncity Paradise Gated Society</Text>
+          <Text style={styles.summarySubtitle}>Real-time metrics  Gated Society</Text>
 
           <View style={styles.grid}>
             {stats.map((s, idx) => (

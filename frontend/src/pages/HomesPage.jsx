@@ -305,7 +305,7 @@ export default function HomesPage() {
               }}
             >
               <Building2 size={16} color="var(--color-clay)" />
-              <span>{societies[0]?.name || 'Suncity Paradise'}</span>
+              <span>{societies[0]?.name || ''}</span>
             </div>
           )}
 

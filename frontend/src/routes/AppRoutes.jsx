@@ -17,7 +17,7 @@ import VisitorsPage from '../pages/VisitorsPage';
 import CourierDeliveryPage from '../pages/CourierDeliveryPage';
 import CommitteePage from '../pages/CommitteePage';
 import AnnouncementsPage from '../pages/AnnouncementsPage';
-import ReportsPage from '../pages/ReportsPage';
+import MaintenancePage from '../pages/MaintenancePage';
 import SettingsPage from '../pages/SettingsPage';
 import ProfilePage from '../pages/ProfilePage';
 import AccessDeniedPage from '../pages/AccessDeniedPage';
@@ -133,17 +133,9 @@ export default function AppRoutes() {
           }
         />
         <Route
-          path="reports"
-          element={
-            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Society Reports & Audit">
-              <ReportsPage />
-            </RoleRoute>
-          }
-        />
-        <Route
           path="settings"
           element={
-            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Account">
+            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Profile">
               <SettingsPage />
             </RoleRoute>
           }
@@ -232,6 +224,17 @@ export default function AppRoutes() {
               moduleName="Society Announcements"
             >
               <AnnouncementsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="maintenance"
+          element={
+            <RoleRoute
+              allowedRoles={[ROLES.ADMIN, ROLES.OWNER, ROLES.TENANT, ROLES.COMMITTEE_MEMBER, ROLES.FAMILY_MEMBER]}
+              moduleName="Society Maintenance & Billing"
+            >
+              <MaintenancePage />
             </RoleRoute>
           }
         />

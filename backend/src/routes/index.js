@@ -15,6 +15,8 @@ const committeeRoutes = require('./committee.routes');
 const announcementRoutes = require('./announcement.routes');
 const adminRoutes = require('./admin.routes');
 const reportRoutes = require('./report.routes');
+const maintenanceRoutes = require('./maintenance.routes');
+const specialChargeRoutes = require('./special-charge.routes');
 const { ALL_ROLES } = require('../constants/roles');
 const ApiResponse = require('../utils/apiResponse');
 
@@ -106,5 +108,7 @@ router.use('/committee', committeeRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/admin', adminRoutes);
 router.use('/reports', reportRoutes);
+router.use('/maintenance', maintenanceRoutes);
+router.use('/special-charges', specialChargeRoutes);
 
 module.exports = router;

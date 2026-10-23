@@ -174,7 +174,7 @@ export const SecurityHomeScreen = ({ navigation }) => {
               setSocietyInfo(res?.data?.society || res?.society);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       }
 
       // Fetch Homes for destination selection
@@ -191,7 +191,7 @@ export const SecurityHomeScreen = ({ navigation }) => {
             setVehicleForm((prev) => ({ ...prev, home_id: prev.home_id || firstHomeId }));
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     } catch (err) {
       console.log('Error loading security dashboard:', err);
     } finally {
@@ -390,8 +390,8 @@ export const SecurityHomeScreen = ({ navigation }) => {
 
   const userInitial = (user?.fullName || user?.full_name || 'S').charAt(0).toUpperCase();
   const guardName = user?.fullName || user?.full_name || 'Security Officer';
-  const societyName = societyInfo?.name || user?.societyName || 'Suncity Paradise';
-  const societyCode = societyInfo?.code || user?.societyCode || 'SUNCIT-951';
+  const societyName = societyInfo?.name || user?.societyName || '';
+  const societyCode = societyInfo?.code || user?.societyCode || '';
 
   // 5 KPI cards for Today's Activity matching frontend UI specification
   const activityKpiCards = [

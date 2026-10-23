@@ -24,6 +24,7 @@ CREATE TABLE `societies` (
   `code` VARCHAR(50) NOT NULL UNIQUE COMMENT 'Unique society code e.g. EMERALD-01',
   `registration_number` VARCHAR(100) NULL,
   `society_type` ENUM('BUNGALOW', 'FLAT') NOT NULL DEFAULT 'FLAT',
+  `property_configuration` VARCHAR(50) DEFAULT '2BHK',
   `total_homes` INT NOT NULL DEFAULT 0,
   `address` TEXT NULL,
   `address_line1` VARCHAR(255) NULL,
@@ -599,5 +600,88 @@ CREATE TABLE `notifications` (
   INDEX `idx_notif_type` (`type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- 23. MAINTENANCE PLANS
+-- Society-wide maintenance fee configurations by BHK/property type & period
+-- ----------------------------------------------------------------------------
+DROP TABLE IF EXISTS `maintenance_plans`;
+CREATE TABLE `maintenance_plans` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `society_id` INT NOT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `applicable_type` ENUM('1BHK', '2BHK', '3BHK', '4BHK', 'VILLA', 'BUNGALOW', 'PENTHOUSE', 'STUDIO', 'ALL') NOT NULL DEFAULT 'ALL',
+  `amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `billing_cycle` ENUM('MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY') NOT NULL DEFAULT 'MONTHLY',
+  `due_day` INT NOT NULL DEFAULT 5,
+  `grace_period_days` INT NOT NULL DEFAULT 5,
+  `penalty_type` ENUM('FIXED', 'PERCENTAGE') NOT NULL DEFAULT 'FIXED',
+  `penalty_rate` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `description` TEXT NULL,
+  `status` ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_plan_society` FOREIGN KEY (`society_id`) REFERENCES `societies` (`id`) ON DELETE CASCADE,
+  INDEX `idx_plan_society` (`society_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- 24. MAINTENANCE BILLS (INVOICES)
+-- Invoices issued to individual homes for maintenance periods
+-- ----------------------------------------------------------------------------
+DROP TABLE IF EXISTS `maintenance_bills`;
+CREATE TABLE `maintenance_bills` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `bill_number` VARCHAR(50) NOT NULL UNIQUE,
+  `society_id` INT NOT NULL,
+  `home_id` INT NOT NULL,
+  `resident_id` INT NULL,
+  `plan_id` INT NULL,
+  `title` VARCHAR(200) NOT NULL,
+  `billing_period` VARCHAR(50) NOT NULL,
+  `billing_cycle` ENUM('MONTHLY', 'QUARTERLY', 'HALF_YEARLY', 'YEARLY') NOT NULL DEFAULT 'MONTHLY',
+  `base_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `penalty_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `total_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `paid_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `balance_amount` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+  `due_date` DATE NOT NULL,
+  `status` ENUM('PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE') NOT NULL DEFAULT 'PENDING',
+  `notes` TEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_bill_society` FOREIGN KEY (`society_id`) REFERENCES `societies` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_bill_home` FOREIGN KEY (`home_id`) REFERENCES `homes` (`id`) ON DELETE CASCADE,
+  INDEX `idx_bill_society_status` (`society_id`, `status`),
+  INDEX `idx_bill_home` (`home_id`),
+  INDEX `idx_bill_period` (`billing_period`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- 25. MAINTENANCE PAYMENTS
+-- Payments recorded against maintenance bills
+-- ----------------------------------------------------------------------------
+DROP TABLE IF EXISTS `maintenance_payments`;
+CREATE TABLE `maintenance_payments` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `receipt_number` VARCHAR(50) NOT NULL UNIQUE,
+  `bill_id` INT NOT NULL,
+  `society_id` INT NOT NULL,
+  `home_id` INT NOT NULL,
+  `paid_by_user_id` INT NULL,
+  `amount` DECIMAL(10,2) NOT NULL,
+  `payment_method` ENUM('CASH', 'UPI', 'NET_BANKING', 'CHEQUE', 'CARD') NOT NULL DEFAULT 'UPI',
+  `transaction_reference` VARCHAR(100) NULL,
+  `payment_date` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `collected_by_user_id` INT NULL,
+  `remarks` TEXT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT `fk_pay_bill` FOREIGN KEY (`bill_id`) REFERENCES `maintenance_bills` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_pay_society` FOREIGN KEY (`society_id`) REFERENCES `societies` (`id`) ON DELETE CASCADE,
+  INDEX `idx_pay_bill` (`bill_id`),
+  INDEX `idx_pay_society` (`society_id`),
+  INDEX `idx_pay_home` (`home_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Re-enable foreign key checks
 SET FOREIGN_KEY_CHECKS = 1;
+

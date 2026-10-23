@@ -149,8 +149,10 @@ class ResidentRepository {
         h.society_id,
         COALESCE(h.home_number, h.flat_number) AS home_number,
         COALESCE(h.building_or_wing, h.block_or_tower) AS building_or_wing,
+        COALESCE(h.floor, h.floor_number) AS floor,
         h.home_type,
-        s.name AS society_name
+        s.name AS society_name,
+        s.society_type
       FROM residents r
       JOIN users u ON r.user_id = u.id
       JOIN homes h ON r.home_id = h.id
@@ -321,19 +323,45 @@ class ResidentRepository {
     const resident = await this.findById(id);
     if (!resident) return false;
 
-    const query = 'DELETE FROM residents WHERE id = ?';
-    const [result] = await pool.query(query, [id]);
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
 
-    // Check if any other resident occupies this home
-    const [remaining] = await pool.query(
-      "SELECT id, resident_type FROM residents WHERE home_id = ? AND status = 'ACTIVE' LIMIT 1",
-      [resident.home_id]
-    );
+      // 1. Delete resident permissions if any
+      await connection.query('DELETE FROM resident_permissions WHERE user_id = ?', [resident.user_id]);
 
-    const newOcc = remaining.length > 0 ? (remaining[0].resident_type === 'OWNER' ? 'OCCUPIED_BY_OWNER' : 'OCCUPIED_BY_TENANT') : 'VACANT';
-    await pool.query('UPDATE homes SET occupancy_status = ? WHERE id = ?', [newOcc, resident.home_id]);
+      // 2. Delete resident association
+      const [result] = await connection.query('DELETE FROM residents WHERE id = ?', [id]);
 
-    return result.affectedRows > 0;
+      // 3. Delete user account if not admin/security and no other resident records exist
+      if (resident.user_role !== 'ADMIN' && resident.user_role !== 'SECURITY') {
+        const [otherResidents] = await connection.query(
+          'SELECT id FROM residents WHERE user_id = ? LIMIT 1',
+          [resident.user_id]
+        );
+        if (otherResidents.length === 0) {
+          await connection.query('DELETE FROM users WHERE id = ?', [resident.user_id]);
+        }
+      }
+
+      // 4. Update home occupancy
+      const [remaining] = await connection.query(
+        "SELECT id, resident_type FROM residents WHERE home_id = ? AND status = 'ACTIVE' LIMIT 1",
+        [resident.home_id]
+      );
+      const newOcc = remaining.length > 0
+        ? (remaining[0].resident_type === 'OWNER' ? 'OCCUPIED_BY_OWNER' : 'OCCUPIED_BY_TENANT')
+        : 'VACANT';
+      await connection.query('UPDATE homes SET occupancy_status = ? WHERE id = ?', [newOcc, resident.home_id]);
+
+      await connection.commit();
+      return result.affectedRows > 0;
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
   }
 }
 

@@ -38,7 +38,11 @@ class AuthService {
     const homeDetails = await UserRepository.getUserHomeDetails(user.id, user.role);
 
     let societyDetails = null;
-    const socId = homeDetails?.society_id || user.society_id;
+    let socId = homeDetails?.society_id || user.society_id;
+    if (!socId && user.role === 'ADMIN') {
+      const [allSoc] = await pool.query('SELECT id FROM societies WHERE status = "ACTIVE" ORDER BY id ASC LIMIT 1');
+      if (allSoc.length > 0) socId = allSoc[0].id;
+    }
     if (socId) {
       const [socRows] = await pool.query(
         'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email FROM societies WHERE id = ?',
@@ -145,7 +149,11 @@ class AuthService {
     const homeDetails = await UserRepository.getUserHomeDetails(user.id, user.role);
 
     let societyDetails = null;
-    const socId = homeDetails?.society_id || user.society_id;
+    let socId = homeDetails?.society_id || user.society_id;
+    if (!socId && user.role === 'ADMIN') {
+      const [allSoc] = await pool.query('SELECT id FROM societies WHERE status = "ACTIVE" ORDER BY id ASC LIMIT 1');
+      if (allSoc.length > 0) socId = allSoc[0].id;
+    }
     if (socId) {
       const [socRows] = await pool.query(
         'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email FROM societies WHERE id = ?',

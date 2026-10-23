@@ -87,6 +87,39 @@ class AuthController {
       next(error);
     }
   }
+  /**
+   * GET /api/auth/test-users (Public testing helper)
+   * Returns list of active users with known test credentials for instant portal testing
+   */
+  static async getTestUsers(req, res, next) {
+    try {
+      const { pool } = require('../config/db');
+      const [users] = await pool.query(`
+        SELECT u.id, u.full_name, u.phone, u.email, u.role, u.flat_number, u.block_or_tower,
+               s.name AS society_name
+        FROM users u
+        LEFT JOIN societies s ON u.society_id = s.id
+        WHERE u.status = 'ACTIVE'
+        ORDER BY FIELD(u.role, 'ADMIN', 'OWNER', 'TENANT', 'COMMITTEE_MEMBER', 'SECURITY', 'FAMILY_MEMBER'), u.id ASC
+      `);
+
+      const testAccounts = users.map((u) => ({
+        id: u.id,
+        full_name: u.full_name,
+        phone: u.phone,
+        email: u.email,
+        role: u.role,
+        flat_number: u.flat_number,
+        block_or_tower: u.block_or_tower,
+        society_name: u.society_name,
+        password: u.role === 'ADMIN' ? 'Password@123' : '123456',
+      }));
+
+      return ApiResponse.success(res, 'Test accounts retrieved', { users: testAccounts });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = AuthController;

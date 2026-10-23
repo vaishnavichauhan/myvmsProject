@@ -14,6 +14,7 @@ import {
   RefreshCw,
   AlertCircle,
   ArrowRight,
+  Receipt,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { familyMemberApi } from '../api/familyMemberApi';
@@ -113,8 +114,19 @@ export default function MyHomePage() {
     ? data.todayVisitorsCount
     : visitors.length;
 
-  // 7 Metric Cards Configuration
+  // 8 Metric Cards Configuration
   const metricCards = [
+    {
+      id: 'maintenance',
+      title: 'Maintenance',
+      count: 'Society Dues',
+      subtitle: 'View All Homes Dues',
+      to: '/dashboard/maintenance',
+      icon: Receipt,
+      color: 'var(--color-clay)',
+      bgLight: 'rgba(196, 154, 108, 0.15)',
+      borderLight: 'rgba(196, 154, 108, 0.35)',
+    },
     {
       id: 'announcements',
       title: 'Announcements',
@@ -307,7 +319,7 @@ export default function MyHomePage() {
                       textTransform: 'capitalize',
                     }}
                   >
-                    {home.society_name || data?.society?.name || user?.societyName || 'Suncity Paradise'}
+                    {home.society_name || data?.society?.name || user?.societyName || ''}
                   </span>
                 </div>
               </div>

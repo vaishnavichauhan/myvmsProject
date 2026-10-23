@@ -1,0 +1,30 @@
+const { Router } = require('express');
+const SpecialChargeController = require('../controllers/special-charge.controller');
+const { authMiddleware } = require('../middlewares/auth.middleware');
+
+const router = Router();
+
+// Authentication required for all endpoints
+router.use(authMiddleware);
+
+// Statistics & Overview
+router.get('/stats', SpecialChargeController.getStats);
+
+// Resident specific charges
+router.get('/my-charges', SpecialChargeController.getResidentCharges);
+
+// Special charges CRUD
+router.get('/', SpecialChargeController.getAllCharges);
+router.post('/', SpecialChargeController.createCharge);
+router.get('/:id', SpecialChargeController.getChargeById);
+router.put('/:id', SpecialChargeController.updateCharge);
+router.delete('/:id', SpecialChargeController.deleteCharge);
+
+// Home assignments for a charge
+router.get('/:id/assignments', SpecialChargeController.getAssignmentsByCharge);
+
+// Payments & Receipts
+router.get('/payments', SpecialChargeController.getAllPayments);
+router.post('/payments', SpecialChargeController.recordPayment);
+
+module.exports = router;

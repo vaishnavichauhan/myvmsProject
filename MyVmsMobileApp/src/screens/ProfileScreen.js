@@ -143,13 +143,17 @@ export const ProfileScreen = ({ navigation }) => {
       if (list && list.length > 0) {
         const found = list.find((s) => s.id === user?.societyId) || list[0];
         setSocietyData(found);
-      } else if (user?.society) {
+      } else if (user?.society && (user?.society?.id || user?.society?.name)) {
         setSocietyData(user.society);
+      } else {
+        setSocietyData(null);
       }
     } catch (err) {
       console.log('Error fetching society data:', err);
-      if (user?.society) {
+      if (user?.society && (user?.society?.id || user?.society?.name)) {
         setSocietyData(user.society);
+      } else {
+        setSocietyData(null);
       }
     } finally {
       setLoadingSociety(false);
@@ -367,41 +371,52 @@ export const ProfileScreen = ({ navigation }) => {
     user?.relationship ||
     (isAdmin ? 'Head Administrator' : isSecurity ? 'Duty Guard' : 'Primary Resident');
 
-  // Society info fallback
-  const activeSociety = {
-    name:
-      societyData?.name ||
-      home?.society_name ||
-      user?.society?.name ||
-      user?.societyName ||
-      'Suncity Paradise',
-    code:
-      societyData?.code ||
-      home?.society_code ||
-      user?.society?.code ||
-      user?.societyCode ||
-      'SUNCIT-951',
-    address:
-      societyData?.address ||
-      societyData?.address_line1 ||
-      home?.society_address ||
-      user?.society?.address ||
-      user?.societyAddress ||
-      'Vishwamitry Township (Wing B), Behind Vishwamitri Township / Opp. Surya Darshan Township, Manjalpur, Vadodara, Gujarat 390011',
-    contact_number:
-      societyData?.contact_number ||
-      societyData?.contact_phone ||
-      home?.society_contact ||
-      user?.society?.contact_number ||
-      user?.societyContactNumber ||
-      '1234567890',
-    emergency_number:
-      societyData?.emergency_number ||
-      home?.society_emergency ||
-      user?.society?.emergency_number ||
-      user?.societyEmergencyNumber ||
-      '1234567899',
-  };
+  // Society info resolution
+  const hasSociety = Boolean(
+    societyData?.id ||
+    societyData?.name ||
+    home?.society_name ||
+    user?.society?.name ||
+    user?.societyName
+  );
+
+  const activeSociety = hasSociety
+    ? {
+        name:
+          societyData?.name ||
+          home?.society_name ||
+          user?.society?.name ||
+          user?.societyName ||
+          '',
+        code:
+          societyData?.code ||
+          societyData?.society_code ||
+          home?.society_code ||
+          user?.society?.code ||
+          user?.societyCode ||
+          '',
+        address:
+          societyData?.address ||
+          societyData?.address_line1 ||
+          home?.society_address ||
+          user?.society?.address ||
+          user?.societyAddress ||
+          'Not configured',
+        contact_number:
+          societyData?.contact_number ||
+          societyData?.contact_phone ||
+          home?.society_contact ||
+          user?.society?.contact_number ||
+          user?.societyContactNumber ||
+          'Not provided',
+        emergency_number:
+          societyData?.emergency_number ||
+          home?.society_emergency ||
+          user?.society?.emergency_number ||
+          user?.societyEmergencyNumber ||
+          '112 / Not provided',
+      }
+    : null;
 
   return (
     <View style={styles.container}>
@@ -525,7 +540,7 @@ export const ProfileScreen = ({ navigation }) => {
                   <Text style={{ color: THEME.colors.textMuted }}>{roleTheme.label}</Text>
                   <Text style={{ color: THEME.colors.sand }}> • </Text>
                   <Text style={{ color: THEME.colors.clay, fontWeight: '700' }}>
-                    {activeSociety.name}
+                    {activeSociety?.name || 'No Society Registered'}
                   </Text>
                   {isSecurity && assignedGateInfo && (
                     <>
@@ -791,11 +806,13 @@ export const ProfileScreen = ({ navigation }) => {
                 <Text style={styles.infoFieldLabel}>Residential Complex</Text>
                 <View style={styles.complexRow}>
                   <Text style={styles.infoFieldValMain} numberOfLines={1}>
-                    {activeSociety.name}
+                    {activeSociety?.name || 'No Society Registered'}
                   </Text>
-                  <View style={styles.codePillSmall}>
-                    <Text style={styles.codePillSmallText}>Code: {activeSociety.code}</Text>
-                  </View>
+                  {activeSociety?.code ? (
+                    <View style={styles.codePillSmall}>
+                      <Text style={styles.codePillSmallText}>Code: {activeSociety.code}</Text>
+                    </View>
+                  ) : null}
                 </View>
               </View>
 
@@ -878,59 +895,83 @@ export const ProfileScreen = ({ navigation }) => {
               </View>
             </View>
 
-            <View style={styles.cardMainRow}>
-              {/* Square Society Icon Badge */}
-              <View style={styles.squareSocietyBadge}>
-                <Building2 size={26} color="#FFFFFF" />
-              </View>
-
-              {/* Society Info */}
-              <View style={styles.cardContentCol}>
-                <View style={styles.nameBadgeRow}>
-                  <Text style={styles.societyNameText} numberOfLines={1}>
-                    {activeSociety.name}
-                  </Text>
-                  <View style={styles.codePill}>
-                    <Text style={styles.codePillText}>Code: {activeSociety.code}</Text>
-                  </View>
+            {activeSociety ? (
+              <View style={styles.cardMainRow}>
+                {/* Square Society Icon Badge */}
+                <View style={styles.squareSocietyBadge}>
+                  <Building2 size={26} color="#FFFFFF" />
                 </View>
 
-                <View style={styles.detailsGroup}>
-                  {/* Address */}
-                  <View style={styles.detailItemTop}>
-                    <View style={styles.detailIconBox}>
-                      <MapPin size={12} color={THEME.colors.clay} />
-                    </View>
-                    <Text style={styles.detailLabel}>Address:</Text>
-                    <Text style={styles.detailValMultiline}>
-                      {activeSociety.address}
+                {/* Society Info */}
+                <View style={styles.cardContentCol}>
+                  <View style={styles.nameBadgeRow}>
+                    <Text style={styles.societyNameText} numberOfLines={1}>
+                      {activeSociety.name}
                     </Text>
+                    {activeSociety.code ? (
+                      <View style={styles.codePill}>
+                        <Text style={styles.codePillText}>Code: {activeSociety.code}</Text>
+                      </View>
+                    ) : null}
                   </View>
 
-                  {/* Office Contact */}
-                  <View style={styles.detailItem}>
-                    <View style={styles.detailIconBox}>
-                      <Phone size={12} color={THEME.colors.clay} />
+                  <View style={styles.detailsGroup}>
+                    {/* Address */}
+                    <View style={styles.detailItemTop}>
+                      <View style={styles.detailIconBox}>
+                        <MapPin size={12} color={THEME.colors.clay} />
+                      </View>
+                      <Text style={styles.detailLabel}>Address:</Text>
+                      <Text style={styles.detailValMultiline}>
+                        {activeSociety.address || 'Address not configured'}
+                      </Text>
                     </View>
-                    <Text style={styles.detailLabel}>Office:</Text>
-                    <Text style={styles.detailVal} numberOfLines={1}>
-                      {activeSociety.contact_number}
-                    </Text>
-                  </View>
 
-                  {/* Emergency Helpline */}
-                  <View style={styles.detailItem}>
-                    <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
-                      <Phone size={12} color={THEME.colors.fernGreen} />
+                    {/* Office Contact */}
+                    <View style={styles.detailItem}>
+                      <View style={styles.detailIconBox}>
+                        <Phone size={12} color={THEME.colors.clay} />
+                      </View>
+                      <Text style={styles.detailLabel}>Office:</Text>
+                      <Text style={styles.detailVal} numberOfLines={1}>
+                        {activeSociety.contact_number || 'Not provided'}
+                      </Text>
                     </View>
-                    <Text style={styles.detailLabel}>Helpline:</Text>
-                    <Text style={styles.detailVal} numberOfLines={1}>
-                      {activeSociety.emergency_number}
-                    </Text>
+
+                    {/* Emergency Helpline */}
+                    <View style={styles.detailItem}>
+                      <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                        <Phone size={12} color={THEME.colors.fernGreen} />
+                      </View>
+                      <Text style={styles.detailLabel}>Helpline:</Text>
+                      <Text style={styles.detailVal} numberOfLines={1}>
+                        {activeSociety.emergency_number || '112 / Not provided'}
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
-            </View>
+            ) : (
+              <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
+                <View style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  backgroundColor: 'rgba(196, 154, 108, 0.12)',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 10,
+                }}>
+                  <Building2 size={24} color={THEME.colors.clay} />
+                </View>
+                <Text style={{ fontSize: 15, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 4 }}>
+                  No Society Configured
+                </Text>
+                <Text style={{ fontSize: 13, color: THEME.colors.textMuted, textAlign: 'center', paddingHorizontal: 20 }}>
+                  Currently no society is registered in the database. Please create a society in Society Management.
+                </Text>
+              </View>
+            )}
           </View>
 
           {/* ======================================================== */}

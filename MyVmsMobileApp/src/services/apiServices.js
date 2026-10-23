@@ -184,6 +184,7 @@ export const societyApi = {
     return apiClient.get(`/societies${qs ? `?${qs}` : ''}`);
   },
   getSocietyById: (id) => apiClient.get(`/societies/${id}`),
+  createSociety: (data) => apiClient.post('/societies', data),
   updateSociety: (id, data) => apiClient.put(`/societies/${id}`, data),
   deleteSociety: (id, permanent = false) => apiClient.delete(`/societies/${id}?permanent=${permanent}`),
   getAllHomes: (params = {}) => {

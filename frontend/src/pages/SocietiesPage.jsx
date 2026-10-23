@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import {
   Building2,
@@ -18,9 +19,23 @@ import {
   UserCheck,
   Key,
   PhoneCall,
+  Mail,
+  FileText,
 } from 'lucide-react';
 import { societyApi } from '../api/societyApi';
 import { useAuthStore } from '../store/authStore';
+
+export const CONFIG_OPTIONS = ['1BHK', '2BHK', '3BHK', '4BHK', 'PENTHOUSE'];
+
+export const parseSocietyConfigs = (configStr) => {
+  if (!configStr) return ['2BHK'];
+  if (Array.isArray(configStr)) return configStr;
+  const parts = String(configStr)
+    .split(/[,/]+/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : ['2BHK'];
+};
 
 export default function SocietiesPage() {
   const location = useLocation();
@@ -42,12 +57,414 @@ export default function SocietiesPage() {
   const [societyForm, setSocietyForm] = useState({
     name: '',
     address: '',
-    society_type: 'FLAT',
-    total_homes: 50,
+    registration_number: '',
+    contact_email: '',
+    society_type: 'BUNGALOW',
+    property_configuration: '2BHK',
+    total_homes: 10,
     contact_number: '',
     emergency_number: '',
     status: 'ACTIVE',
   });
+
+  const togglePropertyConfig = (cfg) => {
+    const current = parseSocietyConfigs(societyForm.property_configuration);
+    let updated;
+    if (current.includes(cfg)) {
+      if (current.length === 1) return; // Keep at least one configuration
+      updated = current.filter((c) => c !== cfg);
+    } else {
+      updated = [...current, cfg];
+    }
+    setSocietyForm((prev) => ({ ...prev, property_configuration: updated.join(', ') }));
+  };
+
+  // Dynamic preview configuration for Create Society Modal
+  const [bungalowStartNo, setBungalowStartNo] = useState('1');
+  const [bungalowEndNo, setBungalowEndNo] = useState('10');
+  const [flatTowers, setFlatTowers] = useState([]);
+
+  const handleAddTower = () => {
+    setFlatTowers((prev) => {
+      let next;
+      const currentTotal = parseInt(societyForm.total_homes, 10) || 10;
+      if (prev.length === 0) {
+        // Default allocation: Start Home No 1 and End Home No is total unit
+        next = [
+          {
+            id: Date.now() + 1,
+            name: 'A',
+            floor: '1',
+            startNo: '1',
+            endNo: String(currentTotal),
+            count: currentTotal,
+          },
+        ];
+      } else {
+        const index = prev.length;
+        const letter = String.fromCharCode(65 + index); // 'B', 'C', etc.
+        const floor = '1';
+        const startNo = '1';
+        const count = 5;
+        const endNo = '5';
+
+        next = [
+          ...prev,
+          {
+            id: Date.now() + Math.random(),
+            name: letter,
+            floor: floor,
+            startNo: startNo,
+            endNo: endNo,
+            count: count,
+          },
+        ];
+      }
+      const sumUnits = next.reduce((acc, t) => acc + (parseInt(t.count, 10) || 1), 0);
+      setSocietyForm((f) => ({ ...f, total_homes: sumUnits }));
+      return next;
+    });
+  };
+
+  const handleUpdateTower = (id, field, value) => {
+    setFlatTowers((prev) => {
+      const updatedList = prev.map((t) => {
+        if (t.id !== id) return t;
+        const updated = { ...t, [field]: value };
+        if (field === 'startNo') {
+          const s = parseInt(value, 10);
+          const c = parseInt(t.count, 10) || 5;
+          if (!isNaN(s)) {
+            updated.endNo = String(s + c - 1);
+          }
+        } else if (field === 'endNo') {
+          const e = parseInt(value, 10);
+          const s = parseInt(t.startNo, 10) || 101;
+          if (!isNaN(e) && e >= s) {
+            updated.count = e - s + 1;
+          }
+        }
+        return updated;
+      });
+      const sumUnits = updatedList.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      setSocietyForm((f) => ({ ...f, total_homes: sumUnits }));
+      return updatedList;
+    });
+  };
+
+  const handleRemoveTower = (id) => {
+    setFlatTowers((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      const sumUnits = next.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      setSocietyForm((f) => ({ ...f, total_homes: sumUnits || 10 }));
+      return next;
+    });
+  };
+
+  const renderUnitAllocationPreview = () => {
+    const bStart = parseInt(bungalowStartNo, 10) || 1;
+    const bEndVal = parseInt(bungalowEndNo, 10);
+    const totalUnitsNum = (!isNaN(bEndVal) && bEndVal >= bStart)
+      ? (bEndVal - bStart + 1)
+      : Math.max(1, parseInt(societyForm.total_homes, 10) || 10);
+    const bEnd = !isNaN(bEndVal) && bEndVal >= bStart ? bEndVal : (bStart + totalUnitsNum - 1);
+    const isBungalow = societyForm.society_type === 'BUNGALOW';
+    const isFlat = societyForm.society_type === 'FLAT';
+
+    return (
+      <div
+        style={{
+          background: 'var(--bg-tertiary)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+          padding: '16px',
+          marginBottom: '16px',
+        }}
+      >
+        {/* Case 1: BUNGALOW */}
+        {isBungalow && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Home size={16} color="var(--color-clay)" />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-dark-brown)', textTransform: 'uppercase' }}>
+                  Bungalow Units Allocation
+                </span>
+              </div>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(196, 154, 108, 0.2)', color: 'var(--color-dark-brown)', padding: '3px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                {societyForm.property_configuration} • {totalUnitsNum} Total Units
+              </span>
+            </div>
+
+            {/* start home no & end home no */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label" style={{ fontSize: '0.78rem' }}>Start Home No *</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="input-field"
+                  style={{ background: '#FFFFFF', fontWeight: 700, color: 'var(--color-dark-brown)' }}
+                  value={bungalowStartNo}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBungalowStartNo(val);
+                    const s = parseInt(val, 10);
+                    const c = parseInt(societyForm.total_homes, 10) || 10;
+                    if (!isNaN(s)) {
+                      setBungalowEndNo(String(s + c - 1));
+                    }
+                  }}
+                />
+              </div>
+              <div className="input-group" style={{ marginBottom: 0 }}>
+                <label className="input-label" style={{ fontSize: '0.78rem' }}>End Home No</label>
+                <input
+                  type="number"
+                  min={bStart}
+                  className="input-field"
+                  style={{ background: '#FFFFFF', fontWeight: 700, color: 'var(--color-dark-brown)' }}
+                  value={bungalowEndNo}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBungalowEndNo(val);
+                    const endNum = parseInt(val, 10);
+                    const s = parseInt(bungalowStartNo, 10) || 1;
+                    if (!isNaN(endNum) && endNum >= s) {
+                      setSocietyForm((prev) => ({ ...prev, total_homes: endNum - s + 1 }));
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* After section inside: show small icon "home" for 1 to total units */}
+            <div style={{ background: '#FFFFFF', borderRadius: '8px', padding: '12px', border: '1px solid rgba(214, 194, 161, 0.4)' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase' }}>
+                Home Units Preview ({bStart} to {bEnd}):
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '100px', overflowY: 'auto', paddingRight: '4px' }}>
+                {Array.from({ length: totalUnitsNum }, (_, i) => bStart + i).map((num) => (
+                  <div
+                    key={num}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '60px',
+                      padding: '7px 4px',
+                      background: 'rgba(196, 154, 108, 0.12)',
+                      border: '1px solid rgba(196, 154, 108, 0.3)',
+                      borderRadius: '7px',
+                      textAlign: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Home size={15} color="var(--color-clay)" />
+                    <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-dark-brown)', lineHeight: 1.1 }}>
+                      Home {num}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Case 2: FLAT */}
+        {isFlat && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Building2 size={16} color="var(--accent-amber)" />
+                <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--color-dark-brown)', textTransform: 'uppercase' }}>
+                  Flat Tower & Floor Allocation
+                </span>
+              </div>
+              <span style={{ fontSize: '0.75rem', background: 'rgba(217, 119, 6, 0.14)', color: 'var(--accent-amber)', padding: '3px 8px', borderRadius: '4px', fontWeight: 700 }}>
+                {societyForm.property_configuration} • {flatTowers.length > 0 ? flatTowers.reduce((sum, t) => sum + (parseInt(t.count, 10) || 5), 0) : totalUnitsNum} Total Units
+              </span>
+            </div>
+
+            {/* If no towers added yet, show button: "Add Tower and Floor" */}
+            {flatTowers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '22px 16px', background: '#FFFFFF', borderRadius: '8px', border: '2px dashed var(--accent-amber)' }}>
+                <button
+                  type="button"
+                  id="btn-add-tower-and-flor"
+                  onClick={handleAddTower}
+                  className="btn"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    padding: '10px 22px',
+                    background: 'var(--accent-amber)',
+                    color: '#FFFFFF',
+                    fontWeight: 700,
+                    borderRadius: '8px',
+                    fontSize: '0.9rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={16} />
+                  <span>Add Tower and Floor</span>
+                </button>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                  Click to configure Tower Name, Floor, Start/End Home numbers, and unit icons.
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {flatTowers.map((tower) => {
+                  const tStart = parseInt(tower.startNo, 10) || 1;
+                  const tCount = Math.max(1, parseInt(tower.count, 10) || 1);
+                  const tEnd = tower.endNo !== undefined ? tower.endNo : String(tStart + tCount - 1);
+
+                  return (
+                    <div
+                      key={tower.id}
+                      style={{
+                        background: '#FFFFFF',
+                        borderRadius: '8px',
+                        padding: '12px',
+                        border: '1px solid rgba(214, 194, 161, 0.4)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--color-dark-brown)', textTransform: 'uppercase' }}>
+                          Tower {tower.name} • Floor {tower.floor} ({tCount} Units)
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTower(tower.id)}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            padding: '2px 6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                          }}
+                          title="Remove this Tower"
+                        >
+                          <Trash2 size={13} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                        <div>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Tower Name</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            style={{ padding: '6px 10px', fontSize: '0.82rem', fontWeight: 800, background: 'var(--bg-tertiary)' }}
+                            value={tower.name}
+                            onChange={(e) => handleUpdateTower(tower.id, 'name', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Floor Name</label>
+                          <input
+                            type="text"
+                            className="input-field"
+                            style={{ padding: '6px 10px', fontSize: '0.82rem', fontWeight: 800, background: 'var(--bg-tertiary)' }}
+                            value={tower.floor}
+                            onChange={(e) => handleUpdateTower(tower.id, 'floor', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>Start Home No</label>
+                          <input
+                            type="number"
+                            className="input-field"
+                            style={{ padding: '6px 10px', fontSize: '0.82rem', fontWeight: 800, background: '#FFFFFF', color: 'var(--color-dark-brown)' }}
+                            value={tower.startNo}
+                            onChange={(e) => handleUpdateTower(tower.id, 'startNo', e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>End Home No</label>
+                          <input
+                            type="number"
+                            min={tStart}
+                            className="input-field"
+                            style={{ padding: '6px 10px', fontSize: '0.82rem', fontWeight: 800, background: '#FFFFFF', color: 'var(--color-dark-brown)' }}
+                            value={tEnd}
+                            onChange={(e) => handleUpdateTower(tower.id, 'endNo', e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      {/* After section inside show small icon home */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', maxHeight: '110px', overflowY: 'auto', paddingRight: '4px' }}>
+                        {Array.from({ length: tCount }, (_, i) => tStart + i).map((num) => (
+                          <div
+                            key={num}
+                            style={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              minWidth: '60px',
+                              padding: '6px 5px',
+                              background: 'rgba(59, 130, 246, 0.08)',
+                              border: '1px solid rgba(59, 130, 246, 0.25)',
+                              borderRadius: '7px',
+                              textAlign: 'center',
+                              gap: '3px',
+                            }}
+                          >
+                            <Home size={14} color="var(--accent-amber)" />
+                            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--color-dark-brown)', lineHeight: 1.1 }}>
+                              {tower.name}-{num}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* After show another tower/flor create button */}
+                <button
+                  type="button"
+                  id="btn-add-another-tower-flor"
+                  onClick={handleAddTower}
+                  className="btn btn-outline"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    width: '100%',
+                    padding: '10px 16px',
+                    borderRadius: '8px',
+                    border: '1px dashed var(--accent-amber)',
+                    color: 'var(--color-dark-brown)',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    background: 'rgba(217, 119, 6, 0.06)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Plus size={16} color="var(--accent-amber)" />
+                  <span>+ Add Another Tower / Floor</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const [homeForm, setHomeForm] = useState({
     home_number: '',
@@ -118,12 +535,18 @@ export default function SocietiesPage() {
       setSocietyForm({
         name: '',
         address: '',
-        society_type: 'FLAT',
-        total_homes: 50,
+        registration_number: '',
+        contact_email: '',
+        society_type: 'BUNGALOW',
+        property_configuration: '2BHK',
+        total_homes: 10,
         contact_number: '',
         emergency_number: '',
         status: 'ACTIVE',
       });
+      setBungalowStartNo('1');
+      setBungalowEndNo('10');
+      setFlatTowers([]);
       setShowCreateModal(true);
     }
   }, [location.state, societies.length, loading, isAdmin]);
@@ -156,18 +579,42 @@ export default function SocietiesPage() {
     }
 
     try {
-      await societyApi.createSociety(societyForm);
+      const sumFlatUnits = flatTowers.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      const specifiedTotal = parseInt(societyForm.total_homes, 10) || 10;
+      const finalTotalHomes = societyForm.society_type === 'FLAT' && flatTowers.length > 0
+        ? sumFlatUnits
+        : specifiedTotal;
+
+      const payload = {
+        ...societyForm,
+        total_homes: finalTotalHomes,
+        bungalow_start_no: bungalowStartNo,
+        towers: flatTowers,
+        tower_a_name: flatTowers[0]?.name || 'A',
+        tower_a_floor: flatTowers[0]?.floor || '1',
+        tower_a_start: flatTowers[0]?.startNo || '1',
+        tower_b_name: flatTowers[1]?.name || 'B',
+        tower_b_floor: flatTowers[1]?.floor || '1',
+        tower_b_start: flatTowers[1]?.startNo || '1',
+      };
+      await societyApi.createSociety(payload);
       setSuccessMsg('Society created successfully!');
       setShowCreateModal(false);
       setSocietyForm({
         name: '',
         address: '',
-        society_type: 'FLAT',
-        total_homes: 50,
+        registration_number: '',
+        contact_email: '',
+        society_type: 'BUNGALOW',
+        property_configuration: '2BHK',
+        total_homes: 10,
         contact_number: '',
         emergency_number: '',
         status: 'ACTIVE',
       });
+      setBungalowStartNo('1');
+      setBungalowEndNo('10');
+      setFlatTowers([]);
       fetchSocieties();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
@@ -175,17 +622,114 @@ export default function SocietiesPage() {
     }
   };
 
-  const handleOpenEdit = (soc) => {
+  const handleOpenEdit = async (soc) => {
     setSelectedSociety(soc);
     setSocietyForm({
-      name: soc.name,
+      name: soc.name || '',
       address: soc.address || '',
-      society_type: soc.society_type,
-      total_homes: soc.total_homes,
+      registration_number: soc.registration_number || '',
+      contact_email: soc.contact_email || '',
+      society_type: soc.society_type || 'BUNGALOW',
+      property_configuration: soc.property_configuration || '2BHK',
+      total_homes: soc.total_homes || 10,
       contact_number: soc.contact_number || '',
       emergency_number: soc.emergency_number || '',
-      status: soc.status,
+      status: soc.status || 'ACTIVE',
     });
+
+    try {
+      const res = await societyApi.getHomesBySociety(soc.id);
+      const homes = res.data?.homes || [];
+      if (soc.society_type === 'FLAT') {
+        if (homes.length > 0) {
+          const towerMap = new Map();
+          homes.forEach((h) => {
+            const rawWing = (h.building_or_wing || '').replace(/^Tower\s*/i, '').trim() || 'A';
+            if (!towerMap.has(rawWing)) {
+              towerMap.set(rawWing, []);
+            }
+            towerMap.get(rawWing).push(h);
+          });
+          const loadedTowers = Array.from(towerMap.entries()).map(([tName, tHomes], idx) => {
+            const floor = tHomes[0]?.floor || '1';
+            const nums = tHomes
+              .map((h) => {
+                const match = String(h.home_number).match(/(\d+)$/);
+                return match ? parseInt(match[1], 10) : null;
+              })
+              .filter((n) => n !== null)
+              .sort((a, b) => a - b);
+
+            const startNo = nums.length > 0 ? String(nums[0]) : '1';
+            const endNo = nums.length > 0 ? String(nums[nums.length - 1]) : String(tHomes.length);
+            return {
+              id: Date.now() + idx,
+              name: tName,
+              floor: String(floor),
+              startNo: startNo,
+              endNo: endNo,
+              count: tHomes.length,
+            };
+          });
+          setFlatTowers(
+            loadedTowers.length > 0
+              ? loadedTowers
+              : [
+                  {
+                    id: Date.now(),
+                    name: 'A',
+                    floor: '1',
+                    startNo: '1',
+                    endNo: String(soc.total_homes || 10),
+                    count: soc.total_homes || 10,
+                  },
+                ]
+          );
+        } else {
+          setFlatTowers([
+            {
+              id: Date.now(),
+              name: 'A',
+              floor: '1',
+              startNo: '1',
+              endNo: String(soc.total_homes || 10),
+              count: soc.total_homes || 10,
+            },
+          ]);
+        }
+      } else {
+        if (homes.length > 0) {
+          const nums = homes
+            .map((h) => {
+              const match = String(h.home_number).match(/(\d+)$/);
+              return match ? parseInt(match[1], 10) : null;
+            })
+            .filter((n) => n !== null)
+            .sort((a, b) => a - b);
+          const s = nums.length > 0 ? nums[0] : 1;
+          const count = parseInt(soc.total_homes, 10) || 10;
+          setBungalowStartNo(String(s));
+          setBungalowEndNo(String(s + count - 1));
+        } else {
+          setBungalowStartNo('1');
+          setBungalowEndNo(String(soc.total_homes || 10));
+        }
+      }
+    } catch {
+      setBungalowStartNo('1');
+      setBungalowEndNo(String(soc.total_homes || 10));
+      setFlatTowers([
+        {
+          id: Date.now(),
+          name: 'A',
+          floor: '1',
+          startNo: '1',
+          endNo: String(soc.total_homes || 10),
+          count: soc.total_homes || 10,
+        },
+      ]);
+    }
+
     setShowEditModal(true);
   };
 
@@ -193,7 +737,17 @@ export default function SocietiesPage() {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      await societyApi.updateSociety(selectedSociety.id, societyForm);
+      const sumFlatUnits = flatTowers.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      const specifiedTotal = parseInt(societyForm.total_homes, 10) || 10;
+      const finalTotalHomes = societyForm.society_type === 'FLAT' && flatTowers.length > 0
+        ? sumFlatUnits
+        : specifiedTotal;
+
+      const payload = {
+        ...societyForm,
+        total_homes: finalTotalHomes,
+      };
+      await societyApi.updateSociety(selectedSociety.id, payload);
       setSuccessMsg('Society updated successfully!');
       setShowEditModal(false);
       fetchSocieties();
@@ -204,10 +758,10 @@ export default function SocietiesPage() {
   };
 
   const handleDeleteSociety = async (id, name) => {
-    if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
+    if (!window.confirm(`Are you sure you want to delete "${name}"? This will permanently remove the society and all its units.`)) return;
     try {
-      await societyApi.deleteSociety(id, false);
-      setSuccessMsg('Society deactivated.');
+      await societyApi.deleteSociety(id, true);
+      setSuccessMsg('Society deleted successfully.');
       fetchSocieties();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
@@ -300,12 +854,18 @@ export default function SocietiesPage() {
                 setSocietyForm({
                   name: '',
                   address: '',
-                  society_type: 'FLAT',
-                  total_homes: 50,
+                  registration_number: '',
+                  contact_email: '',
+                  society_type: 'BUNGALOW',
+                  property_configuration: '2BHK',
+                  total_homes: 10,
                   contact_number: '',
                   emergency_number: '',
                   status: 'ACTIVE',
                 });
+                setBungalowStartNo('1');
+                setBungalowEndNo('10');
+                setFlatTowers([]);
                 setShowCreateModal(true);
               }}
               className="btn btn-primary"
@@ -377,12 +937,18 @@ export default function SocietiesPage() {
                 setSocietyForm({
                   name: '',
                   address: '',
-                  society_type: 'FLAT',
-                  total_homes: 50,
+                  registration_number: '',
+                  contact_email: '',
+                  society_type: 'BUNGALOW',
+                  property_configuration: '2BHK',
+                  total_homes: 10,
                   contact_number: '',
                   emergency_number: '',
                   status: 'ACTIVE',
                 });
+                setBungalowStartNo('1');
+                setBungalowEndNo('10');
+                setFlatTowers([]);
                 setShowCreateModal(true);
               }}
               className="btn btn-primary"
@@ -396,9 +962,12 @@ export default function SocietiesPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {societies.map((soc) => {
-            const totalUnits = soc.total_homes || soc.actual_homes_count || 0;
+            const actualCount = soc.actual_homes_count !== undefined && soc.actual_homes_count !== null
+              ? Number(soc.actual_homes_count)
+              : Number(soc.total_homes || 0);
+            const totalUnits = actualCount > 0 ? actualCount : Number(soc.total_homes || 0);
             const occupiedUnits = soc.occupied_homes_count ?? 0;
-            const vacantUnits = soc.vacant_homes_count ?? Math.max(0, (soc.actual_homes_count || 0) - occupiedUnits);
+            const vacantUnits = Math.max(0, totalUnits - occupiedUnits);
             const societyType = soc.society_type || 'FLAT';
 
             return (
@@ -518,6 +1087,62 @@ export default function SocietiesPage() {
                           </div>
                         </div>
 
+                        {/* Registration Number */}
+                        {soc.registration_number && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: 'rgba(99, 102, 241, 0.12)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <FileText size={17} color="#4f46e5" />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Registration Number
+                              </div>
+                              <div style={{ fontSize: '0.92rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>
+                                {soc.registration_number}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Contact Email */}
+                        {soc.contact_email && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div
+                              style={{
+                                width: '32px',
+                                height: '32px',
+                                borderRadius: '8px',
+                                background: 'rgba(217, 119, 6, 0.12)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <Mail size={17} color="var(--accent-amber)" />
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                Contact Email
+                              </div>
+                              <div style={{ fontSize: '0.92rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>
+                                {soc.contact_email}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Contact Number */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <div
@@ -592,7 +1217,7 @@ export default function SocietiesPage() {
                         style={{ padding: '8px 16px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
                       >
                         <Home size={15} color="var(--color-fern-green)" />
-                        <span>Manage Homes ({soc.actual_homes_count || 0})</span>
+                        <span>Manage Homes ({totalUnits})</span>
                       </button>
 
                       {isAdmin && (
@@ -666,13 +1291,13 @@ export default function SocietiesPage() {
                       </div>
                       <div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          Total Unit
+                          Total Units
                         </div>
                         <div style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-dark-brown)', lineHeight: 1.2 }}>
                           {totalUnits}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                          {soc.actual_homes_count || 0} units configured
+                          {totalUnits} homes configured
                         </div>
                       </div>
                     </div>
@@ -786,10 +1411,10 @@ export default function SocietiesPage() {
                       </div>
                       <div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                          Type
+                          Type & Config
                         </div>
                         <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--color-dark-brown)', lineHeight: 1.2 }}>
-                          {societyType}
+                          {societyType === 'BUNGALOW' ? 'Bungalow' : 'Flat'} {soc.property_configuration ? `• ${soc.property_configuration}` : ''}
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                           {societyType === 'BUNGALOW' ? 'Villas / Row Houses' : 'Flats & Apartments'}
@@ -807,18 +1432,74 @@ export default function SocietiesPage() {
       {/* ---------------------------------------------------- */}
       {/* MODAL: Create Society */}
       {/* ---------------------------------------------------- */}
-      {showCreateModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '28px', background: 'var(--bg-secondary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '1.25rem' }}>Create New Residential Society</h2>
-              <button onClick={() => setShowCreateModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+      {showCreateModal && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '20px 16px',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowCreateModal(false);
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '660px',
+              maxHeight: 'calc(100vh - 48px)',
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              background: '#FFFFFF',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 24px 50px rgba(0,0,0,0.4)',
+              overflow: 'hidden',
+              margin: 'auto',
+            }}
+          >
+            {/* Header (pinned) */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '16px 24px',
+                borderBottom: '1px solid var(--border-subtle)',
+                background: '#FFFFFF',
+                flexShrink: 0,
+              }}
+            >
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                Create New Residential Society
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <X size={20} />
               </button>
             </div>
 
             {societies.length >= 1 ? (
-              <div>
+              <div style={{ padding: '24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
                 <div
                   style={{
                     padding: '16px',
@@ -850,17 +1531,354 @@ export default function SocietiesPage() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleCreateSociety}>
+              <>
+                {/* Scrollable Form Body */}
+                <div style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
+                  <form id="form-create-society" onSubmit={handleCreateSociety}>
+                    <div className="input-group">
+                      <label className="input-label">Society Name *</label>
+                      <input
+                        type="text"
+                        required
+                        className="input-field"
+                        placeholder="e.g. Palm Grove Residency"
+                        value={societyForm.name}
+                        onChange={(e) => setSocietyForm({ ...societyForm, name: e.target.value })}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="input-group">
+                        <label className="input-label">Registration Number</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="e.g. MH/2023/REC/09871"
+                          value={societyForm.registration_number}
+                          onChange={(e) => setSocietyForm({ ...societyForm, registration_number: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">Contact Email</label>
+                        <input
+                          type="email"
+                          className="input-field"
+                          placeholder="e.g. society.office@example.com"
+                          value={societyForm.contact_email}
+                          onChange={(e) => setSocietyForm({ ...societyForm, contact_email: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="input-group">
+                      <label className="input-label">Society Address *</label>
+                      <textarea
+                        required
+                        rows={2}
+                        className="input-field"
+                        placeholder="Full street address, area, city, pincode"
+                        value={societyForm.address}
+                        onChange={(e) => setSocietyForm({ ...societyForm, address: e.target.value })}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="input-group">
+                        <label className="input-label">Society Type *</label>
+                        <select
+                          id="select-create-society-type"
+                          className="input-field"
+                          value={societyForm.society_type}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            const currentTotal = parseInt(societyForm.total_homes, 10) || 10;
+                            if (newType === 'FLAT' && flatTowers.length === 0) {
+                              setFlatTowers([
+                                {
+                                  id: Date.now(),
+                                  name: 'A',
+                                  floor: '1',
+                                  startNo: '1',
+                                  endNo: String(currentTotal),
+                                  count: currentTotal,
+                                },
+                              ]);
+                            }
+                            setSocietyForm({ ...societyForm, society_type: newType });
+                          }}
+                        >
+                          <option value="BUNGALOW">Bungalow</option>
+                          <option value="FLAT">Flat</option>
+                        </select>
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>Property Configuration *</span>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--color-clay)', fontWeight: 700 }}>
+                            {parseSocietyConfigs(societyForm.property_configuration).length} selected
+                          </span>
+                        </label>
+                        <input type="hidden" id="select-create-property-config" value={societyForm.property_configuration} />
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                          {CONFIG_OPTIONS.map((cfg) => {
+                            const isSelected = parseSocietyConfigs(societyForm.property_configuration).includes(cfg);
+                            return (
+                              <button
+                                key={cfg}
+                                type="button"
+                                id={`btn-create-cfg-${cfg.toLowerCase()}`}
+                                onClick={() => togglePropertyConfig(cfg)}
+                                style={{
+                                  padding: '6px 12px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.8rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  transition: 'all 0.15s ease',
+                                  border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
+                                  backgroundColor: isSelected ? 'var(--color-clay)' : '#FFFFFF',
+                                  color: isSelected ? '#FFFFFF' : 'var(--color-dark-brown)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '5px',
+                                  boxShadow: isSelected ? '0 2px 6px rgba(196, 154, 108, 0.35)' : 'none',
+                                }}
+                              >
+                                <span>{isSelected ? '✓' : '+'}</span>
+                                <span>{cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="input-group">
+                        <label className="input-label">Total Units *</label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          className="input-field"
+                          value={societyForm.total_homes}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setSocietyForm({ ...societyForm, total_homes: val });
+                            const c = parseInt(val, 10);
+                            if (!isNaN(c) && c > 0) {
+                              if (societyForm.society_type === 'BUNGALOW') {
+                                const s = parseInt(bungalowStartNo, 10) || 1;
+                                setBungalowEndNo(String(s + c - 1));
+                              } else if (societyForm.society_type === 'FLAT') {
+                                setFlatTowers((prev) => {
+                                  if (prev.length === 1) {
+                                    const s = parseInt(prev[0].startNo, 10) || 1;
+                                    return [
+                                      {
+                                        ...prev[0],
+                                        count: c,
+                                        endNo: String(s + c - 1),
+                                      },
+                                    ];
+                                  }
+                                  return prev;
+                                });
+                              }
+                            }
+                          }}
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">Status</label>
+                        <select
+                          className="input-field"
+                          value={societyForm.status}
+                          onChange={(e) => setSocietyForm({ ...societyForm, status: e.target.value })}
+                        >
+                          <option value="ACTIVE">ACTIVE</option>
+                          <option value="INACTIVE">INACTIVE</option>
+                          <option value="SUSPENDED">SUSPENDED</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* ----------------------------------------------------------------- */}
+                    {/* Unit Numbering & Home Icon Structure Preview (Bungalow vs Flat)  */}
+                    {/* ----------------------------------------------------------------- */}
+                    {renderUnitAllocationPreview()}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label">Contact Number</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="+91 22 26401122"
+                          value={societyForm.contact_number}
+                          onChange={(e) => setSocietyForm({ ...societyForm, contact_number: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="input-group" style={{ marginBottom: 0 }}>
+                        <label className="input-label">Emergency Number</label>
+                        <input
+                          type="text"
+                          className="input-field"
+                          placeholder="+91 22 26409999"
+                          value={societyForm.emergency_number}
+                          onChange={(e) => setSocietyForm({ ...societyForm, emergency_number: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                {/* Pinned Footer */}
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'flex-end',
+                    gap: '12px',
+                    padding: '14px 24px',
+                    borderTop: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-secondary)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateModal(false)}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 18px', fontSize: '0.9rem' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    form="form-create-society"
+                    id="btn-submit-create-society"
+                    className="btn btn-primary"
+                    style={{ padding: '8px 22px', fontSize: '0.9rem', fontWeight: 700 }}
+                  >
+                    Save Society
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: Edit Society */}
+      {/* ---------------------------------------------------- */}
+      {showEditModal && selectedSociety && createPortal(
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.72)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 99999,
+            padding: '20px 16px',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEditModal(false);
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '660px',
+              maxHeight: 'calc(100vh - 48px)',
+              display: 'flex',
+              flexDirection: 'column',
+              minHeight: 0,
+              background: '#FFFFFF',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 24px 50px rgba(0,0,0,0.4)',
+              overflow: 'hidden',
+              margin: 'auto',
+            }}
+          >
+            {/* Header (pinned) */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '16px 24px',
+                borderBottom: '1px solid var(--border-subtle)',
+                background: '#FFFFFF',
+                flexShrink: 0,
+              }}
+            >
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                Edit Society: {selectedSociety.name}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Scrollable Form Body */}
+            <div style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
+              <form id="form-edit-society" onSubmit={handleEditSociety}>
                 <div className="input-group">
                   <label className="input-label">Society Name *</label>
                   <input
                     type="text"
                     required
                     className="input-field"
-                    placeholder="e.g. Palm Grove Residency"
                     value={societyForm.name}
                     onChange={(e) => setSocietyForm({ ...societyForm, name: e.target.value })}
                   />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="input-group">
+                    <label className="input-label">Registration Number</label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="e.g. MH/2023/REC/09871"
+                      value={societyForm.registration_number}
+                      onChange={(e) => setSocietyForm({ ...societyForm, registration_number: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label">Contact Email</label>
+                    <input
+                      type="email"
+                      className="input-field"
+                      placeholder="e.g. society.office@example.com"
+                      value={societyForm.contact_email}
+                      onChange={(e) => setSocietyForm({ ...societyForm, contact_email: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 <div className="input-group">
@@ -869,7 +1887,6 @@ export default function SocietiesPage() {
                     required
                     rows={2}
                     className="input-field"
-                    placeholder="Full street address, area, city, pincode"
                     value={societyForm.address}
                     onChange={(e) => setSocietyForm({ ...societyForm, address: e.target.value })}
                   />
@@ -879,30 +1896,130 @@ export default function SocietiesPage() {
                   <div className="input-group">
                     <label className="input-label">Society Type *</label>
                     <select
+                      id="select-edit-society-type"
                       className="input-field"
                       value={societyForm.society_type}
-                      onChange={(e) => setSocietyForm({ ...societyForm, society_type: e.target.value })}
+                      onChange={(e) => {
+                        const newType = e.target.value;
+                        const currentTotal = parseInt(societyForm.total_homes, 10) || 10;
+                        if (newType === 'FLAT' && flatTowers.length === 0) {
+                          setFlatTowers([
+                            {
+                              id: Date.now(),
+                              name: 'A',
+                              floor: '1',
+                              startNo: '1',
+                              endNo: String(currentTotal),
+                              count: currentTotal,
+                            },
+                          ]);
+                        }
+                        setSocietyForm({ ...societyForm, society_type: newType });
+                      }}
                     >
-                      <option value="FLAT">FLAT (Apartments)</option>
-                      <option value="BUNGALOW">BUNGALOW (Villas/Row)</option>
+                      <option value="BUNGALOW">Bungalow</option>
+                      <option value="FLAT">Flat</option>
                     </select>
                   </div>
 
                   <div className="input-group">
-                    <label className="input-label">Total Homes *</label>
+                    <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Property Configuration *</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--color-clay)', fontWeight: 700 }}>
+                        {parseSocietyConfigs(societyForm.property_configuration).length} selected
+                      </span>
+                    </label>
+                    <input type="hidden" id="select-edit-property-config" value={societyForm.property_configuration} />
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
+                      {CONFIG_OPTIONS.map((cfg) => {
+                        const isSelected = parseSocietyConfigs(societyForm.property_configuration).includes(cfg);
+                        return (
+                          <button
+                            key={cfg}
+                            type="button"
+                            id={`btn-edit-cfg-${cfg.toLowerCase()}`}
+                            onClick={() => togglePropertyConfig(cfg)}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              fontSize: '0.8rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              transition: 'all 0.15s ease',
+                              border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
+                              backgroundColor: isSelected ? 'var(--color-clay)' : '#FFFFFF',
+                              color: isSelected ? '#FFFFFF' : 'var(--color-dark-brown)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              boxShadow: isSelected ? '0 2px 6px rgba(196, 154, 108, 0.35)' : 'none',
+                            }}
+                          >
+                            <span>{isSelected ? '✓' : '+'}</span>
+                            <span>{cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  <div className="input-group">
+                    <label className="input-label">Total Units *</label>
                     <input
                       type="number"
                       min="1"
                       required
                       className="input-field"
                       value={societyForm.total_homes}
-                      onChange={(e) => setSocietyForm({ ...societyForm, total_homes: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSocietyForm({ ...societyForm, total_homes: val });
+                        const c = parseInt(val, 10);
+                        if (!isNaN(c) && c > 0) {
+                          if (societyForm.society_type === 'BUNGALOW') {
+                            const s = parseInt(bungalowStartNo, 10) || 1;
+                            setBungalowEndNo(String(s + c - 1));
+                          } else if (societyForm.society_type === 'FLAT') {
+                            setFlatTowers((prev) => {
+                              if (prev.length === 1) {
+                                const s = parseInt(prev[0].startNo, 10) || 1;
+                                return [
+                                  {
+                                    ...prev[0],
+                                    count: c,
+                                    endNo: String(s + c - 1),
+                                  },
+                                ];
+                              }
+                              return prev;
+                            });
+                          }
+                        }
+                      }}
                     />
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label">Status</label>
+                    <select
+                      className="input-field"
+                      value={societyForm.status}
+                      onChange={(e) => setSocietyForm({ ...societyForm, status: e.target.value })}
+                    >
+                      <option value="ACTIVE">ACTIVE</option>
+                      <option value="INACTIVE">INACTIVE</option>
+                      <option value="SUSPENDED">SUSPENDED</option>
+                    </select>
                   </div>
                 </div>
 
+                {/* Unit Numbering & Allocation Preview */}
+                {renderUnitAllocationPreview()}
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group">
+                  <div className="input-group" style={{ marginBottom: 0 }}>
                     <label className="input-label">Contact Number</label>
                     <input
                       type="text"
@@ -913,7 +2030,7 @@ export default function SocietiesPage() {
                     />
                   </div>
 
-                  <div className="input-group">
+                  <div className="input-group" style={{ marginBottom: 0 }}>
                     <label className="input-label">Emergency Number</label>
                     <input
                       type="text"
@@ -924,148 +2041,48 @@ export default function SocietiesPage() {
                     />
                   </div>
                 </div>
-
-                <div className="input-group">
-                  <label className="input-label">Status</label>
-                  <select
-                    className="input-field"
-                    value={societyForm.status}
-                    onChange={(e) => setSocietyForm({ ...societyForm, status: e.target.value })}
-                  >
-                    <option value="ACTIVE">ACTIVE</option>
-                    <option value="INACTIVE">INACTIVE</option>
-                    <option value="SUSPENDED">SUSPENDED</option>
-                  </select>
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="btn btn-secondary">
-                    Cancel
-                  </button>
-                  <button type="submit" id="btn-submit-create-society" className="btn btn-primary">
-                    Save Society
-                  </button>
-                </div>
               </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ---------------------------------------------------- */}
-      {/* MODAL: Edit Society */}
-      {/* ---------------------------------------------------- */}
-      {showEditModal && selectedSociety && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '28px', background: 'var(--bg-secondary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ fontSize: '1.25rem' }}>Edit Society: {selectedSociety.name}</h2>
-              <button onClick={() => setShowEditModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <X size={20} />
-              </button>
             </div>
 
-            <form onSubmit={handleEditSociety}>
-              <div className="input-group">
-                <label className="input-label">Society Name *</label>
-                <input
-                  type="text"
-                  required
-                  className="input-field"
-                  value={societyForm.name}
-                  onChange={(e) => setSocietyForm({ ...societyForm, name: e.target.value })}
-                />
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Society Address *</label>
-                <textarea
-                  required
-                  rows={2}
-                  className="input-field"
-                  value={societyForm.address}
-                  onChange={(e) => setSocietyForm({ ...societyForm, address: e.target.value })}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="input-group">
-                  <label className="input-label">Society Type</label>
-                  <select
-                    className="input-field"
-                    value={societyForm.society_type}
-                    onChange={(e) => setSocietyForm({ ...societyForm, society_type: e.target.value })}
-                  >
-                    <option value="FLAT">FLAT</option>
-                    <option value="BUNGALOW">BUNGALOW</option>
-                  </select>
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Total Homes</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="input-field"
-                    value={societyForm.total_homes}
-                    onChange={(e) => setSocietyForm({ ...societyForm, total_homes: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div className="input-group">
-                  <label className="input-label">Contact Number</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={societyForm.contact_number}
-                    onChange={(e) => setSocietyForm({ ...societyForm, contact_number: e.target.value })}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Emergency Number</label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    value={societyForm.emergency_number}
-                    onChange={(e) => setSocietyForm({ ...societyForm, emergency_number: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Status</label>
-                <select
-                  className="input-field"
-                  value={societyForm.status}
-                  onChange={(e) => setSocietyForm({ ...societyForm, status: e.target.value })}
-                >
-                  <option value="ACTIVE">ACTIVE</option>
-                  <option value="INACTIVE">INACTIVE</option>
-                  <option value="SUSPENDED">SUSPENDED</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '20px' }}>
-                <button type="button" onClick={() => setShowEditModal(false)} className="btn btn-secondary">
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Update Society
-                </button>
-              </div>
-            </form>
+            {/* Pinned Footer */}
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                gap: '12px',
+                padding: '14px 24px',
+                borderTop: '1px solid var(--border-subtle)',
+                background: 'var(--bg-secondary)',
+                flexShrink: 0,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setShowEditModal(false)}
+                className="btn btn-secondary"
+                style={{ padding: '8px 18px', fontSize: '0.9rem' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="form-edit-society"
+                className="btn btn-primary"
+                style={{ padding: '8px 22px', fontSize: '0.9rem', fontWeight: 700 }}
+              >
+                Update Society
+              </button>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ---------------------------------------------------- */}
       {/* DRAWER / MODAL: Manage Homes in Selected Society */}
       {/* ---------------------------------------------------- */}
-      {showManageHomesModal && selectedSociety && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '20px' }}>
+      {showManageHomesModal && selectedSociety && createPortal(
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 99999, padding: '20px' }}>
           <div className="glass-panel" style={{ width: '100%', maxWidth: '850px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', overflow: 'hidden' }}>
 
             {/* Header */}
@@ -1177,15 +2194,16 @@ export default function SocietiesPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ---------------------------------------------------- */}
       {/* SUB-MODAL: Add Single Home */}
       {/* ---------------------------------------------------- */}
-      {showAddHomeModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '20px' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '440px', padding: '24px', background: 'var(--bg-secondary)' }}>
+      {showAddHomeModal && createPortal(
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '16px', overflowY: 'auto' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', maxHeight: 'min(92vh, 650px)', overflowY: 'auto', padding: '24px', background: '#FFFFFF', borderRadius: 'var(--radius-lg)', boxShadow: '0 20px 48px rgba(0,0,0,0.35)', margin: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.15rem' }}>Add Home to {selectedSociety.name}</h3>
               <button onClick={() => setShowAddHomeModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
@@ -1273,15 +2291,16 @@ export default function SocietiesPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* ---------------------------------------------------- */}
       {/* SUB-MODAL: Batch Generate Homes (Home 1 .. Home 100) */}
       {/* ---------------------------------------------------- */}
-      {showBatchHomesModal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 110, padding: '20px' }}>
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '460px', padding: '24px', background: 'var(--bg-secondary)' }}>
+      {showBatchHomesModal && createPortal(
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100000, padding: '16px', overflowY: 'auto' }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '480px', maxHeight: 'min(92vh, 650px)', overflowY: 'auto', padding: '24px', background: '#FFFFFF', borderRadius: 'var(--radius-lg)', boxShadow: '0 20px 48px rgba(0,0,0,0.35)', margin: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
 
@@ -1374,7 +2393,8 @@ export default function SocietiesPage() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
     </div>

@@ -837,7 +837,7 @@ export default function CommitteePage() {
             {committees.length}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Registered committee wings for {societies.find((s) => String(s.id) === String(selectedSocietyId))?.name || user?.societyName || 'suncity paradise'}
+            Registered committee wings for {societies.find((s) => String(s.id) === String(selectedSocietyId))?.name || user?.societyName || 'Active Society'}
           </div>
         </div>
 

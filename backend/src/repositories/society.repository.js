@@ -13,7 +13,9 @@ class SocietyRepository {
       name,
       code,
       registration_number = null,
+      contact_email = null,
       society_type = 'FLAT',
+      property_configuration = '2BHK',
       total_homes = 0,
       address,
       contact_number = null,
@@ -23,17 +25,19 @@ class SocietyRepository {
 
     const query = `
       INSERT INTO societies (
-        name, code, registration_number, society_type, total_homes,
+        name, code, registration_number, contact_email, society_type, property_configuration, total_homes,
         address, address_line1, contact_number, contact_phone, emergency_number, status
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const [result] = await pool.query(query, [
       name.trim(),
       code.trim().toUpperCase(),
       registration_number,
+      contact_email,
       society_type,
+      property_configuration || '2BHK',
       total_homes,
       address,
       address, // fallback to address_line1
@@ -52,13 +56,13 @@ class SocietyRepository {
   static async findById(id) {
     const query = `
       SELECT 
-        s.id, s.name, s.code, s.registration_number, s.society_type, s.total_homes,
+        s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
         COALESCE(s.address, s.address_line1) AS address,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
         s.emergency_number, s.status, s.created_at, s.updated_at,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id) AS actual_homes_count,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT')) AS occupied_homes_count,
-        (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND (h.occupancy_status = 'VACANT' OR h.occupancy_status IS NULL)) AS vacant_homes_count
+        GREATEST(0, s.total_homes - (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT'))) AS vacant_homes_count
       FROM societies s
       WHERE s.id = ?
       LIMIT 1
@@ -82,13 +86,13 @@ class SocietyRepository {
   static async findAll(filters = {}) {
     let query = `
       SELECT 
-        s.id, s.name, s.code, s.registration_number, s.society_type, s.total_homes,
+        s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
         COALESCE(s.address, s.address_line1) AS address,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
         s.emergency_number, s.status, s.created_at, s.updated_at,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id) AS actual_homes_count,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT')) AS occupied_homes_count,
-        (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND (h.occupancy_status = 'VACANT' OR h.occupancy_status IS NULL)) AS vacant_homes_count
+        GREATEST(0, s.total_homes - (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT'))) AS vacant_homes_count
       FROM societies s
       WHERE 1=1
     `;
@@ -127,9 +131,21 @@ class SocietyRepository {
       fields.push('name = ?');
       params.push(data.name.trim());
     }
+    if (data.registration_number !== undefined) {
+      fields.push('registration_number = ?');
+      params.push(data.registration_number ? String(data.registration_number).trim() : null);
+    }
+    if (data.contact_email !== undefined) {
+      fields.push('contact_email = ?');
+      params.push(data.contact_email ? String(data.contact_email).trim() : null);
+    }
     if (data.society_type !== undefined) {
       fields.push('society_type = ?');
       params.push(data.society_type);
+    }
+    if (data.property_configuration !== undefined) {
+      fields.push('property_configuration = ?');
+      params.push(data.property_configuration);
     }
     if (data.total_homes !== undefined) {
       fields.push('total_homes = ?');

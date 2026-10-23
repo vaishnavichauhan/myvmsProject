@@ -37,9 +37,10 @@ import {
   ChevronLeft,
   ChevronDown,
   Check,
+  Lock,
 } from 'lucide-react-native';
 import { THEME } from '../constants/theme';
-import { residentApi, societyApi } from '../services/apiServices';
+import { residentApi, societyApi, homeApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
 
 const UNIT_TYPES = [
@@ -57,14 +58,16 @@ const UNIT_TYPES = [
 const defaultCreateForm = {
   society_id: 1,
   home_number: '',
-  building_or_wing: 'Wing A',
-  floor: '1',
+  society_type: 'FLAT',
+  building_or_wing: '',
+  floor: '',
   home_type: '2BHK',
   name: '',
   phone: '',
   email: '',
   password: '',
   resident_type: 'OWNER',
+  move_in_date: new Date().toISOString().split('T')[0],
   status: 'ACTIVE',
 };
 
@@ -155,18 +158,27 @@ export const ResidentsScreen = ({ navigation }) => {
   };
 
   const currentSociety = societies[0] || null;
-  const totalSocietyHomes = currentSociety?.total_homes || Math.max(homes.length, 10);
+  const isFlat = currentSociety?.society_type === 'FLAT';
+  const totalSocietyHomes = currentSociety ? (currentSociety.total_homes || homes.length || 10) : 0;
 
   // -------------------------------------------------------------
   // Auto-generate Row & Column Units data (Parity with frontend)
   // -------------------------------------------------------------
   const allUnitsData = useMemo(() => {
+    // If no society has been created yet, do not generate or display any units
+    if (!currentSociety) {
+      return [];
+    }
+
     const homeByNum = new Map();
     (homes || []).forEach((h) => {
       if (!h || !h.home_number) return;
-      homeByNum.set(String(h.home_number).toLowerCase(), h);
-      const pureNum = String(h.home_number).replace(/^(home|flat|unit|villa)\s*/i, '').trim().toLowerCase();
+      const raw = String(h.home_number).trim();
+      const lower = raw.toLowerCase();
+      homeByNum.set(lower, h);
+      const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
       homeByNum.set(pureNum, h);
+      homeByNum.set(lower.replace(/[-\s]/g, ''), h);
     });
 
     const resByHomeId = new Map();
@@ -175,80 +187,124 @@ export const ResidentsScreen = ({ navigation }) => {
       if (!r) return;
       if (r.home_id) resByHomeId.set(r.home_id, r);
       if (r.home_number) {
-        resByHomeNum.set(String(r.home_number).toLowerCase(), r);
-        const pureNum = String(r.home_number).replace(/^(home|flat|unit|villa)\s*/i, '').trim().toLowerCase();
+        const raw = String(r.home_number).trim();
+        const lower = raw.toLowerCase();
+        resByHomeNum.set(lower, r);
+        const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
         resByHomeNum.set(pureNum, r);
+        resByHomeNum.set(lower.replace(/[-\s]/g, ''), r);
       }
     });
 
-    const unitsList = [];
-    const processedHomeIds = new Set();
-    const processedHomeNums = new Set();
+    const societyHomes = (homes || []).filter(
+      (h) => !h.society_id || String(h.society_id) === String(currentSociety.id)
+    );
 
-    for (let i = 1; i <= totalSocietyHomes; i++) {
-      const numStr = String(i);
-      const existing = homeByNum.get(numStr) || homeByNum.get(`home ${numStr}`);
-      const res = (existing && resByHomeId.get(existing.id)) || resByHomeNum.get(numStr) || resByHomeNum.get(`home ${numStr}`) || null;
-
-      if (existing) {
-        processedHomeIds.add(existing.id);
-        if (existing.home_number) {
-          processedHomeNums.add(String(existing.home_number).toLowerCase());
-        }
-      }
-
-      const rawNum = existing?.home_number ? String(existing.home_number) : String(i);
-      const displayLabel = existing?.home_number
-        ? (String(existing.home_number).match(/^(home|flat|villa|unit)/i) ? existing.home_number : `Home ${existing.home_number}`)
-        : `Home ${i}`;
-
-      unitsList.push({
-        id: existing?.id || `auto-slot-${i}`,
-        home_id: existing?.id || null,
-        displayNumber: displayLabel,
-        rawNumber: rawNum,
-        slotNumber: i,
-        building_or_wing: existing?.building_or_wing || (currentSociety?.society_type === 'BUNGALOW' ? 'Row 1' : 'Wing A'),
-        floor: existing?.floor ?? (Math.floor((i - 1) / 4) + 1),
-        home_type: existing?.home_type || (currentSociety?.society_type === 'BUNGALOW' ? 'BUNGALOW' : '2BHK'),
-        isConfigured: !!existing,
-        isOccupied: !!res,
-        resident: res,
+    if (societyHomes.length > 0) {
+      const sortedHomes = [...societyHomes].sort((a, b) => {
+        const wingA = String(a.building_or_wing || '').toUpperCase();
+        const wingB = String(b.building_or_wing || '').toUpperCase();
+        if (wingA !== wingB) return wingA.localeCompare(wingB);
+        const numA = parseInt(String(a.home_number).replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(String(b.home_number).replace(/\D/g, ''), 10) || 0;
+        return numA - numB;
       });
-    }
 
-    (homes || []).forEach((h) => {
-      if (!h || !h.home_number) return;
-      const lower = String(h.home_number).toLowerCase();
-      if (!processedHomeIds.has(h.id) && !processedHomeNums.has(lower)) {
-        const res = (h.id && resByHomeId.get(h.id)) || resByHomeNum.get(lower) || null;
-        unitsList.push({
+      return sortedHomes.map((h, index) => {
+        const rawNum = String(h.home_number || '').trim();
+        const lower = rawNum.toLowerCase();
+        const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
+        const res =
+          resByHomeId.get(h.id) ||
+          resByHomeNum.get(lower) ||
+          resByHomeNum.get(pureNum) ||
+          resByHomeNum.get(lower.replace(/[-\s]/g, '')) ||
+          null;
+
+        return {
           id: h.id,
           home_id: h.id,
-          displayNumber: String(h.home_number).match(/^(home|flat|villa|unit)/i) ? h.home_number : `Home ${h.home_number}`,
-          rawNumber: String(h.home_number),
-          slotNumber: unitsList.length + 1,
-          building_or_wing: h.building_or_wing || 'Wing A',
-          floor: h.floor ?? 1,
-          home_type: h.home_type || '2BHK',
+          displayNumber: rawNum,
+          rawNumber: rawNum,
+          slotNumber: index + 1,
+          building_or_wing: h.building_or_wing || null,
+          floor: h.floor !== null && h.floor !== undefined && String(h.floor).trim() !== '' ? h.floor : null,
+          society_type: currentSociety.society_type || 'BUNGALOW',
+          home_type: h.home_type || currentSociety?.property_configuration || '2BHK',
           isConfigured: true,
           isOccupied: !!res,
           resident: res,
+        };
+      });
+    }
+
+    // Fallback if homes not yet configured in DB
+    const expectedSlots = [];
+    if (isFlat) {
+      const towerACount = Math.ceil(totalSocietyHomes / 2);
+      const towerBCount = totalSocietyHomes - towerACount;
+
+      for (let i = 1; i <= towerACount; i++) {
+        expectedSlots.push({
+          rawNumber: `A-${100 + i}`,
+          tower: 'A',
+          floor: 1,
         });
       }
-    });
+      for (let i = 1; i <= towerBCount; i++) {
+        expectedSlots.push({
+          rawNumber: `B-${200 + i}`,
+          tower: 'B',
+          floor: 1,
+        });
+      }
+    } else {
+      for (let i = 1; i <= totalSocietyHomes; i++) {
+        expectedSlots.push({
+          rawNumber: String(i),
+          tower: null,
+          floor: null,
+        });
+      }
+    }
 
-    return unitsList;
-  }, [homes, residents, currentSociety, totalSocietyHomes]);
+    return expectedSlots.map((slot, index) => {
+      const targetStr = slot.rawNumber.toLowerCase();
+      const res =
+        resByHomeNum.get(targetStr) ||
+        resByHomeNum.get(targetStr.replace(/[-\s]/g, '')) ||
+        resByHomeNum.get(`home ${targetStr}`) ||
+        null;
+
+      return {
+        id: `auto-slot-${index + 1}`,
+        home_id: null,
+        displayNumber: slot.rawNumber,
+        rawNumber: slot.rawNumber,
+        slotNumber: index + 1,
+        building_or_wing: slot.tower || null,
+        floor: slot.floor,
+        society_type: currentSociety.society_type || 'BUNGALOW',
+        home_type: currentSociety?.property_configuration || '2BHK',
+        isConfigured: false,
+        isOccupied: !!res,
+        resident: res,
+      };
+    });
+  }, [homes, residents, currentSociety, totalSocietyHomes, isFlat]);
 
   // Filtered rows for the list
   const filteredUnits = useMemo(() => {
     return allUnitsData.filter((u) => {
+      const q = searchTerm.toLowerCase();
       const matchesSearch =
-        u.displayNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.building_or_wing.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (u.resident?.full_name && u.resident.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (u.resident?.phone && u.resident.phone.includes(searchTerm));
+        searchTerm === '' ||
+        (u.displayNumber && u.displayNumber.toLowerCase().includes(q)) ||
+        (u.rawNumber && String(u.rawNumber).toLowerCase().includes(q)) ||
+        (u.building_or_wing && u.building_or_wing.toLowerCase().includes(q)) ||
+        (u.resident?.full_name && u.resident.full_name.toLowerCase().includes(q)) ||
+        (u.resident?.phone && u.resident.phone.includes(searchTerm)) ||
+        (u.resident?.email && u.resident.email.toLowerCase().includes(q));
 
       const matchesStatus =
         statusFilter === 'ALL' ||
@@ -279,16 +335,39 @@ export const ResidentsScreen = ({ navigation }) => {
   };
 
   // Open Create Resident Modal
-  const handleOpenCreateModal = (prefillUnitNumber = '') => {
-    const defaultWing = currentSociety?.society_type === 'BUNGALOW' ? 'Row 1' : 'Wing A';
-    const defaultType = currentSociety?.society_type === 'BUNGALOW' ? 'BUNGALOW' : '2BHK';
+  const handleOpenCreateModal = (unitOrNumber = '') => {
+    const unitObj = typeof unitOrNumber === 'object' && unitOrNumber !== null ? unitOrNumber : null;
+    const prefillUnitNumber = unitObj ? (unitObj.rawNumber || unitObj.displayNumber) : unitOrNumber;
+    const defaultType = unitObj?.home_type || currentSociety?.property_configuration || (currentSociety?.society_type === 'BUNGALOW' ? '2BHK' : '2BHK');
+    const defaultSocietyType = currentSociety?.society_type || 'FLAT';
+
+    let wing = unitObj?.building_or_wing || '';
+    let floorVal = unitObj?.floor !== null && unitObj?.floor !== undefined ? String(unitObj.floor) : '';
+
+    if (defaultSocietyType === 'FLAT' && prefillUnitNumber) {
+      if (!wing) {
+        const match = String(prefillUnitNumber).match(/^([A-Za-z]+)[-_]/);
+        if (match) wing = match[1];
+      }
+      if (!floorVal) {
+        const numPart = String(prefillUnitNumber).replace(/^[A-Za-z]+[-_]/, '');
+        if (numPart.length >= 3) {
+          floorVal = numPart.slice(0, -2);
+        } else {
+          floorVal = '1';
+        }
+      }
+    }
 
     setCreateForm({
       ...defaultCreateForm,
       society_id: currentSociety?.id || 1,
       home_number: prefillUnitNumber ? String(prefillUnitNumber).replace(/^(home|flat|unit|villa)\s*/i, '').trim() : '',
-      building_or_wing: defaultWing,
+      society_type: defaultSocietyType,
+      building_or_wing: wing,
+      floor: floorVal,
       home_type: defaultType,
+      move_in_date: new Date().toISOString().split('T')[0],
     });
     setShowUnitTypePicker(false);
     setShowCreateModal(true);
@@ -323,8 +402,8 @@ export const ResidentsScreen = ({ navigation }) => {
       if (!targetHome) {
         const homeRes = await societyApi.createHome(activeSocId, {
           home_number: hNum,
-          building_or_wing: createForm.building_or_wing || 'Wing A',
-          floor: createForm.floor ? parseInt(createForm.floor, 10) : 1,
+          building_or_wing: createForm.building_or_wing || null,
+          floor: createForm.floor !== '' && createForm.floor !== null ? Number(createForm.floor) : null,
           home_type: createForm.home_type || '2BHK',
           occupancy_status: 'VACANT',
         });
@@ -337,8 +416,8 @@ export const ResidentsScreen = ({ navigation }) => {
         home_id: targetHomeId,
         home_number: hNum,
         society_id: activeSocId,
-        building_or_wing: createForm.building_or_wing,
-        floor: createForm.floor,
+        building_or_wing: createForm.building_or_wing || null,
+        floor: createForm.floor !== '' && createForm.floor !== null ? Number(createForm.floor) : null,
         home_type: createForm.home_type,
         name: createForm.name.trim(),
         phone: createForm.phone.trim(),
@@ -452,6 +531,38 @@ export const ResidentsScreen = ({ navigation }) => {
     );
   };
 
+  // Delete Vacant Unit / Home
+  const handleDeleteUnit = (u) => {
+    Alert.alert(
+      'Delete Unit',
+      `Are you sure you want to delete ${u.displayNumber}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (u.home_id) {
+                await homeApi.deleteHome(u.home_id);
+              }
+              if (currentSociety && currentSociety.id && currentSociety.total_homes > 0) {
+                const newTotal = Math.max(0, currentSociety.total_homes - 1);
+                await societyApi.updateSociety(currentSociety.id, {
+                  total_homes: newTotal,
+                });
+              }
+              showToastSuccess(`${u.displayNumber} deleted successfully.`);
+              await fetchInitialData();
+            } catch (err) {
+              Alert.alert('Error', err.message || 'Failed to delete unit.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Status Filter Label
   const getStatusFilterLabel = () => {
     if (statusFilter === 'ALL') return `All Units (${allUnitsData.length})`;
@@ -479,7 +590,7 @@ export const ResidentsScreen = ({ navigation }) => {
 
     return (
       <View style={[styles.unitCard, isOcc ? styles.unitCardOccupied : styles.unitCardVacant]}>
-        {/* Card Header */}
+        {/* Card Header: Unit, Home, Type, Configuration, Occupancy */}
         <View style={styles.cardHeaderRow}>
           <View style={styles.unitInfoLeft}>
             <View
@@ -488,23 +599,48 @@ export const ResidentsScreen = ({ navigation }) => {
                 isOcc ? styles.unitIconWrapGreen : styles.unitIconWrapAmber,
               ]}
             >
-              <Home size={18} color={isOcc ? THEME.colors.fernGreenDark : '#d97706'} />
+              {isFlat ? (
+                <Building2 size={18} color={isOcc ? THEME.colors.fernGreenDark : '#d97706'} />
+              ) : (
+                <Home size={18} color={isOcc ? THEME.colors.fernGreenDark : THEME.colors.clayLight || '#b45309'} />
+              )}
             </View>
 
             <View style={{ flex: 1 }}>
-              <View style={styles.unitNumRow}>
-                <Text style={styles.unitNumberText}>Unit {cleanNum}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                {/* 1. Unit Slot Badge */}
+                <View style={{ backgroundColor: 'rgba(196, 154, 108, 0.16)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '800', color: THEME.colors.darkBrown }}>
+                    Unit {u.slotNumber}
+                  </Text>
+                </View>
+
+                {/* 2. Home Number */}
+                <Text style={styles.unitNumberText}>Home {cleanNum}</Text>
+
+                {/* 3. Type Badge */}
+                <View style={{ backgroundColor: isFlat ? 'rgba(217, 119, 6, 0.12)' : 'rgba(107, 142, 90, 0.12)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>
+                  <Text style={{ fontSize: 10, fontWeight: '700', color: isFlat ? '#b45309' : THEME.colors.fernGreenDark }}>
+                    {isFlat ? 'Flat' : 'Bungalow'}
+                  </Text>
+                </View>
+
+                {/* 6. Property Configuration */}
                 <View style={styles.unitTypePill}>
                   <Text style={styles.unitTypePillText}>{u.home_type}</Text>
                 </View>
               </View>
-              <Text style={styles.unitWingFloorText}>
-                {u.building_or_wing} • Floor {u.floor}
-              </Text>
+
+              {/* 4 & 5. Tower & Floor (only if Flat) */}
+              {isFlat && (
+                <Text style={styles.unitWingFloorText}>
+                  {u.building_or_wing ? `Tower ${String(u.building_or_wing).replace(/^Tower\s*/i, '')}` : 'Tower —'} • {u.floor ? `Floor ${u.floor}` : 'Floor 1'}
+                </Text>
+              )}
             </View>
           </View>
 
-          {/* Occupancy Badge */}
+          {/* 7. Occupancy Badge */}
           <View
             style={[
               styles.occupancyBadge,
@@ -527,7 +663,7 @@ export const ResidentsScreen = ({ navigation }) => {
         {/* Card Body: Resident Information or Vacant Notice */}
         {isOcc && res ? (
           <View style={styles.residentBody}>
-            {/* Name & Resident Type Badge */}
+            {/* 8. Resident Name & 9. Resident Type Badge */}
             <View style={styles.resNameRow}>
               <Text style={styles.resNameText} numberOfLines={1}>
                 {res.full_name}
@@ -553,11 +689,11 @@ export const ResidentsScreen = ({ navigation }) => {
               </View>
             </View>
 
-            {/* Phone & Status Row */}
+            {/* 10. Phone Number & Status */}
             <View style={styles.resMetaRow}>
               <View style={styles.resMetaItem}>
                 <Phone size={13} color={THEME.colors.fernGreen} />
-                <Text style={styles.resPhoneText}>{res.phone}</Text>
+                <Text style={styles.resPhoneText}>{res.phone || '—'}</Text>
               </View>
 
               <View
@@ -577,27 +713,23 @@ export const ResidentsScreen = ({ navigation }) => {
               </View>
             </View>
 
-            {/* Email (if exists) */}
-            {res.email ? (
-              <View style={[styles.resMetaItem, { marginTop: 4 }]}>
-                <Mail size={13} color={THEME.colors.textDim} />
-                <Text style={styles.resEmailText} numberOfLines={1}>
-                  {res.email}
-                </Text>
-              </View>
-            ) : null}
+            {/* 11. Email */}
+            <View style={[styles.resMetaItem, { marginTop: 4 }]}>
+              <Mail size={13} color="#d97706" />
+              <Text style={[styles.resEmailText, { color: res.email ? THEME.colors.darkBrown : THEME.colors.textDim }]} numberOfLines={1}>
+                {res.email || '—'}
+              </Text>
+            </View>
 
-            {/* Move-in Date */}
-            {res.move_in_date ? (
-              <View style={[styles.resMetaItem, { marginTop: 4 }]}>
-                <Calendar size={13} color={THEME.colors.textDim} />
-                <Text style={styles.resDateText}>
-                  Move-in: {res.move_in_date.split('T')[0]}
-                </Text>
-              </View>
-            ) : null}
+            {/* 12. Move-in Date */}
+            <View style={[styles.resMetaItem, { marginTop: 4 }]}>
+              <Calendar size={13} color={THEME.colors.textDim} />
+              <Text style={styles.resDateText}>
+                Move-in: {res.move_in_date ? res.move_in_date.split('T')[0] : '—'}
+              </Text>
+            </View>
 
-            {/* Actions Toolbar for Occupied Card */}
+            {/* 13. Actions Toolbar for Occupied Card */}
             {isAdmin && (
               <View style={styles.cardActionsRow}>
                 <TouchableOpacity
@@ -616,7 +748,6 @@ export const ResidentsScreen = ({ navigation }) => {
                   activeOpacity={0.7}
                 >
                   <Edit2 size={13} color={THEME.colors.clayDark} />
-                  {/* <Text style={styles.actionBtnText}>Edit</Text> */}
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -629,7 +760,6 @@ export const ResidentsScreen = ({ navigation }) => {
                   activeOpacity={0.7}
                 >
                   <KeyRound size={13} color="#d97706" />
-                  {/* <Text style={[styles.actionBtnText, { color: '#b45309' }]}>Password</Text> */}
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -641,14 +771,6 @@ export const ResidentsScreen = ({ navigation }) => {
                     size={13}
                     color={res.status === 'ACTIVE' ? '#e11d48' : '#15803d'}
                   />
-                  {/* <Text
-                    style={[
-                      styles.actionBtnText,
-                      { color: res.status === 'ACTIVE' ? '#be123c' : '#15803d' },
-                    ]}
-                  >
-                    {res.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                  </Text> */}
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -668,14 +790,25 @@ export const ResidentsScreen = ({ navigation }) => {
             </View>
 
             {isAdmin && (
-              <TouchableOpacity
-                style={styles.createResidentForUnitBtn}
-                onPress={() => handleOpenCreateModal(u.rawNumber)}
-                activeOpacity={0.8}
-              >
-                <Plus size={14} color="#FFFFFF" />
-                <Text style={styles.createResidentForUnitBtnText}>Create Resident</Text>
-              </TouchableOpacity>
+              <View style={styles.vacantActionsRow}>
+                <TouchableOpacity
+                  style={styles.createResidentForUnitBtn}
+                  onPress={() => handleOpenCreateModal(u.rawNumber)}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={14} color="#FFFFFF" />
+                  <Text style={styles.createResidentForUnitBtnText}>Create Resident</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.deleteUnitBtn}
+                  onPress={() => handleDeleteUnit(u)}
+                  activeOpacity={0.8}
+                >
+                  <Trash2 size={13} color="#e11d48" />
+                  <Text style={styles.deleteUnitBtnText}>Delete Unit</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         )}
@@ -748,18 +881,6 @@ export const ResidentsScreen = ({ navigation }) => {
               </TouchableOpacity>
             )}
           </View>
-
-          {isAdmin && (
-            <TouchableOpacity
-              id="btn-create-resident"
-              style={styles.btnCreateResident}
-              activeOpacity={0.85}
-              onPress={() => handleOpenCreateModal()}
-            >
-              <Plus size={15} color="#FFFFFF" />
-              <Text style={styles.btnCreateResidentText} numberOfLines={1}>Create Resident</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Dropdown Filters Row */}
@@ -818,11 +939,25 @@ export const ResidentsScreen = ({ navigation }) => {
           }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Users size={44} color={THEME.colors.sand} style={{ opacity: 0.7, marginBottom: 10 }} />
-              <Text style={styles.emptyTitle}>No Matching Units</Text>
-              <Text style={styles.emptySubtitle}>
-                No units or residents match your search / filter criteria.
+              <Home size={44} color={THEME.colors.sand} style={{ opacity: 0.7, marginBottom: 10 }} />
+              <Text style={styles.emptyTitle}>
+                {allUnitsData.length === 0 ? 'No Residential Units' : 'No Matching Units'}
               </Text>
+              <Text style={styles.emptySubtitle}>
+                {allUnitsData.length === 0
+                  ? 'There are currently no residential units in this society.'
+                  : 'No units or residents match your search / filter criteria.'}
+              </Text>
+              {allUnitsData.length === 0 && isAdmin && (
+                <TouchableOpacity
+                  style={[styles.createResidentForUnitBtn, { marginTop: 14, paddingHorizontal: 18 }]}
+                  onPress={() => handleOpenCreateModal('1')}
+                  activeOpacity={0.8}
+                >
+                  <Plus size={15} color="#FFFFFF" />
+                  <Text style={styles.createResidentForUnitBtnText}>Create Resident / Unit</Text>
+                </TouchableOpacity>
+              )}
             </View>
           }
         />
@@ -1029,54 +1164,83 @@ export const ResidentsScreen = ({ navigation }) => {
 
               <View style={styles.formRowTwoCol}>
                 <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Unit / Flat # *</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                    <Lock size={12} color={THEME.colors.textMuted} />
+                    <Text style={styles.inputLabel}>Home No</Text>
+                  </View>
                   <TextInput
-                    style={styles.input}
-                    placeholder="e.g. 101 or 1"
-                    placeholderTextColor={THEME.colors.textDim}
-                    value={createForm?.home_number || ''}
-                    onChangeText={(v) => setCreateForm({ ...(createForm || defaultCreateForm), home_number: v })}
+                    style={[styles.input, { backgroundColor: 'rgba(214, 194, 161, 0.2)', color: THEME.colors.textDark, fontWeight: '700' }]}
+                    editable={false}
+                    value={createForm?.home_number ? String(createForm.home_number) : ''}
                   />
                 </View>
 
                 <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Building / Wing</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                    <Lock size={12} color={THEME.colors.textMuted} />
+                    <Text style={styles.inputLabel}>Type</Text>
+                  </View>
                   <TextInput
-                    style={styles.input}
-                    placeholder="e.g. Wing A"
-                    placeholderTextColor={THEME.colors.textDim}
-                    value={createForm?.building_or_wing || ''}
-                    onChangeText={(v) => setCreateForm({ ...(createForm || defaultCreateForm), building_or_wing: v })}
+                    style={[styles.input, { backgroundColor: 'rgba(214, 194, 161, 0.2)', color: THEME.colors.textDark, fontWeight: '700' }]}
+                    editable={false}
+                    value={createForm?.society_type === 'BUNGALOW' || currentSociety?.society_type === 'BUNGALOW' ? 'Bungalow' : 'Flat'}
                   />
                 </View>
               </View>
 
-              <View style={styles.formRowTwoCol}>
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Floor Number</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="1"
-                    keyboardType="numeric"
-                    placeholderTextColor={THEME.colors.textDim}
-                    value={createForm?.floor || ''}
-                    onChangeText={(v) => setCreateForm({ ...(createForm || defaultCreateForm), floor: v })}
-                  />
-                </View>
+              {/* Tower & Floor (ONLY shown if FLAT) - Non-changeable */}
+              {(createForm?.society_type === 'FLAT' || isFlat) && (
+                <View style={styles.formRowTwoCol}>
+                  <View style={[styles.inputGroup, styles.formColHalf]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <Lock size={12} color={THEME.colors.textMuted} />
+                      <Text style={styles.inputLabel}>Tower</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: 'rgba(214, 194, 161, 0.2)', color: THEME.colors.textDark, fontWeight: '700' }]}
+                      editable={false}
+                      value={
+                        createForm?.building_or_wing
+                          ? (String(createForm.building_or_wing).toLowerCase().startsWith('tower')
+                              ? createForm.building_or_wing
+                              : `Tower ${String(createForm.building_or_wing).replace(/^Tower\s*/i, '')}`)
+                          : '—'
+                      }
+                    />
+                  </View>
 
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Unit Type</Text>
-                  <TouchableOpacity
-                    style={styles.dropdownSelectInput}
-                    onPress={() => setShowUnitTypePicker(true)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.dropdownSelectInputText} numberOfLines={1}>
-                      {createForm?.home_type || '2BHK'}
-                    </Text>
-                    <ChevronDown size={16} color={THEME.colors.clay} />
-                  </TouchableOpacity>
+                  <View style={[styles.inputGroup, styles.formColHalf]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                      <Lock size={12} color={THEME.colors.textMuted} />
+                      <Text style={styles.inputLabel}>Floor</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.input, { backgroundColor: 'rgba(214, 194, 161, 0.2)', color: THEME.colors.textDark, fontWeight: '700' }]}
+                      editable={false}
+                      value={
+                        createForm?.floor !== '' && createForm?.floor !== null && createForm?.floor !== undefined
+                          ? (String(createForm.floor).toLowerCase().startsWith('floor')
+                              ? String(createForm.floor)
+                              : `Floor ${createForm.floor}`)
+                          : '—'
+                      }
+                    />
+                  </View>
                 </View>
+              )}
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Configuration</Text>
+                <TouchableOpacity
+                  style={styles.dropdownSelectInput}
+                  onPress={() => setShowUnitTypePicker(true)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.dropdownSelectInputText} numberOfLines={1}>
+                    {createForm?.home_type === 'PENTHOUSE' ? 'Penthouse' : (createForm?.home_type || '2BHK')}
+                  </Text>
+                  <ChevronDown size={16} color={THEME.colors.clay} />
+                </TouchableOpacity>
               </View>
 
               {/* SECTION 2: RESIDENT ACCOUNT */}
@@ -1157,6 +1321,21 @@ export const ResidentsScreen = ({ navigation }) => {
                   </View>
                 </View>
               </View>
+
+              {/* Move-in Date */}
+              <View style={styles.inputGroup}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+                  <Calendar size={13} color={THEME.colors.textDim} />
+                  <Text style={styles.inputLabel}>Move-In Date</Text>
+                </View>
+                <TextInput
+                  style={styles.input}
+                  placeholder="YYYY-MM-DD"
+                  placeholderTextColor={THEME.colors.textDim}
+                  value={createForm?.move_in_date || ''}
+                  onChangeText={(v) => setCreateForm({ ...(createForm || defaultCreateForm), move_in_date: v })}
+                />
+              </View>
             </ScrollView>
 
             {/* Modal Actions Row */}
@@ -1196,7 +1375,7 @@ export const ResidentsScreen = ({ navigation }) => {
               />
               <View style={[styles.pickerCard, { maxWidth: 320, zIndex: 10 }]}>
                 <View style={styles.pickerHeader}>
-                  <Text style={styles.pickerTitle}>Select Unit Type</Text>
+                  <Text style={styles.pickerTitle}>Select Property Configuration</Text>
                   <TouchableOpacity
                     onPress={() => setShowUnitTypePicker(false)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -1206,7 +1385,7 @@ export const ResidentsScreen = ({ navigation }) => {
                 </View>
 
                 <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
-                  {UNIT_TYPES.map((t) => {
+                  {['1BHK', '2BHK', '3BHK', '4BHK', 'PENTHOUSE'].map((t) => {
                     const isSelected = createForm?.home_type === t;
                     return (
                       <TouchableOpacity
@@ -1218,7 +1397,7 @@ export const ResidentsScreen = ({ navigation }) => {
                         }}
                       >
                         <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
-                          {t}
+                          {t === 'PENTHOUSE' ? 'Penthouse' : t}
                         </Text>
                         {isSelected && <Check size={16} color={THEME.colors.clay} />}
                       </TouchableOpacity>
@@ -1886,6 +2065,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: '#FFFFFF',
+  },
+  vacantActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  deleteUnitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(225, 29, 72, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(225, 29, 72, 0.25)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  deleteUnitBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#e11d48',
   },
 
   /* Empty & Loading States */

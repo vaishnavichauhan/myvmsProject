@@ -250,7 +250,7 @@ export default function SecurityGateDashboardPage() {
                   </select>
                 ) : (
                   <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
-                    {societies[0]?.name || user?.societyName || 'Suncity Paradise'}
+                    {societies[0]?.name || user?.societyName || ''}
                   </span>
                 )}
               </div>

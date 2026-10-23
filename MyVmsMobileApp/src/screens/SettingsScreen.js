@@ -52,28 +52,41 @@ export const SettingsScreen = ({ navigation }) => {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // Society details & stats
-  const [societyId, setSocietyId] = useState(1);
-  const [societyName, setSocietyName] = useState('Suncity Paradise');
-  const [societyCode, setSocietyCode] = useState('SOC-001');
-  const [address, setAddress] = useState('Plot No. 42, Sector 18, Palm Beach Road, Navi Mumbai');
-  const [primaryPhone, setPrimaryPhone] = useState('+91 22 4567 8900');
-  const [emergencyPhone, setEmergencyPhone] = useState('+91 22 4567 9999');
+  const [societyId, setSocietyId] = useState(null);
+  const [societyName, setSocietyName] = useState('');
+  const [societyCode, setSocietyCode] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [pincode, setPincode] = useState('');
+  const [primaryPhone, setPrimaryPhone] = useState('');
+  const [emergencyPhone, setEmergencyPhone] = useState('');
   const [societyType, setSocietyType] = useState('FLAT');
-  const [totalHomes, setTotalHomes] = useState(50);
+  const [propertyConfig, setPropertyConfig] = useState('2BHK');
+  const [totalHomes, setTotalHomes] = useState(0);
   const [actualHomesCount, setActualHomesCount] = useState(0);
   const [occupiedHomesCount, setOccupiedHomesCount] = useState(0);
   const [vacantHomesCount, setVacantHomesCount] = useState(0);
 
   const [societyStatus, setSocietyStatus] = useState('ACTIVE');
 
-  // Edit Modal State & Form Fields (exact match with frontend SocietiesPage)
+  // Edit / Create Modal State & Form Fields (exact match with frontend SocietiesPage)
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editName, setEditName] = useState('Suncity Paradise');
-  const [editAddress, setEditAddress] = useState('Plot No. 42, Sector 18, Palm Beach Road, Navi Mumbai');
+  const [isCreatingSociety, setIsCreatingSociety] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editCode, setEditCode] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editCity, setEditCity] = useState('');
+  const [editState, setEditState] = useState('');
+  const [editPincode, setEditPincode] = useState('');
   const [editSocietyType, setEditSocietyType] = useState('FLAT');
-  const [editTotalHomes, setEditTotalHomes] = useState('50');
-  const [editPhone, setEditPhone] = useState('+91 22 4567 8900');
-  const [editEmergency, setEditEmergency] = useState('+91 22 4567 9999');
+  const [editPropertyConfig, setEditPropertyConfig] = useState('2BHK');
+  const [editTotalHomes, setEditTotalHomes] = useState('10');
+  const [bungalowStartNo, setBungalowStartNo] = useState('1');
+  const [bungalowEndNo, setBungalowEndNo] = useState('10');
+  const [flatTowers, setFlatTowers] = useState([]);
+  const [editPhone, setEditPhone] = useState('');
+  const [editEmergency, setEditEmergency] = useState('');
   const [editStatus, setEditStatus] = useState('ACTIVE');
 
   // Manage Homes Modal State
@@ -99,6 +112,111 @@ export const SettingsScreen = ({ navigation }) => {
   const [batchHomeType, setBatchHomeType] = useState('2BHK');
   const [submittingBatch, setSubmittingBatch] = useState(false);
 
+  // Dynamic preview configuration for Bungalow and Flat
+  const bungalowUnits = React.useMemo(() => {
+    const s = parseInt(bungalowStartNo, 10);
+    const e = parseInt(bungalowEndNo, 10);
+    if (isNaN(s) || isNaN(e) || e < s) return [];
+    const limit = Math.min(e - s + 1, 40);
+    const arr = [];
+    for (let i = 0; i < limit; i++) {
+      arr.push(s + i);
+    }
+    return arr;
+  }, [bungalowStartNo, bungalowEndNo]);
+
+  const flatUnits = React.useMemo(() => {
+    const units = [];
+    (flatTowers || []).forEach((t) => {
+      const s = parseInt(t.startNo, 10);
+      const e = parseInt(t.endNo, 10);
+      if (!isNaN(s) && !isNaN(e) && e >= s) {
+        const count = Math.min(e - s + 1, 30);
+        for (let i = 0; i < count; i++) {
+          const num = s + i;
+          units.push({
+            id: `${t.name}-${num}`,
+            tower: t.name,
+            floor: t.floor,
+            number: `${t.name}-${num}`,
+          });
+        }
+      }
+    });
+    return units;
+  }, [flatTowers]);
+
+  const handleAddTower = () => {
+    setFlatTowers((prev) => {
+      let next;
+      const currentTotal = parseInt(editTotalHomes, 10) || 10;
+      if (!prev || prev.length === 0) {
+        next = [
+          {
+            id: Date.now() + 1,
+            name: 'A',
+            floor: '1',
+            startNo: '1',
+            endNo: String(currentTotal),
+            count: currentTotal,
+          },
+        ];
+      } else {
+        const index = prev.length;
+        const letter = String.fromCharCode(65 + index);
+        next = [
+          ...prev,
+          {
+            id: Date.now() + Math.random(),
+            name: letter,
+            floor: '1',
+            startNo: '1',
+            endNo: '5',
+            count: 5,
+          },
+        ];
+      }
+      const sumUnits = next.reduce((acc, t) => acc + (parseInt(t.count, 10) || 1), 0);
+      setEditTotalHomes(String(sumUnits));
+      return next;
+    });
+  };
+
+  const handleUpdateTower = (id, field, value) => {
+    setFlatTowers((prev) => {
+      const updatedList = (prev || []).map((t) => {
+        if (t.id !== id) return t;
+        const updated = { ...t, [field]: value };
+        if (field === 'startNo') {
+          const s = parseInt(value, 10);
+          const c = parseInt(t.count, 10) || 5;
+          if (!isNaN(s)) {
+            updated.endNo = String(s + c - 1);
+          }
+        } else if (field === 'endNo') {
+          const e = parseInt(value, 10);
+          const s = parseInt(t.startNo, 10) || 1;
+          if (!isNaN(e) && e >= s) {
+            updated.count = e - s + 1;
+          }
+        }
+        return updated;
+      });
+      const sumUnits = updatedList.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      setEditTotalHomes(String(sumUnits));
+      return updatedList;
+    });
+  };
+
+  const handleRemoveTower = (id) => {
+    setFlatTowers((prev) => {
+      const next = (prev || []).filter((t) => t.id !== id);
+      const sumUnits = next.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
+      setEditTotalHomes(String(sumUnits || 10));
+      return next;
+    });
+  };
+
   useEffect(() => {
     fetchProfile();
   }, [user]);
@@ -114,20 +232,31 @@ export const SettingsScreen = ({ navigation }) => {
       if (list && list.length > 0) {
         const found = list.find((s) => s.id === user?.societyId) || list[0];
         setSocietyId(found.id || 1);
-        setSocietyName(found.name || user?.societyName || 'Suncity Paradise');
-        setSocietyCode(found.code || found.society_code || 'SOC-001');
+        setSocietyName(found.name || user?.societyName || '');
+        setSocietyCode(found.code || found.society_code || '');
         if (found.address) setAddress(found.address);
+        if (found.city) setCity(found.city);
+        if (found.state) setStateName(found.state);
+        if (found.pincode) setPincode(found.pincode);
         if (found.contact_number) setPrimaryPhone(found.contact_number);
         if (found.emergency_number) setEmergencyPhone(found.emergency_number);
         if (found.society_type) setSocietyType(found.society_type);
+        if (found.property_configuration) setPropertyConfig(found.property_configuration);
         if (found.total_homes) setTotalHomes(found.total_homes);
         if (found.status) setSocietyStatus(found.status);
 
         // Sync modal form fields
-        setEditName(found.name || user?.societyName || 'Suncity Paradise');
+        setEditName(found.name || user?.societyName || '');
+        setEditCode(found.code || found.society_code || '');
         if (found.address) setEditAddress(found.address);
+        if (found.city) setEditCity(found.city);
+        if (found.state) setEditState(found.state);
+        if (found.pincode) setEditPincode(found.pincode);
         setEditSocietyType(found.society_type || 'FLAT');
-        setEditTotalHomes(String(found.total_homes || 50));
+        setEditPropertyConfig(found.property_configuration || '2BHK');
+        setEditTotalHomes(String(found.total_homes || 10));
+        setBungalowStartNo('1');
+        setBungalowEndNo(String(found.total_homes || 10));
         if (found.contact_number) setEditPhone(found.contact_number);
         if (found.emergency_number) setEditEmergency(found.emergency_number);
         setEditStatus(found.status || 'ACTIVE');
@@ -167,30 +296,44 @@ export const SettingsScreen = ({ navigation }) => {
           ).length;
           const vacant = homes.filter((h) => h.occupancy_status === 'VACANT').length;
 
-          setActualHomesCount(homes.length);
-          setOccupiedHomesCount(
+          const totalUnits = found.total_homes || found.actual_homes_count || homes.length || 0;
+          const occupiedCount =
             found.occupied_homes_count !== undefined && found.occupied_homes_count !== null
               ? found.occupied_homes_count
-              : occupied
-          );
-          setVacantHomesCount(
+              : occupied;
+          const vacantCount =
             found.vacant_homes_count !== undefined && found.vacant_homes_count !== null
               ? found.vacant_homes_count
-              : vacant > 0
-                ? vacant
-                : Math.max(0, (homes.length || found.total_homes || 0) - occupied)
-          );
+              : Math.max(0, totalUnits - occupiedCount);
+
+          setActualHomesCount(homes.length);
+          setOccupiedHomesCount(occupiedCount);
+          setVacantHomesCount(vacantCount);
         } catch (e) {
           console.log('Homes count fallback in SettingsScreen:', e);
           const totalUnits = found.total_homes || found.actual_homes_count || 0;
           const occupied = found.occupied_homes_count ?? 0;
           const vacant =
-            found.vacant_homes_count ??
-            Math.max(0, (found.actual_homes_count || totalUnits) - occupied);
+            found.vacant_homes_count !== undefined && found.vacant_homes_count !== null
+              ? found.vacant_homes_count
+              : Math.max(0, totalUnits - occupied);
           setActualHomesCount(found.actual_homes_count || totalUnits);
           setOccupiedHomesCount(occupied);
           setVacantHomesCount(vacant);
         }
+      } else {
+        setSocietyId(null);
+        setSocietyName('');
+        setSocietyCode('');
+        setAddress('');
+        setPrimaryPhone('');
+        setEmergencyPhone('');
+        setSocietyType('FLAT');
+        setTotalHomes(0);
+        setActualHomesCount(0);
+        setOccupiedHomesCount(0);
+        setVacantHomesCount(0);
+        setSocietyHomes([]);
       }
     } catch (err) {
       console.log('Error fetching society profile in SettingsScreen:', err);
@@ -201,13 +344,79 @@ export const SettingsScreen = ({ navigation }) => {
   };
 
   const handleOpenEdit = () => {
+    setIsCreatingSociety(false);
     setEditName(societyName);
+    setEditCode(societyCode);
     setEditAddress(address);
+    setEditCity(city);
+    setEditState(stateName);
+    setEditPincode(pincode);
     setEditSocietyType(societyType || 'FLAT');
-    setEditTotalHomes(totalHomes ? String(totalHomes) : '50');
+    setEditPropertyConfig(propertyConfig || '2BHK');
+    setEditTotalHomes(totalHomes ? String(totalHomes) : '10');
+    setBungalowStartNo('1');
+    setBungalowEndNo(totalHomes ? String(totalHomes) : '10');
     setEditPhone(primaryPhone);
     setEditEmergency(emergencyPhone);
     setEditStatus(societyStatus || 'ACTIVE');
+
+    if ((societyType || 'FLAT') === 'FLAT') {
+      const towerMap = new Map();
+      (societyHomes || []).forEach((h) => {
+        const wing = h.building_or_wing ? String(h.building_or_wing).replace(/^Tower\s*/i, '').trim() : 'A';
+        const fl = h.floor !== null && h.floor !== undefined ? String(h.floor) : '1';
+        const key = `${wing}-${fl}`;
+        const num = parseInt(String(h.home_number).replace(/^[A-Za-z]+[-_]/, ''), 10) || 1;
+        if (!towerMap.has(key)) {
+          towerMap.set(key, { name: wing, floor: fl, min: num, max: num });
+        } else {
+          const cur = towerMap.get(key);
+          cur.min = Math.min(cur.min, num);
+          cur.max = Math.max(cur.max, num);
+        }
+      });
+      if (towerMap.size > 0) {
+        const towers = Array.from(towerMap.values()).map((t, idx) => ({
+          id: Date.now() + idx,
+          name: t.name,
+          floor: t.floor,
+          startNo: String(t.min),
+          endNo: String(t.max),
+          count: t.max - t.min + 1,
+        }));
+        setFlatTowers(towers);
+      } else {
+        const curTot = totalHomes || 10;
+        const half = Math.ceil(curTot / 2);
+        setFlatTowers([
+          { id: 1, name: 'A', floor: '1', startNo: '1', endNo: String(half), count: half },
+          { id: 2, name: 'B', floor: '1', startNo: '1', endNo: String(curTot - half), count: curTot - half },
+        ]);
+      }
+    }
+    setShowEditModal(true);
+  };
+
+  const handleOpenCreateSociety = () => {
+    setIsCreatingSociety(true);
+    setEditName('');
+    setEditCode('');
+    setEditAddress('');
+    setEditCity('');
+    setEditState('');
+    setEditPincode('');
+    setEditSocietyType('FLAT');
+    setEditPropertyConfig('2BHK');
+    setEditTotalHomes('10');
+    setBungalowStartNo('1');
+    setBungalowEndNo('10');
+    setFlatTowers([
+      { id: 1, name: 'A', floor: '1', startNo: '1', endNo: '5', count: 5 },
+      { id: 2, name: 'B', floor: '1', startNo: '1', endNo: '5', count: 5 },
+    ]);
+    setEditPhone('');
+    setEditEmergency('');
+    setEditStatus('ACTIVE');
     setShowEditModal(true);
   };
 
@@ -223,29 +432,80 @@ export const SettingsScreen = ({ navigation }) => {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      await societyApi.updateSociety(societyId, {
+      const payload = {
         name: editName.trim(),
+        society_code: editCode.trim().toUpperCase() || undefined,
         address: editAddress.trim(),
+        city: editCity.trim() || undefined,
+        state: editState.trim() || undefined,
+        pincode: editPincode.trim() || undefined,
         society_type: editSocietyType,
-        total_homes: parseInt(editTotalHomes, 10) || totalHomes || 50,
+        property_configuration: editPropertyConfig,
+        total_homes: parseInt(editTotalHomes, 10) || totalHomes || 10,
         contact_number: editPhone.trim(),
         emergency_number: editEmergency.trim(),
         status: editStatus || 'ACTIVE',
-      });
+      };
+
+      if (isCreatingSociety) {
+        const res = await societyApi.createSociety(payload);
+        const newSoc = res?.data?.society || res?.society || res?.data;
+        const newSocId = newSoc?.id || newSoc?.insertId;
+
+        // Auto-generate initial homes if society created
+        if (newSocId) {
+          if (editSocietyType === 'BUNGALOW') {
+            const s = parseInt(bungalowStartNo, 10) || 1;
+            const e = parseInt(bungalowEndNo, 10) || (parseInt(editTotalHomes, 10) || 10);
+            for (let i = s; i <= e; i++) {
+              await societyApi.createHome(newSocId, {
+                home_number: String(i),
+                building_or_wing: null,
+                floor: null,
+                home_type: editPropertyConfig || '2BHK',
+                occupancy_status: 'VACANT',
+              });
+            }
+          } else if (editSocietyType === 'FLAT' && flatTowers.length > 0) {
+            for (const t of flatTowers) {
+              const s = parseInt(t.startNo, 10) || 1;
+              const e = parseInt(t.endNo, 10) || (s + (parseInt(t.count, 10) || 5) - 1);
+              for (let i = s; i <= e; i++) {
+                await societyApi.createHome(newSocId, {
+                  home_number: `${t.name}-${i}`,
+                  building_or_wing: t.name,
+                  floor: parseInt(t.floor, 10) || 1,
+                  home_type: editPropertyConfig || '2BHK',
+                  occupancy_status: 'VACANT',
+                });
+              }
+            }
+          }
+        }
+        Alert.alert('Success', 'Residential Society created successfully!');
+      } else {
+        await societyApi.updateSociety(societyId, payload);
+        Alert.alert('Success', 'Society updated successfully!');
+      }
+
       setSocietyName(editName.trim());
+      if (editCode) setSocietyCode(editCode.trim().toUpperCase());
       setAddress(editAddress.trim());
+      setCity(editCity.trim());
+      setStateName(editState.trim());
+      setPincode(editPincode.trim());
       setSocietyType(editSocietyType);
-      setTotalHomes(parseInt(editTotalHomes, 10) || totalHomes || 50);
+      setPropertyConfig(editPropertyConfig);
+      setTotalHomes(parseInt(editTotalHomes, 10) || totalHomes || 10);
       setPrimaryPhone(editPhone.trim());
       setEmergencyPhone(editEmergency.trim());
       setSocietyStatus(editStatus || 'ACTIVE');
       setSaveSuccess(true);
       setShowEditModal(false);
       fetchProfile();
-      Alert.alert('Success', 'Society updated successfully!');
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err) {
-      Alert.alert('Error', err.message || 'Error updating society.');
+      Alert.alert('Error', err.message || 'Error saving society.');
     } finally {
       setSaving(false);
     }
@@ -390,16 +650,16 @@ export const SettingsScreen = ({ navigation }) => {
   const handleDeleteSociety = () => {
     Alert.alert(
       'Delete Society',
-      `Are you sure you want to delete/deactivate "${societyName}"?`,
+      `Are you sure you want to permanently delete "${societyName}"? All associated units and society data will be deleted.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete Permanently',
           style: 'destructive',
           onPress: async () => {
             try {
-              await societyApi.deleteSociety(societyId, false);
-              Alert.alert('Society Deactivated', 'The society has been deactivated successfully.');
+              await societyApi.deleteSociety(societyId, true);
+              Alert.alert('Society Deleted', 'The society has been permanently deleted from the database.');
               fetchProfile();
             } catch (err) {
               Alert.alert('Error', err.message || 'Failed to delete society.');
@@ -484,165 +744,215 @@ export const SettingsScreen = ({ navigation }) => {
                 </View>
               )}
 
-              {/* ========================================================
-                  2. SMALL HORIZONTAL KPI CARDS (SCROLLABLE ROW)
-                  Frontend identical metrics: Total Unit, Occupied, Vacant, Type
-                  ======================================================== */}
-              <View style={styles.kpiSection}>
-
-
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.kpiScrollContainer}
-                >
-                  {/* KPI Card 1: Total Unit */}
-                  <View style={styles.kpiCard}>
-                    <View style={styles.kpiCardTopRow}>
-                      <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(196, 154, 108, 0.16)' }]}>
-                        <Building2 size={20} color={THEME.colors.clay} />
-                      </View>
-                    </View>
-                    <Text style={styles.kpiLabel}>TOTAL</Text>
-                    <Text style={styles.kpiValueDark}>{displayTotalUnits}</Text>
-
+              {!societyId ? (
+                <View style={[styles.frontendGlassCard, { alignItems: 'center', paddingVertical: 36, paddingHorizontal: 20 }]}>
+                  <View style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 30,
+                    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 16,
+                  }}>
+                    <Building2 size={30} color={THEME.colors.clay} />
                   </View>
-
-                  {/* KPI Card 2: Occupied Unit */}
-                  <View style={styles.kpiCard}>
-                    <View style={styles.kpiCardTopRow}>
-                      <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(107, 142, 90, 0.16)' }]}>
-                        <UserCheck size={20} color={THEME.colors.fernGreen} />
-                      </View>
-                    </View>
-                    <Text style={styles.kpiLabel}>OCCUPIED</Text>
-                    <Text style={styles.kpiValueGreen}>{occupiedHomesCount}</Text>
-
-                  </View>
-
-                  {/* KPI Card 3: Vacant Unit */}
-                  <View style={styles.kpiCard}>
-                    <View style={styles.kpiCardTopRow}>
-                      <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(135, 206, 235, 0.22)' }]}>
-                        <Key size={20} color={THEME.colors.skyBlueDark} />
-                      </View>
-                    </View>
-                    <Text style={styles.kpiLabel}>VACANT</Text>
-                    <Text style={styles.kpiValueDark}>{vacantHomesCount}</Text>
-
-                  </View>
-
-                  {/* KPI Card 4: Type */}
-                  <View style={styles.kpiCard}>
-                    <View style={styles.kpiCardTopRow}>
-                      <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(214, 194, 161, 0.3)' }]}>
-                        <Layers size={20} color={THEME.colors.darkBrown} />
-                      </View>
-                    </View>
-                    <Text style={styles.kpiLabel}>TYPE</Text>
-                    <Text
-                      style={styles.kpiTypeValue}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.7}
+                  <Text style={{ fontSize: 18, fontWeight: '800', color: THEME.colors.textDark, marginBottom: 8, textAlign: 'center' }}>
+                    No Society Registered
+                  </Text>
+                  <Text style={{ fontSize: 13, color: THEME.colors.textMuted, textAlign: 'center', lineHeight: 20, marginBottom: 16, maxWidth: 300 }}>
+                    There is currently no active society registered in the database. Please create a society first to configure homes and details.
+                  </Text>
+                  {isAdmin && (
+                    <TouchableOpacity
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                        backgroundColor: THEME.colors.darkBrown,
+                        paddingHorizontal: 18,
+                        paddingVertical: 12,
+                        borderRadius: 10,
+                      }}
+                      onPress={handleOpenCreateSociety}
+                      activeOpacity={0.8}
                     >
-                      {societyType}
-                    </Text>
-                  </View>
-                </ScrollView>
-              </View>
-
-              {/* ========================================================
-                3. SOCIETY INFORMATION CARD
-                Identical to frontend SocietiesPage.jsx Right-side Info
-                ======================================================== */}
-              <View style={styles.frontendGlassCard}>
-                {/* Sub-label & Society Name */}
-                <View style={styles.socInfoHeader}>
-                  <View style={styles.socInfoLabelRow}>
-                    <Text style={styles.cardSectionLabel}>SOCIETY INFORMATION</Text>
-                    <View style={styles.codePill}>
-                      <Text style={styles.codePillText}>Code: {societyCode}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.socInfoTitle}>{societyName}</Text>
-                  {/* Accent Divider Bar */}
-                  <View style={styles.accentDivider} />
-                </View>
-
-                {/* Basic Info Rows */}
-                <View style={styles.detailsGroup}>
-                  {/* Address Row */}
-                  <View style={styles.detailItemTop}>
-                    <View style={styles.detailIconBox}>
-                      <MapPin size={16} color={THEME.colors.clay} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailSubLabel}>ADDRESS</Text>
-                      <Text style={styles.detailValMultiline}>
-                        {address || 'Address not configured'}
+                      <Plus size={16} color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
+                        Create Residential Society
                       </Text>
-                    </View>
-                  </View>
-
-                  {/* Contact Number Row */}
-                  <View style={styles.detailItem}>
-                    <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
-                      <Phone size={16} color={THEME.colors.fernGreen} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailSubLabel}>CONTACT NUMBER</Text>
-                      <Text style={styles.detailVal}>
-                        {primaryPhone || 'Not provided'}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Emergency Helpline Row */}
-                  <View style={styles.detailItem}>
-                    <View style={[styles.detailIconBox, styles.detailIconBoxRose]}>
-                      <PhoneCall size={16} color={THEME.colors.error} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.detailSubLabel}>EMERGENCY HELPLINE</Text>
-                      <Text style={styles.emergencyVal}>
-                        {emergencyPhone || '112 / Not provided'}
-                      </Text>
-                    </View>
-                  </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
+              ) : (
+                <>
+                  {/* ========================================================
+                      2. SMALL HORIZONTAL KPI CARDS (SCROLLABLE ROW)
+                      Frontend identical metrics: Total Unit, Occupied, Vacant, Type
+                      ======================================================== */}
+                  <View style={styles.kpiSection}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.kpiScrollContainer}
+                    >
+                      {/* KPI Card 1: Total Unit */}
+                      <View style={styles.kpiCard}>
+                        <View style={styles.kpiCardTopRow}>
+                          <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(196, 154, 108, 0.16)' }]}>
+                            <Building2 size={20} color={THEME.colors.clay} />
+                          </View>
+                        </View>
+                        <Text style={styles.kpiLabel}>TOTAL</Text>
+                        <Text style={styles.kpiValueDark}>{displayTotalUnits}</Text>
+                      </View>
 
-                {/* Action Buttons Row */}
-                <View style={styles.socActionRow}>
-                  <TouchableOpacity
-                    style={styles.btnSecondary}
-                    activeOpacity={0.8}
-                    onPress={handleOpenManageHomes}
-                  >
-                    <Home size={15} color={THEME.colors.fernGreenDark} />
-                    <Text style={styles.btnSecondaryText}>
-                      Manage Homes ({societyHomes.length || actualHomesCount || 0})
-                    </Text>
-                  </TouchableOpacity>
+                      {/* KPI Card 2: Occupied Unit */}
+                      <View style={styles.kpiCard}>
+                        <View style={styles.kpiCardTopRow}>
+                          <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(107, 142, 90, 0.16)' }]}>
+                            <UserCheck size={20} color={THEME.colors.fernGreen} />
+                          </View>
+                        </View>
+                        <Text style={styles.kpiLabel}>OCCUPIED</Text>
+                        <Text style={styles.kpiValueGreen}>{occupiedHomesCount}</Text>
+                      </View>
 
-                  <TouchableOpacity
-                    style={styles.btnOutline}
-                    activeOpacity={0.8}
-                    onPress={handleOpenEdit}
-                  >
-                    <Edit2 size={14} color={THEME.colors.clayDark} />
-                    <Text style={styles.btnOutlineText}>Edit Details</Text>
-                  </TouchableOpacity>
+                      {/* KPI Card 3: Vacant Unit */}
+                      <View style={styles.kpiCard}>
+                        <View style={styles.kpiCardTopRow}>
+                          <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(135, 206, 235, 0.22)' }]}>
+                            <Key size={20} color={THEME.colors.skyBlueDark} />
+                          </View>
+                        </View>
+                        <Text style={styles.kpiLabel}>VACANT</Text>
+                        <Text style={styles.kpiValueDark}>{vacantHomesCount}</Text>
+                      </View>
 
-                  <TouchableOpacity
-                    style={styles.btnDanger}
-                    activeOpacity={0.8}
-                    onPress={handleDeleteSociety}
-                  >
-                    <Trash2 size={15} color={THEME.colors.error} />
-                  </TouchableOpacity>
-                </View>
-              </View>
+                      {/* KPI Card 4: Type */}
+                      <View style={styles.kpiCard}>
+                        <View style={styles.kpiCardTopRow}>
+                          <View style={[styles.kpiIconBox, { backgroundColor: 'rgba(214, 194, 161, 0.3)' }]}>
+                            <Layers size={20} color={THEME.colors.darkBrown} />
+                          </View>
+                        </View>
+                        <Text style={styles.kpiLabel}>TYPE & CONFIG</Text>
+                        <Text
+                          style={styles.kpiTypeValue}
+                          numberOfLines={1}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.7}
+                        >
+                          {societyType === 'BUNGALOW' ? 'Bungalow' : 'Flat'} {propertyConfig ? `• ${propertyConfig}` : ''}
+                        </Text>
+                      </View>
+                    </ScrollView>
+                  </View>
+
+                  {/* ========================================================
+                    3. SOCIETY INFORMATION CARD
+                    Identical to frontend SocietiesPage.jsx Right-side Info
+                    ======================================================== */}
+                  <View style={styles.frontendGlassCard}>
+                    {/* Sub-label & Society Name */}
+                    <View style={styles.socInfoHeader}>
+                      <View style={styles.socInfoLabelRow}>
+                        <Text style={styles.cardSectionLabel}>SOCIETY INFORMATION</Text>
+                        <View style={styles.codePill}>
+                          <Text style={styles.codePillText}>Code: {societyCode}</Text>
+                        </View>
+                      </View>
+                      <Text style={styles.socInfoTitle}>{societyName}</Text>
+                      {/* Accent Divider Bar */}
+                      <View style={styles.accentDivider} />
+                    </View>
+
+                    {/* Basic Info Rows */}
+                    <View style={styles.detailsGroup}>
+                      {/* Address Row */}
+                      <View style={styles.detailItemTop}>
+                        <View style={styles.detailIconBox}>
+                          <MapPin size={16} color={THEME.colors.clay} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>ADDRESS</Text>
+                          <Text style={styles.detailValMultiline}>
+                            {address || 'Address not configured'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Contact Number Row */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                          <Phone size={16} color={THEME.colors.fernGreen} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>CONTACT NUMBER</Text>
+                          <Text style={styles.detailVal}>
+                            {primaryPhone || 'Not provided'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Emergency Helpline Row */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, styles.detailIconBoxRose]}>
+                          <PhoneCall size={16} color={THEME.colors.error} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>EMERGENCY HELPLINE</Text>
+                          <Text style={styles.emergencyVal}>
+                            {emergencyPhone || '112 / Not provided'}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+
+                    {/* Action Buttons Row */}
+                    <View style={styles.socActionRow}>
+                      <TouchableOpacity
+                        style={styles.btnSecondary}
+                        activeOpacity={0.8}
+                        onPress={handleOpenManageHomes}
+                      >
+                        <Home size={15} color={THEME.colors.fernGreenDark} />
+                        <Text style={styles.btnSecondaryText}>
+                          Homes ({societyHomes.length || actualHomesCount || 0})
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.btnOutline}
+                        activeOpacity={0.8}
+                        onPress={handleOpenEdit}
+                      >
+                        <Edit2 size={14} color={THEME.colors.clayDark} />
+                        <Text style={styles.btnOutlineText}>Edit</Text>
+                      </TouchableOpacity>
+
+                      {isAdmin && (
+                        <TouchableOpacity
+                          style={[styles.btnOutline, { borderColor: THEME.colors.clay }]}
+                          activeOpacity={0.8}
+                          onPress={handleOpenCreateSociety}
+                        >
+                          <Plus size={14} color={THEME.colors.clay} />
+                          <Text style={[styles.btnOutlineText, { color: THEME.colors.clay }]}>New</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      <TouchableOpacity
+                        style={styles.btnDanger}
+                        activeOpacity={0.8}
+                        onPress={handleDeleteSociety}
+                      >
+                        <Trash2 size={15} color={THEME.colors.error} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </>
+              )}
             </View>
           </View>
         )}
@@ -679,7 +989,7 @@ export const SettingsScreen = ({ navigation }) => {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle} numberOfLines={1}>
-                    Edit Society: {societyName}
+                    {isCreatingSociety ? 'Create New Residential Society' : `Edit Society: ${societyName}`}
                   </Text>
                 </View>
               </View>
@@ -706,7 +1016,20 @@ export const SettingsScreen = ({ navigation }) => {
                   style={styles.input}
                   value={editName}
                   onChangeText={setEditName}
-                  placeholder="e.g. Suncity Paradise"
+                  placeholder="e.g. Royal Palms Residency"
+                  placeholderTextColor={THEME.colors.textDim}
+                />
+              </View>
+
+              {/* Society Code * */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Society Code * (Unique Key)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editCode}
+                  onChangeText={(v) => setEditCode(v.toUpperCase())}
+                  autoCapitalize="characters"
+                  placeholder="e.g. RVS01"
                   placeholderTextColor={THEME.colors.textDim}
                 />
               </View>
@@ -720,15 +1043,52 @@ export const SettingsScreen = ({ navigation }) => {
                   numberOfLines={2}
                   value={editAddress}
                   onChangeText={setEditAddress}
-                  placeholder="Street, Campus, City, Pincode"
+                  placeholder="Street / Campus address"
                   placeholderTextColor={THEME.colors.textDim}
                 />
               </View>
 
-              {/* 2-Column Row: Society Type & Total Homes */}
+              {/* 3-Column Row: City, State, Pincode */}
               <View style={styles.formRowTwoCol}>
                 <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Society Type</Text>
+                  <Text style={styles.inputLabel}>City</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editCity}
+                    onChangeText={setEditCity}
+                    placeholder="e.g. Mumbai"
+                    placeholderTextColor={THEME.colors.textDim}
+                  />
+                </View>
+
+                <View style={[styles.inputGroup, styles.formColHalf]}>
+                  <Text style={styles.inputLabel}>State</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editState}
+                    onChangeText={setEditState}
+                    placeholder="e.g. Maharashtra"
+                    placeholderTextColor={THEME.colors.textDim}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Pincode</Text>
+                <TextInput
+                  style={styles.input}
+                  value={editPincode}
+                  onChangeText={setEditPincode}
+                  keyboardType="numeric"
+                  placeholder="e.g. 400001"
+                  placeholderTextColor={THEME.colors.textDim}
+                />
+              </View>
+
+              {/* 2-Column Row: Society Type & Total Units */}
+              <View style={styles.formRowTwoCol}>
+                <View style={[styles.inputGroup, styles.formColHalf]}>
+                  <Text style={styles.inputLabel}>Society Type *</Text>
                   <View style={styles.homeTypeSelectorRow}>
                     {['FLAT', 'BUNGALOW'].map((st) => (
                       <TouchableOpacity
@@ -745,7 +1105,7 @@ export const SettingsScreen = ({ navigation }) => {
                             editSocietyType === st && styles.homeTypeChoiceTextActive,
                           ]}
                         >
-                          {st}
+                          {st === 'BUNGALOW' ? 'Bungalow' : 'Flat'}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -753,15 +1113,258 @@ export const SettingsScreen = ({ navigation }) => {
                 </View>
 
                 <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Total Homes</Text>
+                  <Text style={styles.inputLabel}>Total Units *</Text>
                   <TextInput
                     style={styles.input}
                     value={editTotalHomes}
-                    onChangeText={setEditTotalHomes}
+                    onChangeText={(val) => {
+                      setEditTotalHomes(val);
+                      if (editSocietyType === 'BUNGALOW') {
+                        setBungalowEndNo(val || '10');
+                      }
+                    }}
                     keyboardType="numeric"
-                    placeholder="50"
+                    placeholder="10"
                     placeholderTextColor={THEME.colors.textDim}
                   />
+                </View>
+              </View>
+
+              {/* SECTION: BUNGALOW ALLOCATION */}
+              {editSocietyType === 'BUNGALOW' && (
+                <View style={{ backgroundColor: 'rgba(196, 154, 108, 0.08)', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(196, 154, 108, 0.2)' }}>
+                  <Text style={{ fontSize: 12, fontWeight: '800', color: THEME.colors.clay, marginBottom: 8, textTransform: 'uppercase' }}>
+                    Bungalow Home Units Allocation
+                  </Text>
+                  <View style={styles.formRowTwoCol}>
+                    <View style={[styles.inputGroup, styles.formColHalf]}>
+                      <Text style={styles.inputLabel}>Start Home No</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={bungalowStartNo}
+                        onChangeText={setBungalowStartNo}
+                        keyboardType="numeric"
+                        placeholder="1"
+                        placeholderTextColor={THEME.colors.textDim}
+                      />
+                    </View>
+                    <View style={[styles.inputGroup, styles.formColHalf]}>
+                      <Text style={styles.inputLabel}>End Home No</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={bungalowEndNo}
+                        onChangeText={setBungalowEndNo}
+                        keyboardType="numeric"
+                        placeholder="10"
+                        placeholderTextColor={THEME.colors.textDim}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Home Units Preview (Bungalow) */}
+                  <View style={{ marginTop: 8 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 6 }}>
+                      Home Units Preview ({bungalowUnits.length} homes):
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {bungalowUnits.map((num) => (
+                        <View
+                          key={num}
+                          style={{
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 58,
+                            paddingVertical: 6,
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: 'rgba(196, 154, 108, 0.3)',
+                          }}
+                        >
+                          <Home size={14} color={THEME.colors.clay} style={{ marginBottom: 2 }} />
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.darkBrown }}>
+                            Home {num}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* SECTION: FLAT TOWER & FLOOR ALLOCATION */}
+              {editSocietyType === 'FLAT' && (
+                <View style={{ backgroundColor: 'rgba(217, 119, 6, 0.06)', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(217, 119, 6, 0.2)' }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>
+                      Flat Tower & Floor Allocation
+                    </Text>
+                    <TouchableOpacity
+                      onPress={handleAddTower}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 4,
+                        backgroundColor: '#d97706',
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 6,
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Plus size={12} color="#FFFFFF" />
+                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>Add Tower & Floor</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* List of Towers */}
+                  {flatTowers.map((tower, idx) => (
+                    <View
+                      key={tower.id}
+                      style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 8,
+                        padding: 10,
+                        marginBottom: 8,
+                        borderWidth: 1,
+                        borderColor: 'rgba(217, 119, 6, 0.2)',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <Text style={{ fontSize: 11, fontWeight: '800', color: THEME.colors.darkBrown }}>
+                          Tower {tower.name} • Floor {tower.floor} ({tower.count} units)
+                        </Text>
+                        {flatTowers.length > 1 && (
+                          <TouchableOpacity onPress={() => handleRemoveTower(tower.id)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                            <Trash2 size={13} color="#e11d48" />
+                          </TouchableOpacity>
+                        )}
+                      </View>
+
+                      <View style={styles.formRowTwoCol}>
+                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 6 }]}>
+                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Tower Name</Text>
+                          <TextInput
+                            style={[styles.input, { height: 38, fontSize: 12 }]}
+                            value={tower.name}
+                            onChangeText={(v) => handleUpdateTower(tower.id, 'name', v.toUpperCase())}
+                            placeholder="A"
+                          />
+                        </View>
+                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 6 }]}>
+                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Floor</Text>
+                          <TextInput
+                            style={[styles.input, { height: 38, fontSize: 12 }]}
+                            value={String(tower.floor)}
+                            onChangeText={(v) => handleUpdateTower(tower.id, 'floor', v)}
+                            keyboardType="numeric"
+                            placeholder="1"
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.formRowTwoCol}>
+                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 0 }]}>
+                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Start Home No</Text>
+                          <TextInput
+                            style={[styles.input, { height: 38, fontSize: 12 }]}
+                            value={String(tower.startNo)}
+                            onChangeText={(v) => handleUpdateTower(tower.id, 'startNo', v)}
+                            keyboardType="numeric"
+                            placeholder="101"
+                          />
+                        </View>
+                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 0 }]}>
+                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>End Home No</Text>
+                          <TextInput
+                            style={[styles.input, { height: 38, fontSize: 12 }]}
+                            value={String(tower.endNo)}
+                            onChangeText={(v) => handleUpdateTower(tower.id, 'endNo', v)}
+                            keyboardType="numeric"
+                            placeholder="105"
+                          />
+                        </View>
+                      </View>
+                    </View>
+                  ))}
+
+                  <TouchableOpacity
+                    onPress={handleAddTower}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 5,
+                      paddingVertical: 8,
+                      borderWidth: 1,
+                      borderStyle: 'dashed',
+                      borderColor: '#d97706',
+                      borderRadius: 8,
+                      backgroundColor: '#FFFFFF',
+                      marginTop: 4,
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Plus size={13} color="#d97706" />
+                    <Text style={{ color: '#d97706', fontSize: 11, fontWeight: '700' }}>
+                      + Add Another Tower & Floor
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Flat Units Preview */}
+                  <View style={{ marginTop: 10 }}>
+                    <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 6 }}>
+                      Flat Units Preview ({flatUnits.length} units):
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                      {flatUnits.map((u) => (
+                        <View
+                          key={u.id}
+                          style={{
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 66,
+                            paddingVertical: 6,
+                            backgroundColor: '#FFFFFF',
+                            borderRadius: 6,
+                            borderWidth: 1,
+                            borderColor: 'rgba(217, 119, 6, 0.25)',
+                          }}
+                        >
+                          <Building2 size={13} color="#d97706" style={{ marginBottom: 2 }} />
+                          <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.darkBrown }}>
+                            Home {u.number}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Property Configuration */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Property Configuration</Text>
+                <View style={styles.homeTypeSelectorRow}>
+                  {['1BHK', '2BHK', '3BHK', '4BHK', 'PENTHOUSE'].map((cfg) => (
+                    <TouchableOpacity
+                      key={cfg}
+                      style={[
+                        styles.homeTypeChoiceBtn,
+                        editPropertyConfig === cfg && styles.homeTypeChoiceBtnActive,
+                      ]}
+                      onPress={() => setEditPropertyConfig(cfg)}
+                    >
+                      <Text
+                        style={[
+                          styles.homeTypeChoiceText,
+                          editPropertyConfig === cfg && styles.homeTypeChoiceTextActive,
+                        ]}
+                      >
+                        {cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
 
@@ -819,7 +1422,7 @@ export const SettingsScreen = ({ navigation }) => {
               </View>
             </ScrollView>
 
-            {/* Modal Bottom Action Row: Cancel and Update Society Buttons */}
+            {/* Modal Bottom Action Row: Cancel and Update/Create Society Buttons */}
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
@@ -839,7 +1442,9 @@ export const SettingsScreen = ({ navigation }) => {
                 {saving ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.modalUpdateBtnText}>Update Society</Text>
+                  <Text style={styles.modalUpdateBtnText}>
+                    {isCreatingSociety ? 'Create Society' : 'Save Changes'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>

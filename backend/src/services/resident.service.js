@@ -59,8 +59,8 @@ class ResidentService {
         const createdHome = await HomeRepository.create({
           society_id: socId,
           home_number: String(hNum).trim(),
-          building_or_wing: data.building_or_wing || 'Wing A',
-          floor: data.floor ? parseInt(data.floor, 10) : 1,
+          building_or_wing: data.building_or_wing || null,
+          floor: data.floor ? parseInt(data.floor, 10) : null,
           home_type: data.home_type || '2BHK',
           status: 'ACTIVE',
           occupancy_status: 'VACANT',

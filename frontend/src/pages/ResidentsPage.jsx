@@ -23,11 +23,22 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
+  Lock,
 } from 'lucide-react';
 import { residentApi } from '../api/residentApi';
 import { societyApi } from '../api/societyApi';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/authStore';
+
+export const parsePropertyConfigs = (configStr) => {
+  if (!configStr) return ['2BHK'];
+  if (Array.isArray(configStr)) return configStr;
+  const parts = String(configStr)
+    .split(/[,/]+/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : ['2BHK'];
+};
 
 export default function ResidentsPage() {
   const { user } = useAuthStore();
@@ -62,8 +73,9 @@ export default function ResidentsPage() {
   const defaultCreateForm = {
     // Residential Unit Fields
     home_number: '',
-    building_or_wing: 'Wing A',
-    floor: '1',
+    building_or_wing: '',
+    floor: '',
+    society_type: 'FLAT',
     home_type: '2BHK',
     society_id: '',
     // Resident Account Fields
@@ -106,18 +118,26 @@ export default function ResidentsPage() {
       const socList = socRes.data?.societies || socRes.societies || [];
       setSocieties(socList);
 
-      const allResidents = resRes.data?.residents || [];
+      const activeSocId = socList[0]?.id;
+      const allResidents = (resRes.data?.residents || []).filter(
+        (r) => !activeSocId || !r.society_id || String(r.society_id) === String(activeSocId)
+      );
       setResidents(allResidents);
 
-      const allHomes = homesRes.data?.homes || homesRes.homes || [];
+      const allHomes = (homesRes.data?.homes || homesRes.homes || []).filter(
+        (h) => !activeSocId || !h.society_id || String(h.society_id) === String(activeSocId)
+      );
       setHomes(allHomes);
 
       if (socList.length > 0) {
+        const socConfigs = parsePropertyConfigs(socList[0].property_configuration);
         setCreateForm((prev) => ({
           ...prev,
           society_id: socList[0].id,
-          building_or_wing: socList[0].society_type === 'BUNGALOW' ? 'Row 1' : 'Wing A',
-          home_type: socList[0].society_type === 'BUNGALOW' ? 'BUNGALOW' : '2BHK',
+          society_type: socList[0].society_type || 'FLAT',
+          building_or_wing: '',
+          floor: '',
+          home_type: socConfigs[0] || '2BHK',
         }));
       }
     } catch (err) {
@@ -129,18 +149,41 @@ export default function ResidentsPage() {
 
   // Active Society & Total capacity
   const currentSociety = societies[0] || null;
-  const totalSocietyHomes = currentSociety?.total_homes || Math.max(homes.length, 10);
+  const isFlat = currentSociety?.society_type === 'FLAT';
+  const totalSocietyHomes = currentSociety ? (currentSociety.actual_homes_count || homes.length || currentSociety.total_homes || 0) : 0;
+
+  const societyConfigs = useMemo(() => {
+    return parsePropertyConfigs(currentSociety?.property_configuration);
+  }, [currentSociety]);
 
   // -------------------------------------------------------------
-  // Auto-generate Row & Column Units data (e.g. Total 10 Homes auto-generated)
+  // Auto-generate Row & Column Units data (Bungalow 1..N vs Flat A-101..A-105, B-201..B-205)
   // -------------------------------------------------------------
   const allUnitsData = useMemo(() => {
-    // Map homes by normalized number
+    // If no society has been created yet, do not generate or display any units
+    if (!currentSociety) {
+      return [];
+    }
+
+    const societyHomes = homes.filter(
+      (h) => String(h.society_id) === String(currentSociety.id)
+    );
+
+    const totalCapacity = Math.max(
+      parseInt(currentSociety.total_homes, 10) || 0,
+      societyHomes.length,
+      1
+    );
+
+    // Map homes by normalized numbers
     const homeByNum = new Map();
-    homes.forEach((h) => {
-      homeByNum.set(String(h.home_number).toLowerCase(), h);
-      const pureNum = String(h.home_number).replace(/^(home|flat|unit|villa)\s*/i, '').trim().toLowerCase();
+    societyHomes.forEach((h) => {
+      const raw = String(h.home_number || '').trim();
+      const lower = raw.toLowerCase();
+      homeByNum.set(lower, h);
+      const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
       homeByNum.set(pureNum, h);
+      homeByNum.set(lower.replace(/[-\s]/g, ''), h);
     });
 
     // Map residents by home_id and home_number
@@ -149,79 +192,144 @@ export default function ResidentsPage() {
     residents.forEach((r) => {
       if (r.home_id) resByHomeId.set(r.home_id, r);
       if (r.home_number) {
-        resByHomeNum.set(String(r.home_number).toLowerCase(), r);
-        const pureNum = String(r.home_number).replace(/^(home|flat|unit|villa)\s*/i, '').trim().toLowerCase();
+        const raw = String(r.home_number || '').trim();
+        const lower = raw.toLowerCase();
+        resByHomeNum.set(lower, r);
+        const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
         resByHomeNum.set(pureNum, r);
+        resByHomeNum.set(lower.replace(/[-\s]/g, ''), r);
       }
     });
 
-    const unitsList = [];
-    const processedHomeIds = new Set();
-    const processedHomeNums = new Set();
+    // 1. Gather all actual homes from database
+    const sortedHomes = [...societyHomes].sort((a, b) => {
+      const wingA = String(a.building_or_wing || '').toUpperCase();
+      const wingB = String(b.building_or_wing || '').toUpperCase();
+      if (wingA !== wingB) return wingA.localeCompare(wingB);
+      const numA = parseInt(String(a.home_number).replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.home_number).replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    });
 
-    // 1. Auto-generate sequential slots from 1 up to totalSocietyHomes (e.g. 1 to 10)
-    for (let i = 1; i <= totalSocietyHomes; i++) {
-      const numStr = String(i);
-      const existing = homeByNum.get(numStr) || homeByNum.get(`home ${numStr}`);
-      const res = (existing && resByHomeId.get(existing.id)) || resByHomeNum.get(numStr) || resByHomeNum.get(`home ${numStr}`) || null;
+    const expectedSlots = [];
+    const existingNumSet = new Set(
+      sortedHomes.map((h) => String(h.home_number || '').trim().toLowerCase())
+    );
 
-      if (existing) {
-        processedHomeIds.add(existing.id);
-        processedHomeNums.add(String(existing.home_number).toLowerCase());
-      }
-
-      const rawNum = existing?.home_number ? String(existing.home_number) : String(i);
-      const displayLabel = existing?.home_number
-        ? (String(existing.home_number).match(/^(home|flat|villa|unit)/i) ? existing.home_number : `Home ${existing.home_number}`)
-        : `Home ${i}`;
-
-      unitsList.push({
-        id: existing?.id || `auto-slot-${i}`,
-        home_id: existing?.id || null,
-        displayNumber: displayLabel,
-        rawNumber: rawNum,
-        slotNumber: i,
-        building_or_wing: existing?.building_or_wing || (currentSociety?.society_type === 'BUNGALOW' ? 'Row 1' : 'Wing A'),
-        floor: existing?.floor ?? (Math.floor((i - 1) / 4) + 1),
-        home_type: existing?.home_type || (currentSociety?.society_type === 'BUNGALOW' ? 'BUNGALOW' : '2BHK'),
-        isConfigured: !!existing,
-        isOccupied: !!res,
-        resident: res,
+    // Add all existing database homes first
+    sortedHomes.forEach((h) => {
+      expectedSlots.push({
+        rawNumber: String(h.home_number).trim(),
+        tower: h.building_or_wing || null,
+        floor: h.floor,
+        dbHome: h,
       });
+    });
+
+    // If total existing homes is less than totalCapacity, fill in missing slots
+    if (expectedSlots.length < totalCapacity) {
+      if (isFlat) {
+        const towerACount = Math.ceil(totalCapacity / 2);
+        const towerBCount = totalCapacity - towerACount;
+        for (let i = 1; i <= towerACount && expectedSlots.length < totalCapacity; i++) {
+          const num = `A-${100 + i}`;
+          if (!existingNumSet.has(num.toLowerCase())) {
+            expectedSlots.push({
+              rawNumber: num,
+              tower: 'A',
+              floor: 1,
+              dbHome: null,
+            });
+            existingNumSet.add(num.toLowerCase());
+          }
+        }
+        for (let i = 1; i <= towerBCount && expectedSlots.length < totalCapacity; i++) {
+          const num = `B-${200 + i}`;
+          if (!existingNumSet.has(num.toLowerCase())) {
+            expectedSlots.push({
+              rawNumber: num,
+              tower: 'B',
+              floor: 1,
+              dbHome: null,
+            });
+            existingNumSet.add(num.toLowerCase());
+          }
+        }
+      } else {
+        // Bungalow: 1, 2, 3...
+        for (let i = 1; i <= totalCapacity && expectedSlots.length < totalCapacity; i++) {
+          const numStr = String(i);
+          if (!existingNumSet.has(numStr.toLowerCase())) {
+            expectedSlots.push({
+              rawNumber: numStr,
+              tower: null,
+              floor: null,
+              dbHome: null,
+            });
+            existingNumSet.add(numStr.toLowerCase());
+          }
+        }
+      }
     }
 
-    // 2. Include any existing homes in database that weren't captured by 1..totalSocietyHomes
-    homes.forEach((h) => {
-      const lower = String(h.home_number).toLowerCase();
-      if (!processedHomeIds.has(h.id) && !processedHomeNums.has(lower)) {
-        const res = resByHomeId.get(h.id) || resByHomeNum.get(lower) || null;
-        unitsList.push({
-          id: h.id,
-          home_id: h.id,
-          displayNumber: String(h.home_number).match(/^(home|flat|villa|unit)/i) ? h.home_number : `Home ${h.home_number}`,
-          rawNumber: String(h.home_number),
-          slotNumber: unitsList.length + 1,
-          building_or_wing: h.building_or_wing || 'Wing A',
-          floor: h.floor ?? 1,
-          home_type: h.home_type || '2BHK',
-          isConfigured: true,
-          isOccupied: !!res,
-          resident: res,
-        });
-      }
+    // Sort expected slots naturally so Unit 1 is Home 1, Unit 2 is Home 2, etc.
+    expectedSlots.sort((a, b) => {
+      const towerA = String(a.tower || '').toUpperCase();
+      const towerB = String(b.tower || '').toUpperCase();
+      if (towerA !== towerB) return towerA.localeCompare(towerB);
+      const numA = parseInt(String(a.rawNumber).replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.rawNumber).replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
     });
 
-    return unitsList;
-  }, [homes, residents, currentSociety, totalSocietyHomes]);
+    // 2. Map every slot into its unit representation
+    return expectedSlots.map((slot, index) => {
+      const rawNum = slot.rawNumber;
+      const lower = rawNum.toLowerCase();
+      const pureNum = lower.replace(/^(home|flat|unit|villa)\s*/i, '').trim();
+
+      const matchedHome =
+        slot.dbHome ||
+        homeByNum.get(lower) ||
+        homeByNum.get(pureNum) ||
+        homeByNum.get(lower.replace(/[-\s]/g, '')) ||
+        null;
+
+      const res =
+        (matchedHome && resByHomeId.get(matchedHome.id)) ||
+        resByHomeNum.get(lower) ||
+        resByHomeNum.get(pureNum) ||
+        resByHomeNum.get(lower.replace(/[-\s]/g, '')) ||
+        null;
+
+      return {
+        id: matchedHome ? matchedHome.id : `slot-${index + 1}`,
+        home_id: matchedHome ? matchedHome.id : null,
+        displayNumber: rawNum,
+        rawNumber: rawNum,
+        slotNumber: index + 1,
+        building_or_wing: matchedHome ? (matchedHome.building_or_wing || null) : slot.tower,
+        floor: matchedHome ? (matchedHome.floor !== null && matchedHome.floor !== undefined ? matchedHome.floor : null) : slot.floor,
+        society_type: currentSociety.society_type || 'BUNGALOW',
+        home_type: (matchedHome && matchedHome.home_type) || societyConfigs[0] || '2BHK',
+        isConfigured: !!matchedHome,
+        isOccupied: !!res,
+        resident: res,
+      };
+    });
+  }, [homes, residents, currentSociety, societyConfigs, isFlat]);
 
   // Filtered rows for the Row-Column Data Table
   const filteredUnits = useMemo(() => {
     return allUnitsData.filter((u) => {
       const matchesSearch =
-        u.displayNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.building_or_wing.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        searchTerm === '' ||
+        (u.displayNumber && u.displayNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (u.rawNumber && String(u.rawNumber).toLowerCase().includes(searchTerm.toLowerCase())) ||
+        (u.building_or_wing && u.building_or_wing.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (u.resident?.full_name && u.resident.full_name.toLowerCase().includes(searchTerm.toLowerCase())) ||
-        (u.resident?.phone && u.resident.phone.includes(searchTerm));
+        (u.resident?.phone && u.resident.phone.includes(searchTerm)) ||
+        (u.resident?.email && u.resident.email.toLowerCase().includes(searchTerm.toLowerCase()));
 
       const matchesStatus =
         statusFilter === 'ALL' ||
@@ -247,16 +355,46 @@ export default function ResidentsPage() {
   const occupiedCount = allUnitsData.filter((u) => u.isOccupied).length;
   const vacantCount = allUnitsData.length - occupiedCount;
 
-  // Open "Create Resident" modal (optionally pre-fill unit #)
-  const handleOpenCreateModal = (prefillUnitNumber = '') => {
-    const defaultWing = currentSociety?.society_type === 'BUNGALOW' ? 'Row 1' : 'Wing A';
-    const defaultType = currentSociety?.society_type === 'BUNGALOW' ? 'BUNGALOW' : '2BHK';
+  // Open "Create Resident" modal (prefilled from specific unit in the table)
+  const handleOpenCreateModal = (unitOrNumber = '') => {
+    const unitObj = typeof unitOrNumber === 'object' && unitOrNumber !== null ? unitOrNumber : null;
+    const firstVacant = allUnitsData.find((u) => !u.isOccupied);
+    const prefillUnitNumber = unitObj
+      ? (unitObj.rawNumber || unitObj.displayNumber)
+      : (unitOrNumber || (firstVacant ? (firstVacant.rawNumber || firstVacant.displayNumber) : '1'));
+    const firstSocConfig = societyConfigs[0] || '2BHK';
+    const defaultType = (unitObj?.home_type && societyConfigs.includes(unitObj.home_type.toUpperCase()))
+      ? unitObj.home_type.toUpperCase()
+      : (firstVacant?.home_type && societyConfigs.includes(firstVacant.home_type.toUpperCase()) ? firstVacant.home_type.toUpperCase() : firstSocConfig);
+    const defaultSocietyType = currentSociety?.society_type || 'FLAT';
+
+    let wing = unitObj?.building_or_wing || firstVacant?.building_or_wing || '';
+    let floorVal = unitObj?.floor !== null && unitObj?.floor !== undefined
+      ? String(unitObj.floor)
+      : (firstVacant?.floor !== null && firstVacant?.floor !== undefined ? String(firstVacant.floor) : '');
+
+    if (defaultSocietyType === 'FLAT' && prefillUnitNumber) {
+      if (!wing) {
+        const match = String(prefillUnitNumber).match(/^([A-Za-z]+)[-_]/);
+        if (match) wing = match[1];
+      }
+      if (!floorVal) {
+        const numPart = String(prefillUnitNumber).replace(/^[A-Za-z]+[-_]/, '');
+        if (numPart.length >= 3) {
+          floorVal = numPart.slice(0, -2);
+        } else {
+          floorVal = '1';
+        }
+      }
+    }
 
     setCreateForm({
       ...defaultCreateForm,
       society_id: currentSociety?.id || 1,
-      home_number: prefillUnitNumber || '',
-      building_or_wing: defaultWing,
+      home_number: prefillUnitNumber ? String(prefillUnitNumber).replace(/^(home|flat|unit|villa)\s*/i, '').trim() : '',
+      society_type: defaultSocietyType,
+      building_or_wing: wing,
+      floor: floorVal,
       home_type: defaultType,
     });
     setErrorMsg(null);
@@ -283,17 +421,19 @@ export default function ResidentsPage() {
         throw new Error('Resident Phone Number is required for login.');
       }
 
-      // Check if home already exists in DB
+      // Check if home already exists in DB for this society
       let targetHome = homes.find(
-        (h) => String(h.home_number).toLowerCase() === hNum.toLowerCase()
+        (h) =>
+          String(h.society_id) === String(activeSocId) &&
+          String(h.home_number).toLowerCase() === hNum.toLowerCase()
       );
 
       // If unit does not exist in DB, create it first
       if (!targetHome) {
         const homeRes = await societyApi.createHome(activeSocId, {
           home_number: hNum,
-          building_or_wing: createForm.building_or_wing || 'Wing A',
-          floor: createForm.floor ? parseInt(createForm.floor, 10) : 1,
+          building_or_wing: createForm.building_or_wing || null,
+          floor: createForm.floor !== '' && createForm.floor !== null ? Number(createForm.floor) : null,
           home_type: createForm.home_type || '2BHK',
           occupancy_status: 'VACANT',
         });
@@ -307,8 +447,8 @@ export default function ResidentsPage() {
         home_id: targetHomeId,
         home_number: hNum,
         society_id: activeSocId,
-        building_or_wing: createForm.building_or_wing,
-        floor: createForm.floor,
+        building_or_wing: createForm.building_or_wing || null,
+        floor: createForm.floor !== '' && createForm.floor !== null ? Number(createForm.floor) : null,
         home_type: createForm.home_type,
         name: createForm.name.trim(),
         phone: createForm.phone.trim(),
@@ -387,6 +527,24 @@ export default function ResidentsPage() {
     }
   };
 
+  const handleDeleteUnit = async (unit) => {
+    if (!window.confirm(`Are you sure you want to delete ${unit.displayNumber}?`)) return;
+    try {
+      if (unit.home_id) {
+        await apiClient.delete(`/homes/${unit.home_id}`);
+      }
+      if (currentSociety && currentSociety.id && currentSociety.total_homes > 0) {
+        const newTotal = Math.max(0, currentSociety.total_homes - 1);
+        await societyApi.updateSociety(currentSociety.id, { total_homes: newTotal });
+      }
+      setSuccessMsg(`${unit.displayNumber} deleted successfully.`);
+      fetchInitialData();
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete unit.');
+    }
+  };
+
   return (
     <div className="animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
 
@@ -420,6 +578,25 @@ export default function ResidentsPage() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {isAdmin && (
+            <button
+              id="btn-create-resident-top"
+              onClick={() => handleOpenCreateModal()}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '9px 18px',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <UserPlus size={16} />
+              <span>Create Resident & Unit</span>
+            </button>
+          )}
           <button
             onClick={fetchInitialData}
             className="btn btn-outline"
@@ -427,20 +604,7 @@ export default function ResidentsPage() {
             title="Refresh Units & Residents"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-
           </button>
-
-          {isAdmin && (
-            <button
-              id="btn-create-resident"
-              onClick={() => handleOpenCreateModal()}
-              className="btn btn-primary"
-              style={{ padding: '10px 18px', fontSize: '0.9rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-            >
-              <Plus size={16} />
-              <span>Create Resident</span>
-            </button>
-          )}
         </div>
       </div>
 
@@ -608,38 +772,48 @@ export default function ResidentsPage() {
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead>
-              <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Unit #
+              <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }}>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Unit
                 </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Wing / Tower
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Home
                 </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Floor
-                </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Unit Type
-                </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Occupancy
-                </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Resident Name
-                </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Type
                 </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Phone
+                {isFlat && (
+                  <>
+                    <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                      Tower
+                    </th>
+                    <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                      Floor
+                    </th>
+                  </>
+                )}
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Property Configuration
                 </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Occupancy
+                </th>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Resident Name
+                </th>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Resident Type
+                </th>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Phone Number
+                </th>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
+                  Email
+                </th>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Move-In Date
                 </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Status
-                </th>
-                <th style={{ padding: '12px 16px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase', textAlign: 'right' }}>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase', textAlign: 'right' }}>
                   Actions
                 </th>
               </tr>
@@ -647,15 +821,27 @@ export default function ResidentsPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={isFlat ? 13 : 11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ margin: '0 auto 8px', display: 'block' }} />
                     Loading residential units and residents...
                   </td>
                 </tr>
               ) : filteredUnits.length === 0 ? (
                 <tr>
-                  <td colSpan={11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
-                    No matching units or residents found.
+                  <td colSpan={isFlat ? 13 : 11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                    {!currentSociety ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                        <Home size={32} color="var(--color-clay)" style={{ opacity: 0.6 }} />
+                        <span style={{ fontSize: '0.95rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                          No Society Registered Yet
+                        </span>
+                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                          Please navigate to Society Management and create a Residential Society first.
+                        </span>
+                      </div>
+                    ) : (
+                      'No matching units or residents found.'
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -670,53 +856,119 @@ export default function ResidentsPage() {
                         borderBottom: '1px solid rgba(214, 194, 161, 0.4)',
                         background: isOcc ? 'var(--color-white)' : 'rgba(250, 245, 237, 0.4)',
                         transition: 'background var(--transition-fast)',
+                        whiteSpace: 'nowrap',
                       }}
                     >
-                      {/* Unit Number */}
-                      <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                      {/* Unit */}
+                      <td style={{ padding: '14px 14px', fontWeight: 700 }}>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '3px 8px',
+                            borderRadius: '5px',
+                            background: 'rgba(196, 154, 108, 0.16)',
+                            color: 'var(--color-dark-brown)',
+                            fontWeight: 700,
+                            fontSize: '0.75rem',
+                          }}
+                        >
+                          Unit {u.slotNumber}
+                        </span>
+                      </td>
+
+                      {/* Home */}
+                      <td style={{ padding: '14px 14px', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <div
                             style={{
                               width: '28px',
                               height: '28px',
                               borderRadius: '7px',
-                              background: isOcc ? 'rgba(107, 142, 90, 0.16)' : 'rgba(217, 119, 6, 0.14)',
+                              background: isFlat
+                                ? (isOcc ? 'rgba(107, 142, 90, 0.16)' : 'rgba(217, 119, 6, 0.14)')
+                                : (isOcc ? 'rgba(107, 142, 90, 0.16)' : 'rgba(196, 154, 108, 0.22)'),
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
                               flexShrink: 0,
                             }}
+                            title={isFlat ? 'Flat Unit' : 'Bungalow'}
                           >
-                            <Home
-                              size={15}
-                              color={isOcc ? 'var(--color-fern-green)' : 'var(--accent-amber)'}
-                            />
+                            {isFlat ? (
+                              <Building2
+                                size={15}
+                                color={isOcc ? 'var(--color-fern-green)' : 'var(--accent-amber)'}
+                              />
+                            ) : (
+                              <Home
+                                size={15}
+                                color={isOcc ? 'var(--color-fern-green)' : 'var(--color-clay)'}
+                              />
+                            )}
                           </div>
-                          <span style={{ fontSize: '0.95rem', fontWeight: 800 }}>
+                          <span style={{ fontSize: '0.92rem', fontWeight: 800 }}>
                             {String(u.rawNumber).replace(/^(home|flat|unit|villa)\s*/i, '').trim() || u.rawNumber}
                           </span>
                         </div>
                       </td>
 
-                      {/* Wing */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-main)' }}>
-                        {u.building_or_wing}
+                      {/* Type */}
+                      <td style={{ padding: '14px 14px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            background: isFlat ? 'rgba(217, 119, 6, 0.12)' : 'rgba(196, 154, 108, 0.18)',
+                            color: isFlat ? 'var(--accent-amber)' : 'var(--color-dark-brown)',
+                            padding: '3px 8px',
+                            borderRadius: '5px',
+                            fontWeight: 700,
+                            textTransform: 'capitalize',
+                          }}
+                        >
+                          {isFlat ? 'Flat' : 'Bungalow'}
+                        </span>
                       </td>
 
-                      {/* Floor */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-muted)' }}>
-                        Floor {u.floor}
-                      </td>
+                      {/* Tower & Floor (ONLY shown if FLAT) */}
+                      {isFlat && (
+                        <>
+                          <td style={{ padding: '14px 14px', color: 'var(--text-main)', fontWeight: 600 }}>
+                            {u.building_or_wing ? (
+                              <span style={{ fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                                Tower {String(u.building_or_wing).replace(/^Tower\s*/i, '')}
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-dim)' }}>—</span>
+                            )}
+                          </td>
+                          <td style={{ padding: '14px 14px', color: 'var(--text-muted)' }}>
+                            {u.floor !== null && u.floor !== undefined && String(u.floor).trim() !== '' ? (
+                              <span>Floor {u.floor}</span>
+                            ) : (
+                              <span style={{ color: 'var(--text-dim)' }}>—</span>
+                            )}
+                          </td>
+                        </>
+                      )}
 
-                      {/* Unit Type */}
-                      <td style={{ padding: '14px 16px' }}>
-                        <span style={{ fontSize: '0.72rem', background: 'rgba(196, 154, 108, 0.14)', color: 'var(--color-dark-brown)', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>
-                          {u.home_type}
+                      {/* Property Configuration */}
+                      <td style={{ padding: '14px 14px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            background: 'rgba(196, 154, 108, 0.14)',
+                            color: 'var(--color-dark-brown)',
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {u.home_type || '2BHK'}
                         </span>
                       </td>
 
                       {/* Occupancy */}
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '14px 14px' }}>
                         <span
                           style={{
                             padding: '3px 8px',
@@ -732,21 +984,18 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Resident Name */}
-                      <td style={{ padding: '14px 16px', fontWeight: 600, color: isOcc ? 'var(--color-dark-brown)' : 'var(--text-dim)' }}>
+                      <td style={{ padding: '14px 14px', fontWeight: 600, color: isOcc ? 'var(--color-dark-brown)' : 'var(--text-dim)' }}>
                         {isOcc ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-
-                            <span>{res.full_name}</span>
-                          </div>
+                          <span style={{ fontWeight: 700, color: 'var(--color-dark-brown)' }}>{res.full_name}</span>
                         ) : (
                           <span style={{ fontStyle: 'italic', color: 'var(--text-dim)' }}>— Vacant Unit —</span>
                         )}
                       </td>
 
                       {/* Resident Type */}
-                      <td style={{ padding: '14px 16px' }}>
+                      <td style={{ padding: '14px 14px' }}>
                         {isOcc ? (
-                          <span className={`badge ${res.resident_type === 'OWNER' ? 'badge-OWNER' : 'badge-TENANT'}`} style={{ fontSize: '0.68rem' }}>
+                          <span className={`badge ${res.resident_type === 'OWNER' ? 'badge-OWNER' : 'badge-TENANT'}`} style={{ fontSize: '0.68rem', fontWeight: 700 }}>
                             {res.resident_type}
                           </span>
                         ) : (
@@ -754,12 +1003,24 @@ export default function ResidentsPage() {
                         )}
                       </td>
 
-                      {/* Phone */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-main)', fontSize: '0.82rem' }}>
-                        {isOcc ? (
+                      {/* Phone Number */}
+                      <td style={{ padding: '14px 14px', color: 'var(--text-main)', fontSize: '0.82rem' }}>
+                        {isOcc && res.phone ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Phone size={13} color="var(--color-fern-green)" />
-                            <span>{res.phone}</span>
+                            <span style={{ fontWeight: 600 }}>{res.phone}</span>
+                          </div>
+                        ) : (
+                          <span style={{ color: 'var(--text-dim)' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Email */}
+                      <td style={{ padding: '14px 14px', color: 'var(--text-main)', fontSize: '0.82rem' }}>
+                        {isOcc && res.email ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <Mail size={13} color="var(--accent-amber)" />
+                            <span style={{ color: 'var(--color-dark-brown)' }}>{res.email}</span>
                           </div>
                         ) : (
                           <span style={{ color: 'var(--text-dim)' }}>—</span>
@@ -767,7 +1028,7 @@ export default function ResidentsPage() {
                       </td>
 
                       {/* Move-in Date */}
-                      <td style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <td style={{ padding: '14px 14px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                         {isOcc && res.move_in_date ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                             <Calendar size={13} color="var(--text-dim)" />
@@ -775,17 +1036,6 @@ export default function ResidentsPage() {
                           </div>
                         ) : (
                           <span style={{ color: 'var(--text-dim)' }}>—</span>
-                        )}
-                      </td>
-
-                      {/* Status */}
-                      <td style={{ padding: '14px 16px' }}>
-                        {isOcc ? (
-                          <span className={`badge ${res.status === 'ACTIVE' ? 'badge-COMMITTEE_MEMBER' : 'badge-ADMIN'}`} style={{ fontSize: '0.65rem' }}>
-                            {res.status}
-                          </span>
-                        ) : (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>Available</span>
                         )}
                       </td>
 
@@ -849,14 +1099,24 @@ export default function ResidentsPage() {
                           </div>
                         ) : (
                           isAdmin && (
-                            <button
-                              onClick={() => handleOpenCreateModal(u.rawNumber)}
-                              className="btn btn-primary"
-                              style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <Plus size={12} />
-                              <span>Create Resident</span>
-                            </button>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              <button
+                                onClick={() => handleOpenCreateModal(u)}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <Plus size={12} />
+                                <span>Create Resident</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUnit(u)}
+                                className="btn btn-danger"
+                                style={{ padding: '6px 8px', fontSize: '0.72rem' }}
+                                title="Delete Unit"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           )
                         )}
                       </td>
@@ -987,60 +1247,130 @@ export default function ResidentsPage() {
                   <span>Residential Unit Information</span>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <label className="input-label">Home / Unit Number *</label>
+                <div style={{ display: 'grid', gridTemplateColumns: (createForm.society_type === 'FLAT' || isFlat) ? 'repeat(auto-fit, minmax(110px, 1fr))' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                  {/* Home No: Non-changeable */}
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Lock size={12} color="var(--text-muted)" />
+                      <span>Home No</span>
+                    </label>
                     <input
+                      id="input-create-resident-unit"
                       type="text"
+                      readOnly
                       required
                       className="input-field"
-                      placeholder="e.g. Home 3, 101, Villa 4"
+                      style={{
+                        background: 'rgba(214, 194, 161, 0.22)',
+                        cursor: 'not-allowed',
+                        fontWeight: 700,
+                        color: 'var(--color-dark-brown)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                      title="Home Number is fixed for this unit and cannot be changed"
                       value={createForm.home_number}
-                      onChange={(e) => setCreateForm({ ...createForm, home_number: e.target.value })}
                     />
                   </div>
 
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <label className="input-label">Building / Wing</label>
+                  {/* Type: Non-changeable */}
+                  <div className="input-group" style={{ marginBottom: 0 }}>
+                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                      <Lock size={12} color="var(--text-muted)" />
+                      <span>Type</span>
+                    </label>
                     <input
+                      id="input-create-resident-type"
                       type="text"
+                      readOnly
                       className="input-field"
-                      placeholder="e.g. Wing A, Tower 1"
-                      value={createForm.building_or_wing}
-                      onChange={(e) => setCreateForm({ ...createForm, building_or_wing: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group" style={{ marginBottom: 0 }}>
-                    <label className="input-label">Floor</label>
-                    <input
-                      type="number"
-                      min="0"
-                      className="input-field"
-                      placeholder="e.g. 1"
-                      value={createForm.floor}
-                      onChange={(e) => setCreateForm({ ...createForm, floor: e.target.value })}
+                      style={{
+                        background: 'rgba(214, 194, 161, 0.22)',
+                        cursor: 'not-allowed',
+                        fontWeight: 600,
+                        color: 'var(--color-dark-brown)',
+                        border: '1px solid var(--border-subtle)',
+                      }}
+                      title="Society Type is fixed and cannot be changed"
+                      value={createForm.society_type === 'BUNGALOW' ? 'Bungalow' : 'Flat'}
                     />
                   </div>
 
+                  {/* Tower: Non-changeable (only if Flat) */}
+                  {(createForm.society_type === 'FLAT' || isFlat) && (
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Lock size={12} color="var(--text-muted)" />
+                        <span>Tower</span>
+                      </label>
+                      <input
+                        id="input-create-resident-tower"
+                        type="text"
+                        readOnly
+                        className="input-field"
+                        style={{
+                          background: 'rgba(214, 194, 161, 0.22)',
+                          cursor: 'not-allowed',
+                          fontWeight: 700,
+                          color: 'var(--color-dark-brown)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                        title="Tower is fixed for this flat and cannot be changed"
+                        value={
+                          createForm.building_or_wing
+                            ? (String(createForm.building_or_wing).toLowerCase().startsWith('tower')
+                                ? createForm.building_or_wing
+                                : `Tower ${String(createForm.building_or_wing).replace(/^Tower\s*/i, '')}`)
+                            : '—'
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {/* Floor: Non-changeable (only if Flat) */}
+                  {(createForm.society_type === 'FLAT' || isFlat) && (
+                    <div className="input-group" style={{ marginBottom: 0 }}>
+                      <label className="input-label" style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                        <Lock size={12} color="var(--text-muted)" />
+                        <span>Floor</span>
+                      </label>
+                      <input
+                        id="input-create-resident-floor"
+                        type="text"
+                        readOnly
+                        className="input-field"
+                        style={{
+                          background: 'rgba(214, 194, 161, 0.22)',
+                          cursor: 'not-allowed',
+                          fontWeight: 700,
+                          color: 'var(--color-dark-brown)',
+                          border: '1px solid var(--border-subtle)',
+                        }}
+                        title="Floor is fixed for this flat and cannot be changed"
+                        value={
+                          createForm.floor !== '' && createForm.floor !== null && createForm.floor !== undefined
+                            ? (String(createForm.floor).toLowerCase().startsWith('floor')
+                                ? createForm.floor
+                                : `Floor ${createForm.floor}`)
+                            : '—'
+                        }
+                      />
+                    </div>
+                  )}
+
+                  {/* Configuration */}
                   <div className="input-group" style={{ marginBottom: 0 }}>
-                    <label className="input-label">Unit Type</label>
+                    <label className="input-label">Property Configuration *</label>
                     <select
+                      id="select-create-resident-property-config"
                       className="input-field"
-                      value={createForm.home_type}
+                      value={createForm.home_type || societyConfigs[0] || '2BHK'}
                       onChange={(e) => setCreateForm({ ...createForm, home_type: e.target.value })}
                     >
-                      <option value="1BHK">1BHK</option>
-                      <option value="2BHK">2BHK</option>
-                      <option value="3BHK">3BHK</option>
-                      <option value="4BHK">4BHK</option>
-                      <option value="BUNGALOW">BUNGALOW</option>
-                      <option value="VILLA">VILLA</option>
-                      <option value="PENTHOUSE">PENTHOUSE</option>
-                      <option value="STUDIO">STUDIO</option>
-                      <option value="OTHER">OTHER</option>
+                      {societyConfigs.map((cfg) => (
+                        <option key={cfg} value={cfg}>
+                          {cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
