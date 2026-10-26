@@ -2,6 +2,7 @@ const { Router } = require('express');
 const ResidentController = require('../controllers/resident.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
 const { roleMiddleware } = require('../middlewares/role.middleware');
+const { requireFeature, enforceLimit } = require('../middlewares/entitlement.middleware');
 const { ROLES } = require('../constants/roles');
 
 const router = Router();
@@ -9,27 +10,27 @@ const router = Router();
 // ========================================================
 // Resident Routes
 // All management operations are strictly restricted to ADMIN
+// and require the RESIDENTS platform feature
 // ========================================================
+router.use(authMiddleware, requireFeature('RESIDENTS'));
 
 // Read endpoints - Strictly restricted to ADMIN
 router.get(
   '/',
-  authMiddleware,
-  roleMiddleware(ROLES.ADMIN),
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
   ResidentController.getAll
 );
 router.get(
   '/:id',
-  authMiddleware,
-  roleMiddleware(ROLES.ADMIN),
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
   ResidentController.getById
 );
 
 // Admin-Only mutation endpoints
 router.post(
   '/',
-  authMiddleware,
-  roleMiddleware(ROLES.ADMIN),
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
+  enforceLimit('USERS'),
   ResidentController.create
 );
 

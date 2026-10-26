@@ -11,7 +11,7 @@ class SecurityController {
    */
   static async createSecurity(req, res, next) {
     try {
-      const staff = await SecurityService.createSecurityStaff(req.body);
+      const staff = await SecurityService.createSecurityStaff(req.body, req.user);
       return ApiResponse.created(res, 'Security staff registered successfully', { staff });
     } catch (error) {
       next(error);
@@ -24,7 +24,7 @@ class SecurityController {
    */
   static async getAll(req, res, next) {
     try {
-      const staffList = await SecurityService.getAllSecurityStaff(req.query);
+      const staffList = await SecurityService.getAllSecurityStaff(req.query, req.user);
       return ApiResponse.success(res, 'Security staff list retrieved', { staffList });
     } catch (error) {
       next(error);
@@ -36,7 +36,7 @@ class SecurityController {
    */
   static async getById(req, res, next) {
     try {
-      const staff = await SecurityService.getSecurityStaffById(req.params.id);
+      const staff = await SecurityService.getSecurityStaffById(req.params.id, req.user);
       return ApiResponse.success(res, 'Security staff details retrieved', { staff });
     } catch (error) {
       next(error);
@@ -49,7 +49,7 @@ class SecurityController {
    */
   static async update(req, res, next) {
     try {
-      const staff = await SecurityService.updateSecurityStaff(req.params.id, req.body);
+      const staff = await SecurityService.updateSecurityStaff(req.params.id, req.body, req.user);
       return ApiResponse.success(res, 'Security staff details updated', { staff });
     } catch (error) {
       next(error);
@@ -63,7 +63,7 @@ class SecurityController {
   static async updateStatus(req, res, next) {
     try {
       const { status } = req.body;
-      const staff = await SecurityService.changeStatus(req.params.id, status);
+      const staff = await SecurityService.changeStatus(req.params.id, status, req.user);
       return ApiResponse.success(res, `Security staff status changed to ${status}`, { staff });
     } catch (error) {
       next(error);
@@ -77,7 +77,7 @@ class SecurityController {
   static async resetPassword(req, res, next) {
     try {
       const { newPassword } = req.body;
-      const result = await SecurityService.resetPassword(req.params.id, newPassword);
+      const result = await SecurityService.resetPassword(req.params.id, newPassword, req.user);
       return ApiResponse.success(res, result.message, null);
     } catch (error) {
       next(error);
@@ -90,7 +90,7 @@ class SecurityController {
    */
   static async delete(req, res, next) {
     try {
-      const result = await SecurityService.deleteSecurityStaff(req.params.id);
+      const result = await SecurityService.deleteSecurityStaff(req.params.id, req.user);
       return ApiResponse.success(res, result.message, null);
     } catch (error) {
       next(error);

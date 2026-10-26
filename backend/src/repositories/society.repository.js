@@ -57,6 +57,7 @@ class SocietyRepository {
     const query = `
       SELECT 
         s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
+        s.max_units, s.subscription_plan_id, s.subscription_status,
         COALESCE(s.address, s.address_line1) AS address,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
         s.emergency_number, s.status, s.created_at, s.updated_at,
@@ -81,12 +82,13 @@ class SocietyRepository {
   }
 
   /**
-   * Find all societies with optional status filter
+   * Find all societies with optional status filter (supports multi-tenant scoping)
    */
-  static async findAll(filters = {}) {
+  static async findAll(filters = {}, callerSocietyId = null, callerUserId = null) {
     let query = `
       SELECT 
         s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
+        s.max_units, s.subscription_plan_id, s.subscription_status,
         COALESCE(s.address, s.address_line1) AS address,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
         s.emergency_number, s.status, s.created_at, s.updated_at,
@@ -97,6 +99,12 @@ class SocietyRepository {
       WHERE 1=1
     `;
     const params = [];
+
+    // Multi-tenant scoping: regular Admin only sees their own assigned society
+    if (callerSocietyId || callerUserId) {
+      query += ' AND (s.id = ? OR s.admin_user_id = ?)';
+      params.push(callerSocietyId || 0, callerUserId || 0);
+    }
 
     if (filters.status) {
       query += ' AND s.status = ?';
@@ -150,6 +158,10 @@ class SocietyRepository {
     if (data.total_homes !== undefined) {
       fields.push('total_homes = ?');
       params.push(data.total_homes);
+    }
+    if (data.max_units !== undefined) {
+      fields.push('max_units = ?');
+      params.push(data.max_units);
     }
     if (data.address !== undefined) {
       fields.push('address = ?, address_line1 = ?');

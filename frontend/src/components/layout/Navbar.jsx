@@ -60,8 +60,8 @@ export default function Navbar() {
   const roleMeta = user ? ROLE_CONFIG[user.role] : null;
 
   return (
-    <nav className="glass-nav" style={{ position: 'sticky', top: 0, zIndex: 50, padding: '14px 24px' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <nav className="glass-nav" style={{ position: 'sticky', top: 0, zIndex: 50, padding: '12px 16px' }}>
+      <div style={{ maxWidth: '1440px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
 
         {/* Brand Logo */}
         <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -84,6 +84,23 @@ export default function Navbar() {
             <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', lineHeight: 1 }}>Residential Society System</div>
           </div>
         </Link>
+
+        {/* Navigation Anchor Links for Landing Page */}
+        <div style={{ display: 'none', alignItems: 'center', gap: '22px' }} className="d-md-flex">
+          <a href="#solutions" style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-dark-brown)', textDecoration: 'none', transition: 'color 0.2s' }}>
+            Solutions
+          </a>
+          <a href="#our-highlights" style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-dark-brown)', textDecoration: 'none', transition: 'color 0.2s' }}>
+            Highlights
+          </a>
+          <a href="#subscription-plans" style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-clay)', textDecoration: 'none', transition: 'color 0.2s', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            Plans & Tiers
+            <span style={{ fontSize: '0.65rem', padding: '2px 6px', background: 'var(--color-clay)', color: '#fff', borderRadius: '10px', textTransform: 'uppercase' }}>New</span>
+          </a>
+          <a href="#mobile-apps-section" style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--color-dark-brown)', textDecoration: 'none', transition: 'color 0.2s' }}>
+            Mobile App
+          </a>
+        </div>
 
         {/* Right Section: User Profile or Auth Action */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>

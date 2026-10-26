@@ -14,6 +14,11 @@ const roleMiddleware = (...roles) => {
       return next(ApiError.unauthorized('User is not authenticated.'));
     }
 
+    // Super Admin has platform-wide authorization for all roles
+    if (req.user.role === 'SUPER_ADMIN') {
+      return next();
+    }
+
     if (!allowedRoles.includes(req.user.role)) {
       return next(
         ApiError.forbidden(

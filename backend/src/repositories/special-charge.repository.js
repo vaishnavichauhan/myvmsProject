@@ -158,6 +158,12 @@ class SpecialChargeRepository {
       params.push(filters.committee_id);
     }
 
+    if (filters.search) {
+      query += ` AND (sc.title LIKE ? OR sc.description LIKE ? OR sc.committee_name LIKE ?)`;
+      const term = `%${filters.search}%`;
+      params.push(term, term, term);
+    }
+
     query += ` GROUP BY sc.id ORDER BY sc.id DESC`;
 
     const [rows] = await pool.query(query, params);
@@ -174,17 +180,19 @@ class SpecialChargeRepository {
              h.building_or_wing,
              h.floor,
              h.home_type,
-             u.full_name AS resident_name,
-             u.phone AS resident_phone,
-             r.resident_type,
+             COALESCE(u.full_name, u2.full_name, 'Resident') AS resident_name,
+             COALESCE(u.phone, u2.phone, '-') AS resident_phone,
+             COALESCE(r.resident_type, 'RESIDENT') AS resident_type,
              sc.title AS charge_title,
              sc.category AS charge_category,
-             sc.due_date AS charge_due_date
+             sc.due_date AS charge_due_date,
+             sc.committee_name
       FROM special_charge_assignments sca
       JOIN homes h ON sca.home_id = h.id
       JOIN special_charges sc ON sca.charge_id = sc.id
       LEFT JOIN residents r ON sca.home_id = r.home_id AND r.status = 'ACTIVE'
       LEFT JOIN users u ON r.user_id = u.id
+      LEFT JOIN users u2 ON sca.resident_user_id = u2.id
       WHERE sca.charge_id = ?
     `;
     const params = [chargeId];
@@ -199,6 +207,12 @@ class SpecialChargeRepository {
       params.push(filters.home_id);
     }
 
+    if (filters.search) {
+      query += ` AND (h.home_number LIKE ? OR u.full_name LIKE ? OR u2.full_name LIKE ?)`;
+      const term = `%${filters.search}%`;
+      params.push(term, term, term);
+    }
+
     query += ` ORDER BY CAST(REGEXP_REPLACE(h.home_number, '[^0-9]', '') AS UNSIGNED) ASC, h.home_number ASC`;
 
     const [rows] = await pool.query(query, params);
@@ -209,6 +223,7 @@ class SpecialChargeRepository {
    * Find special charge assignments for a resident (by resident's user ID).
    */
   static async findAssignmentsForResident(userId, societyId = null) {
+    let homeId = null;
     const [residentRows] = await pool.query(
       `SELECT r.home_id, h.society_id
        FROM residents r
@@ -218,11 +233,35 @@ class SpecialChargeRepository {
       [userId]
     );
 
-    if (residentRows.length === 0) {
-      return [];
+    if (residentRows.length > 0) {
+      homeId = residentRows[0].home_id;
+    } else {
+      const [fmRows] = await pool.query(
+        `SELECT fm.home_id, h.society_id
+         FROM family_members fm
+         JOIN homes h ON fm.home_id = h.id
+         WHERE fm.user_id = ? AND fm.status = 'ACTIVE'
+         LIMIT 1`,
+        [userId]
+      );
+      if (fmRows.length > 0) {
+        homeId = fmRows[0].home_id;
+      } else {
+        const [cmRows] = await pool.query(
+          `SELECT cm.home_id, h.society_id
+           FROM committee_members cm
+           JOIN homes h ON cm.home_id = h.id
+           WHERE cm.user_id = ? AND cm.status = 'ACTIVE' AND cm.home_id IS NOT NULL
+           LIMIT 1`,
+          [userId]
+        );
+        if (cmRows.length > 0) homeId = cmRows[0].home_id;
+      }
     }
 
-    const homeId = residentRows[0].home_id;
+    if (!homeId) {
+      return [];
+    }
 
     let query = `
       SELECT sca.*,
@@ -231,16 +270,26 @@ class SpecialChargeRepository {
              sc.description AS charge_description,
              sc.due_date AS charge_due_date,
              sc.committee_name,
+             sc.committee_id,
              sc.status AS charge_status,
              s.name AS society_name,
              h.home_number,
-             h.home_type
+             h.home_type,
+             h.building_or_wing
       FROM special_charge_assignments sca
       JOIN special_charges sc ON sca.charge_id = sc.id
       JOIN homes h ON sca.home_id = h.id
       JOIN societies s ON sca.society_id = s.id
       WHERE sca.home_id = ? AND sc.status = 'ACTIVE'
-      ORDER BY sca.status ASC, sc.due_date ASC, sca.id DESC
+      ORDER BY 
+        CASE sca.status
+          WHEN 'PENDING' THEN 1
+          WHEN 'PARTIALLY_PAID' THEN 2
+          WHEN 'PAID' THEN 3
+          ELSE 4
+        END ASC,
+        sc.due_date ASC,
+        sca.id DESC
     `;
 
     const [rows] = await pool.query(query, [homeId]);

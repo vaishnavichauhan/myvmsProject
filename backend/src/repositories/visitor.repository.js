@@ -156,8 +156,11 @@ class VisitorRepository {
         resolvedGateId = anyGates[0]?.id || null;
       }
 
-      // 2. Generate OTP
+      // 2. Generate OTP and Gate Pass Number
       const otpCode = Math.floor(1000 + Math.random() * 9000).toString();
+      const datePart = new Date().toISOString().slice(2, 10).replace(/-/g, '');
+      const randPart = Math.floor(1000 + Math.random() * 9000);
+      const gatePassNumber = `GP-${datePart}-${randPart}`;
 
       // Determine check_in_time
       const checkInTime = initial_status === 'ENTERED' ? new Date() : null;
@@ -166,8 +169,8 @@ class VisitorRepository {
       const [entryResult] = await connection.query(
         `INSERT INTO visitor_entries (
           visitor_id, home_id, gate_id, security_staff_id, resident_user_id, approved_by_user_id,
-          purpose, entry_type, otp_code, approval_status, check_in_time, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          purpose, entry_type, otp_code, gate_pass_number, approval_status, check_in_time, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           visitorId,
           home_id,
@@ -178,6 +181,7 @@ class VisitorRepository {
           purpose.trim(),
           entry_type,
           otpCode,
+          gatePassNumber,
           approval_status,
           checkInTime,
           initial_status,
@@ -240,6 +244,7 @@ class VisitorRepository {
         ve.purpose,
         ve.entry_type,
         ve.otp_code,
+        ve.gate_pass_number,
         ve.approval_status,
         ve.check_in_time AS entry_time,
         ve.check_out_time AS exit_time,
@@ -423,8 +428,8 @@ class VisitorRepository {
     }
     if (filters.search) {
       const q = `%${filters.search.trim()}%`;
-      conditions.push('(v.full_name LIKE ? OR v.phone LIKE ? OR v.vehicle_number LIKE ? OR h.home_number LIKE ?)');
-      params.push(q, q, q, q);
+      conditions.push('(v.full_name LIKE ? OR v.phone LIKE ? OR v.vehicle_number LIKE ? OR h.home_number LIKE ? OR ve.gate_pass_number LIKE ?)');
+      params.push(q, q, q, q, q);
     }
     if (filters.date_from) {
       conditions.push('ve.created_at >= ?');
@@ -451,6 +456,7 @@ class VisitorRepository {
         ve.purpose,
         ve.entry_type,
         ve.otp_code,
+        ve.gate_pass_number,
         ve.approval_status,
         ve.check_in_time AS entry_time,
         ve.check_out_time AS exit_time,
@@ -489,6 +495,59 @@ class VisitorRepository {
     params.push(limit, offset);
     const [rows] = await pool.query(query, params);
     return rows;
+  }
+
+  /**
+   * Quick Lookup for Returning Visitor:
+   * Finds latest visitor profile and past visit info by Phone Number OR Gate Pass Number
+   */
+  static async findVisitorByPhoneOrPass(societyId, queryStr) {
+    if (!queryStr || !queryStr.trim()) return null;
+    const cleanQuery = queryStr.trim();
+    const cleanDigits = cleanQuery.replace(/\D/g, '');
+
+    const sql = `
+      SELECT 
+        v.id AS visitor_id,
+        v.full_name AS name,
+        v.phone,
+        v.vehicle_number,
+        v.photo_url,
+        v.visitor_type,
+        ve.id AS last_entry_id,
+        ve.gate_pass_number,
+        ve.purpose,
+        ve.home_id,
+        h.home_number,
+        h.building_or_wing,
+        ve.status AS last_status,
+        ve.check_in_time AS last_check_in_time
+      FROM visitors v
+      LEFT JOIN visitor_entries ve ON ve.visitor_id = v.id
+      LEFT JOIN homes h ON ve.home_id = h.id
+      WHERE (v.society_id = ? OR ? IS NULL)
+        AND (
+          v.phone = ?
+          OR (LENGTH(?) >= 7 AND v.phone LIKE ?)
+          OR ve.gate_pass_number = ?
+          OR UPPER(ve.gate_pass_number) = UPPER(?)
+        )
+      ORDER BY ve.id DESC
+      LIMIT 1
+    `;
+
+    const [rows] = await pool.query(sql, [
+      societyId,
+      societyId,
+      cleanQuery,
+      cleanDigits,
+      `%${cleanDigits}%`,
+      cleanQuery,
+      cleanQuery,
+    ]);
+
+    if (!rows || rows.length === 0) return null;
+    return rows[0];
   }
 }
 

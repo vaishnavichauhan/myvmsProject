@@ -3,11 +3,12 @@ const CommitteeController = require('../controllers/committee.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
 const { roleMiddleware } = require('../middlewares/role.middleware');
 const { ROLES } = require('../constants/roles');
+const { requireFeature } = require('../middlewares/entitlement.middleware');
 
 const router = Router();
 
-// All routes require authentication
-router.use(authMiddleware);
+// All routes require authentication and COMMITTEES module entitlement
+router.use(authMiddleware, requireFeature('COMMITTEES'));
 
 // Check if current user can create announcements (Admin or authorized Committee Member)
 router.get('/my-permissions', CommitteeController.checkAnnouncementPermission);

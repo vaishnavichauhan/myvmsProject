@@ -1,5 +1,6 @@
 const HomeService = require('../services/home.service');
 const ApiResponse = require('../utils/apiResponse');
+const ApiError = require('../utils/apiError');
 
 /**
  * Home/Unit Management Controller
@@ -10,7 +11,14 @@ class HomeController {
    */
   static async create(req, res, next) {
     try {
-      const home = await HomeService.createHome(req.params.societyId, req.body);
+      let targetSocId = req.params.societyId;
+      if (req.user && req.user.role !== 'SUPER_ADMIN') {
+        const callerSocId = req.user.society_id || req.user.societyId;
+        if (callerSocId && String(targetSocId) !== String(callerSocId)) {
+          throw ApiError.forbidden('Access denied. You cannot create homes in another society.');
+        }
+      }
+      const home = await HomeService.createHome(targetSocId, req.body);
       return ApiResponse.created(res, 'Home created successfully', { home });
     } catch (error) {
       next(error);
@@ -23,7 +31,14 @@ class HomeController {
    */
   static async batchGenerate(req, res, next) {
     try {
-      const result = await HomeService.batchGenerateHomes(req.params.societyId, req.body);
+      let targetSocId = req.params.societyId;
+      if (req.user && req.user.role !== 'SUPER_ADMIN') {
+        const callerSocId = req.user.society_id || req.user.societyId;
+        if (callerSocId && String(targetSocId) !== String(callerSocId)) {
+          throw ApiError.forbidden('Access denied. You cannot generate homes in another society.');
+        }
+      }
+      const result = await HomeService.batchGenerateHomes(targetSocId, req.body);
       return ApiResponse.created(res, result.message, result);
     } catch (error) {
       next(error);
@@ -35,7 +50,10 @@ class HomeController {
    */
   static async getAll(req, res, next) {
     try {
-      const societyId = req.query.societyId || req.query.society_id;
+      let societyId = req.query.societyId || req.query.society_id;
+      if (req.user && req.user.role !== 'SUPER_ADMIN') {
+        societyId = req.user.society_id || req.user.societyId;
+      }
       const homes = societyId && societyId !== 'ALL'
         ? await HomeService.getHomesBySociety(societyId, req.query)
         : await HomeService.getAllHomes(req.query);
@@ -50,7 +68,14 @@ class HomeController {
    */
   static async getAllBySociety(req, res, next) {
     try {
-      const homes = await HomeService.getHomesBySociety(req.params.societyId, req.query);
+      let targetSocId = req.params.societyId;
+      if (req.user && req.user.role !== 'SUPER_ADMIN') {
+        const callerSocId = req.user.society_id || req.user.societyId;
+        if (callerSocId && String(targetSocId) !== String(callerSocId)) {
+          throw ApiError.forbidden('Access denied. You cannot view homes of another society.');
+        }
+      }
+      const homes = await HomeService.getHomesBySociety(targetSocId, req.query);
       return ApiResponse.success(res, 'Homes retrieved successfully', { homes });
     } catch (error) {
       next(error);

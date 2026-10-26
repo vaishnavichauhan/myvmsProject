@@ -1,11 +1,12 @@
 const { Router } = require('express');
 const SpecialChargeController = require('../controllers/special-charge.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
+const { requireFeature } = require('../middlewares/entitlement.middleware');
 
 const router = Router();
 
-// Authentication required for all endpoints
-router.use(authMiddleware);
+// Authentication and SOCIETY_FINANCE module required for all endpoints
+router.use(authMiddleware, requireFeature('SOCIETY_FINANCE'));
 
 // Statistics & Overview
 router.get('/stats', SpecialChargeController.getStats);

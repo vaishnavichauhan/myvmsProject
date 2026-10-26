@@ -12,8 +12,8 @@ class AuthController {
    */
   static async login(req, res, next) {
     try {
-      const { phone, phoneNumber, email, password } = req.body;
-      const identifier = phone || phoneNumber || email;
+      const { phone, phoneNumber, email, phoneOrEmail, password } = req.body;
+      const identifier = phone || phoneNumber || email || phoneOrEmail;
 
       const result = await AuthService.login(identifier, password);
       return ApiResponse.success(res, 'Login successful', result);
@@ -100,7 +100,7 @@ class AuthController {
         FROM users u
         LEFT JOIN societies s ON u.society_id = s.id
         WHERE u.status = 'ACTIVE'
-        ORDER BY FIELD(u.role, 'ADMIN', 'OWNER', 'TENANT', 'COMMITTEE_MEMBER', 'SECURITY', 'FAMILY_MEMBER'), u.id ASC
+        ORDER BY FIELD(u.role, 'SUPER_ADMIN', 'ADMIN', 'OWNER', 'TENANT', 'COMMITTEE_MEMBER', 'SECURITY', 'FAMILY_MEMBER'), u.id ASC
       `);
 
       const testAccounts = users.map((u) => ({

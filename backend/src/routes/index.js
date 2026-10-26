@@ -17,6 +17,9 @@ const adminRoutes = require('./admin.routes');
 const reportRoutes = require('./report.routes');
 const maintenanceRoutes = require('./maintenance.routes');
 const specialChargeRoutes = require('./special-charge.routes');
+const pollRoutes = require('./poll.routes');
+const amenityRoutes = require('./amenity.routes');
+const superAdminRoutes = require('./superadmin.routes');
 const { ALL_ROLES } = require('../constants/roles');
 const ApiResponse = require('../utils/apiResponse');
 
@@ -90,6 +93,18 @@ router.get('/', (req, res) => {
   });
 });
 
+// Public Subscription Plans endpoint (for Landing Page & Pricing)
+router.get('/plans', async (req, res, next) => {
+  try {
+    const SubscriptionRepository = require('../repositories/subscription.repository');
+    const plans = await SubscriptionRepository.getPlans();
+    const activePlans = plans.filter((p) => p.status === 'ACTIVE');
+    return ApiResponse.success(res, 'Active subscription plans retrieved', { plans: activePlans });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Mount module routes
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
@@ -110,5 +125,8 @@ router.use('/admin', adminRoutes);
 router.use('/reports', reportRoutes);
 router.use('/maintenance', maintenanceRoutes);
 router.use('/special-charges', specialChargeRoutes);
+router.use('/polls', pollRoutes);
+router.use('/amenities', amenityRoutes);
+router.use('/super-admin', superAdminRoutes);
 
 module.exports = router;

@@ -29,6 +29,10 @@ import {
   FileText,
   Calendar,
   Filter,
+  Crown,
+  Sparkles,
+  Zap,
+  TrendingUp,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
@@ -110,6 +114,8 @@ export default function DashboardPage() {
     setRefreshing(true);
     fetchDashboardData();
   };
+
+  const sub = data?.subscription || user?.subscription || null;
 
   const stats = data?.stats || {
     totalHomes: 0,
@@ -371,8 +377,9 @@ export default function DashboardPage() {
             </p>
 
             {/* Society Name if created, otherwise Create Society button */}
+            {/* Society Name and Purchased Plan Badge */}
             {data?.society?.name || user?.societyName ? (
-              <div style={{ marginTop: '18px' }}>
+              <div style={{ marginTop: '18px', display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
                 <Link
                   to="/societies"
                   style={{
@@ -438,6 +445,74 @@ export default function DashboardPage() {
                     </span>
                   </div>
                 </Link>
+
+                {/* Purchased Plan Quick Pill */}
+                {sub && (
+                  <div
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: '8px 18px',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'rgba(196, 154, 108, 0.15)',
+                      border: '1px solid var(--color-clay)',
+                      color: 'var(--color-dark-brown)',
+                      boxShadow: '0 2px 8px rgba(196, 154, 108, 0.12)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '32px',
+                        height: '32px',
+                        borderRadius: '8px',
+                        background: 'linear-gradient(135deg, var(--color-clay) 0%, #a8794d 100%)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#FFFFFF',
+                      }}
+                    >
+                      <Crown size={16} />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span
+                        style={{
+                          fontSize: '0.78rem',
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                          color: 'var(--color-clay)',
+                        }}
+                      >
+                        Purchased Plan:
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '1.05rem',
+                          fontWeight: 800,
+                          color: 'var(--color-dark-brown)',
+                        }}
+                      >
+                        {sub.planName}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.68rem',
+                          fontWeight: 800,
+                          padding: '2px 8px',
+                          borderRadius: '10px',
+                          background: sub.status === 'TRIAL' ? 'rgba(245, 158, 11, 0.18)' : 'rgba(16, 185, 129, 0.18)',
+                          color: sub.status === 'TRIAL' ? '#d97706' : '#059669',
+                          textTransform: 'uppercase',
+                          border: sub.status === 'TRIAL' ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid rgba(16, 185, 129, 0.35)',
+                        }}
+                      >
+                        {sub.status === 'TRIAL' ? 'Free Trial' : 'Active'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ marginTop: '18px' }}>
@@ -572,6 +647,393 @@ export default function DashboardPage() {
         </div>
       )}
 
+
+      {/* ========================================================
+          PURCHASED SUBSCRIPTION PLAN & CAPACITY STATUS
+          ======================================================== */}
+      {sub && (
+        <div
+          className="glass-panel"
+          style={{
+            borderRadius: 'var(--radius-xl)',
+            background: '#FFFFFF',
+            border: '1px solid var(--border-card)',
+            boxShadow: '0 8px 30px rgba(196, 154, 108, 0.12)',
+            padding: '24px 28px',
+            position: 'relative',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Top highlight gradient strip */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: 'linear-gradient(90deg, var(--color-clay) 0%, #D6C2A1 50%, var(--color-fern-green) 100%)',
+            }}
+          />
+
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: 20,
+              marginBottom: 20,
+              paddingBottom: 20,
+              borderBottom: '1px solid var(--border-subtle)',
+            }}
+          >
+            {/* Left: Plan Identity */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 14,
+                  background: 'linear-gradient(135deg, var(--color-clay) 0%, #9C7248 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#FFFFFF',
+                  boxShadow: '0 4px 14px rgba(196, 154, 108, 0.35)',
+                  flexShrink: 0,
+                }}
+              >
+                <Crown size={28} />
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span
+                    style={{
+                      fontSize: '0.72rem',
+                      fontWeight: 800,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      color: 'var(--color-clay)',
+                    }}
+                  >
+                    PURCHASED SUBSCRIPTION PLAN
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 700,
+                      padding: '2px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      background: 'rgba(196, 154, 108, 0.16)',
+                      color: 'var(--color-dark-brown)',
+                      border: '1px solid var(--color-sand)',
+                    }}
+                  >
+                    {sub.planCode}
+                  </span>
+                  {sub.status === 'TRIAL' ? (
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'rgba(245, 158, 11, 0.15)',
+                        color: '#d97706',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <Sparkles size={11} /> 14-Day Free Trial Active
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: 'var(--color-fern-green)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                    >
+                      <CheckCircle2 size={11} /> Active Subscription
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 4 }}>
+                  <h2
+                    style={{
+                      fontSize: '1.65rem',
+                      fontWeight: 800,
+                      color: 'var(--color-dark-brown)',
+                      margin: 0,
+                      letterSpacing: '-0.02em',
+                    }}
+                  >
+                    {sub.planName} Tier
+                  </h2>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: 'var(--color-clay)' }}>
+                    ₹{Number(sub.price || 0).toLocaleString('en-IN')}{' '}
+                    <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                      / {sub.billingCycle?.toLowerCase() || 'month'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Dates & Validity */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 18,
+                flexWrap: 'wrap',
+                background: '#FAF5ED',
+                padding: '10px 16px',
+                borderRadius: 'var(--radius-md)',
+                border: '1px solid var(--border-card)',
+              }}
+            >
+              <div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  Billing Cycle
+                </div>
+                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                  {sub.billingCycle || 'MONTHLY'} • Auto-Renew {sub.autoRenew ? 'ON' : 'OFF'}
+                </div>
+              </div>
+              <div style={{ width: 1, height: 26, background: 'var(--color-sand)' }} />
+              <div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>
+                  {sub.status === 'TRIAL' ? 'Trial Valid Until' : 'Valid Until'}
+                </div>
+                <div style={{ fontSize: '0.86rem', fontWeight: 700, color: 'var(--color-dark-brown)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Calendar size={14} color="var(--color-clay)" />
+                  <span>
+                    {sub.trialEndsAt
+                      ? new Date(sub.trialEndsAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : sub.endDate
+                      ? new Date(sub.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                      : 'Active'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 3 Capacity Limits vs Current Usage Progress Bars */}
+          <div style={{ marginBottom: 20 }}>
+            <div
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.06em',
+                color: 'var(--color-dark-brown)',
+                marginBottom: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Layers size={14} color="var(--color-clay)" />
+              <span>Purchased Plan Capacities & Live Usage</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+              {/* Metric 1: Flats / Units */}
+              {(() => {
+                const used = sub.usage?.totalUnits ?? stats.totalHomes;
+                const max = sub.maxUnits || 1;
+                const pct = Math.min(100, Math.round((used / max) * 100));
+                const isNearLimit = pct >= 90;
+                return (
+                  <div
+                    style={{
+                      background: '#FAF5ED',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                        🏡 Residential Units / Flats
+                      </span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isNearLimit ? '#e11d48' : 'var(--color-clay)' }}>
+                        {used} / {max} Units
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: 7, background: '#E8DCCF', borderRadius: 10, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: isNearLimit ? 'linear-gradient(90deg, #f59e0b, #e11d48)' : 'linear-gradient(90deg, var(--color-clay), #a8794d)',
+                          borderRadius: 10,
+                          transition: 'width 0.4s ease',
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      <span>{sub.usage?.occupiedUnits || stats.occupiedHomes} Occupied</span>
+                      <span>{pct}% capacity utilized</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Metric 2: Resident Users */}
+              {(() => {
+                const used = sub.usage?.totalUsers ?? (stats.owners + stats.tenants + stats.familyMembers);
+                const max = sub.maxUsers || 1;
+                const pct = Math.min(100, Math.round((used / max) * 100));
+                const isNearLimit = pct >= 90;
+                return (
+                  <div
+                    style={{
+                      background: '#FAF5ED',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                        👥 Resident User Accounts
+                      </span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isNearLimit ? '#e11d48' : 'var(--color-clay)' }}>
+                        {used} / {max} Users
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: 7, background: '#E8DCCF', borderRadius: 10, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: isNearLimit ? 'linear-gradient(90deg, #f59e0b, #e11d48)' : 'linear-gradient(90deg, #3b82f6, #6366f1)',
+                          borderRadius: 10,
+                          transition: 'width 0.4s ease',
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      <span>{stats.owners} Owners • {stats.tenants} Tenants</span>
+                      <span>{pct}% capacity utilized</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Metric 3: Staff & Workers */}
+              {(() => {
+                const used = sub.usage?.totalWorkers ?? stats.workers;
+                const max = sub.maxWorkers || 1;
+                const pct = Math.min(100, Math.round((used / max) * 100));
+                const isNearLimit = pct >= 90;
+                return (
+                  <div
+                    style={{
+                      background: '#FAF5ED',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                        🛡️ Daily Staff & Workers
+                      </span>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, color: isNearLimit ? '#e11d48' : 'var(--color-clay)' }}>
+                        {used} / {max} Staff
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: 7, background: '#E8DCCF', borderRadius: 10, overflow: 'hidden' }}>
+                      <div
+                        style={{
+                          width: `${pct}%`,
+                          height: '100%',
+                          background: isNearLimit ? 'linear-gradient(90deg, #f59e0b, #e11d48)' : 'linear-gradient(90deg, var(--color-fern-green), #059669)',
+                          borderRadius: 10,
+                          transition: 'width 0.4s ease',
+                        }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                      <span>{stats.securityStaff} Guards • {stats.workers} Helpers</span>
+                      <span>{pct}% capacity utilized</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Included Features Chips */}
+          {Array.isArray(sub.features) && sub.features.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: '0.75rem',
+                  fontWeight: 800,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  color: 'var(--color-dark-brown)',
+                  marginBottom: 8,
+                }}
+              >
+                Included Plan Modules ({sub.features.length} Active)
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {sub.features.map((feat) => {
+                  const labelMap = {
+                    RESIDENTS: 'Resident Directory',
+                    GATES_VISITORS: 'Gate & Visitors',
+                    COURIER_DELIVERIES: 'Courier & Parcels',
+                    SECURITY_STAFF: 'Security Guard Roster',
+                    SOCIETY_FINANCE: 'Society Finance & Invoicing',
+                    WORKERS: 'Domestic Staff & Helpers',
+                    AMENITIES: 'Amenities Booking',
+                    ANNOUNCEMENTS: 'Notice Board',
+                    POLLS: 'Society Polls',
+                    COMMITTEES: 'Committee Portal',
+                  };
+                  return (
+                    <span
+                      key={feat}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 5,
+                        padding: '4px 10px',
+                        borderRadius: 'var(--radius-full)',
+                        background: '#FAF5ED',
+                        border: '1px solid var(--border-card)',
+                        fontSize: '0.74rem',
+                        fontWeight: 600,
+                        color: 'var(--color-dark-brown)',
+                      }}
+                    >
+                      <CheckCircle2 size={12} color="var(--color-fern-green)" />
+                      {labelMap[feat] || feat}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 12 CORE METRIC CARDS */}
       <div>

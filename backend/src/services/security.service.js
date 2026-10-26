@@ -13,7 +13,7 @@ class SecurityService {
   /**
    * Register a new security staff member (Admin only)
    */
-  static async createSecurityStaff(data) {
+  static async createSecurityStaff(data, actorUser = null) {
     const {
       name,
       full_name,
@@ -56,9 +56,11 @@ class SecurityService {
 
     // Resolve society
     let targetSocietyId = society_id;
+    if (actorUser && actorUser.role !== 'SUPER_ADMIN') {
+      targetSocietyId = actorUser.society_id || actorUser.societyId;
+    }
     if (!targetSocietyId) {
-      const societies = await SocietyRepository.findAll();
-      targetSocietyId = societies[0]?.id || 1;
+      targetSocietyId = actorUser?.society_id || actorUser?.societyId || 1;
     }
 
     // Hash password securely
@@ -71,6 +73,7 @@ class SecurityService {
         password: hashedPassword,
         avatar_url: photo || avatar_url || null,
         status: status || 'ACTIVE',
+        society_id: targetSocietyId,
       },
       {
         society_id: targetSocietyId,
@@ -86,10 +89,13 @@ class SecurityService {
   }
 
   /**
-   * List all security personnel
+   * List all security personnel (Scoped to society if Admin)
    */
-  static async getAllSecurityStaff(filters = {}) {
-    const rawSocId = filters.society_id || filters.societyId;
+  static async getAllSecurityStaff(filters = {}, user = null) {
+    let rawSocId = filters.society_id || filters.societyId;
+    if (user && user.role !== 'SUPER_ADMIN') {
+      rawSocId = user.society_id || user.societyId;
+    }
     const societyId = (rawSocId && rawSocId !== 'ALL') ? rawSocId : null;
     return SecurityRepository.findAll(societyId, filters);
   }
@@ -97,10 +103,16 @@ class SecurityService {
   /**
    * Get single security staff by ID
    */
-  static async getSecurityStaffById(id) {
+  static async getSecurityStaffById(id, user = null) {
     const staff = await SecurityRepository.findById(id);
     if (!staff) {
       throw ApiError.notFound(`Security staff member with ID ${id} not found.`);
+    }
+    if (user && user.role !== 'SUPER_ADMIN') {
+      const userSocId = user.society_id || user.societyId;
+      if (userSocId && staff.society_id && String(staff.society_id) !== String(userSocId)) {
+        throw ApiError.forbidden('Access denied. You cannot view security staff from another society.');
+      }
     }
     return staff;
   }

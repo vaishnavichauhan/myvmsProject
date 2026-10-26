@@ -18,6 +18,11 @@ import {
   Briefcase,
   Shield,
   UserCheck,
+  Camera,
+  Printer,
+  Copy,
+  CheckCircle,
+  Ticket,
 } from 'lucide-react';
 import { visitorApi } from '../api/visitorApi';
 import { securityApi } from '../api/securityApi';
@@ -222,7 +227,19 @@ export default function VisitorsPage() {
     visitor_type: 'GUEST',
     purpose: 'Personal Visit',
     vehicle_number: '',
+    photo_url: '',
   });
+
+  // Returning visitor quick lookup states
+  const [lookupQuery, setLookupQuery] = useState('');
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupFound, setLookupFound] = useState(false);
+  const [lookupMessage, setLookupMessage] = useState('');
+
+  // Gate Pass modal states
+  const [activeGatePass, setActiveGatePass] = useState(null);
+  const [showGatePassModal, setShowGatePassModal] = useState(false);
+  const [passCopied, setPassCopied] = useState(false);
 
   const [courierForm, setCourierForm] = useState({
     company: 'BlueDart',
@@ -312,6 +329,85 @@ export default function VisitorsPage() {
     }
   };
 
+  // Photo upload handler (Optional)
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showNotice('error', 'Photo file size must be under 5MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      setVisitorForm((prev) => ({ ...prev, photo_url: event.target.result }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Returning visitor quick lookup by Phone Number OR Gate Pass Number
+  const handleLookupVisitor = async (customQuery = null) => {
+    const queryToSearch = (customQuery !== null ? customQuery : lookupQuery).trim();
+    if (!queryToSearch) {
+      setLookupMessage('Please enter a phone number or gate pass number.');
+      setLookupFound(false);
+      return;
+    }
+    setLookupLoading(true);
+    setLookupMessage('');
+    try {
+      const res = await visitorApi.lookupVisitor(queryToSearch);
+      const visitor = res.data?.data?.visitor || res.data?.visitor;
+      if (visitor) {
+        setVisitorForm((prev) => ({
+          ...prev,
+          name: visitor.name || visitor.full_name || prev.name,
+          phone: visitor.phone || prev.phone,
+          home_id: visitor.home_id ? Number(visitor.home_id) : prev.home_id,
+          visitor_type: visitor.visitor_type || prev.visitor_type,
+          purpose: visitor.purpose || prev.purpose,
+          vehicle_number: visitor.vehicle_number || '',
+          photo_url: visitor.photo_url || prev.photo_url || '',
+        }));
+        setLookupFound(true);
+        setLookupMessage(
+          `Visitor profile found: ${visitor.name || 'Verified'}${
+            visitor.gate_pass_number ? ` (Pass #${visitor.gate_pass_number})` : ''
+          }. Previous details auto-filled!`
+        );
+      } else {
+        setLookupFound(false);
+        setLookupMessage('No past record found. Please enter details for this visitor.');
+      }
+    } catch (err) {
+      setLookupFound(false);
+      setLookupMessage(err.message || 'Visitor lookup failed.');
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  // Open gate pass modal for any existing entry
+  const handleOpenGatePass = (item) => {
+    const homeObj = societyHomes.find((h) => (h.id || h.home_id) === Number(item.home_id));
+    setActiveGatePass({
+      id: item.id,
+      passNumber: item.gate_pass_number || `GP-${String(item.id).padStart(6, '0')}`,
+      visitorName: item.visitor_name,
+      phone: item.phone_number,
+      photoUrl: item.photo_url,
+      homeNumber: item.home_number || homeObj?.home_number || 'N/A',
+      buildingOrWing: item.building_or_wing || homeObj?.building_or_wing || '',
+      residentName: item.resident_name || '',
+      visitorType: item.visitor_type,
+      purpose: item.purpose,
+      vehicleNumber: item.vehicle_number,
+      issuedAt: item.entry_time || item.created_at,
+      gateName: item.gate_name || assignedGateInfo?.name || 'Main Gate Checkpoint',
+      status: item.status,
+    });
+    setShowGatePassModal(true);
+  };
+
   // Submit 1: Visitor Check-In
   const handleVisitorSubmit = async (e) => {
     e.preventDefault();
@@ -324,17 +420,42 @@ export default function VisitorsPage() {
       return;
     }
     try {
-      await visitorApi.createVisitorEntry({
+      const res = await visitorApi.createVisitorEntry({
         visitor_name: visitorForm.name.trim(),
         phone_number: visitorForm.phone.trim(),
         visiting_home: visitorForm.home_id,
         visitor_type: visitorForm.visitor_type,
         purpose: visitorForm.purpose || 'Personal Visit',
         vehicle_number: visitorForm.vehicle_number ? visitorForm.vehicle_number.trim().toUpperCase() : null,
+        photo_url: visitorForm.photo_url || null,
         gate_id: assignedGateInfo?.id || null,
         record_entry_now: true,
       });
-      showNotice('success', `Gate entry logged for "${visitorForm.name}". Status: ENTERED`);
+
+      const createdEntry = res.data?.data?.entry || res.data?.entry || res.data;
+      const passNumber = createdEntry?.gate_pass_number || `GP-${Date.now().toString().slice(-6)}`;
+      const homeObj = societyHomes.find((h) => (h.id || h.home_id) === Number(visitorForm.home_id));
+
+      // Trigger Gate Pass Modal immediately
+      setActiveGatePass({
+        id: createdEntry?.id,
+        passNumber,
+        visitorName: visitorForm.name.trim(),
+        phone: visitorForm.phone.trim(),
+        photoUrl: visitorForm.photo_url || createdEntry?.photo_url || '',
+        homeNumber: homeObj?.home_number || createdEntry?.home_number || 'N/A',
+        buildingOrWing: homeObj?.building_or_wing || createdEntry?.building_or_wing || '',
+        residentName: createdEntry?.resident_name || '',
+        visitorType: visitorForm.visitor_type,
+        purpose: visitorForm.purpose || 'Personal Visit',
+        vehicleNumber: visitorForm.vehicle_number ? visitorForm.vehicle_number.trim().toUpperCase() : null,
+        issuedAt: createdEntry?.entry_time || new Date(),
+        gateName: assignedGateInfo?.name || createdEntry?.gate_name || 'Main Gate Checkpoint',
+        status: createdEntry?.status || 'ENTERED',
+      });
+      setShowGatePassModal(true);
+
+      showNotice('success', `Gate pass #${passNumber} generated for "${visitorForm.name}". Status: ENTERED`);
       setActiveModal(null);
       setVisitorForm({
         name: '',
@@ -343,7 +464,11 @@ export default function VisitorsPage() {
         visitor_type: 'GUEST',
         purpose: 'Personal Visit',
         vehicle_number: '',
+        photo_url: '',
       });
+      setLookupQuery('');
+      setLookupFound(false);
+      setLookupMessage('');
       fetchInitialData();
     } catch (err) {
       showNotice('error', err.message || 'Failed to record visitor entry.');
@@ -1263,17 +1388,53 @@ export default function VisitorsPage() {
 
                       {/* Visitor Details */}
                       <td style={{ padding: '14px' }}>
-
-
-                        <div>
-                          <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                            {item.visitor_name}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            📞 {item.phone_number}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          {item.photo_url ? (
+                            <img
+                              src={item.photo_url}
+                              alt=""
+                              style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                objectFit: 'cover',
+                                border: '2px solid #06b6d4',
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          <div>
+                            <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                              {item.visitor_name}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              📞 {item.phone_number}
+                            </div>
+                            {item.gate_pass_number && (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenGatePass(item)}
+                                style={{
+                                  marginTop: '4px',
+                                  background: '#ecfeff',
+                                  border: '1px solid #a5f3fc',
+                                  color: '#0e7490',
+                                  borderRadius: '4px',
+                                  padding: '2px 7px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                }}
+                                title="Click to view/print digital gate pass"
+                              >
+                                <Ticket size={12} /> Pass: {item.gate_pass_number}
+                              </button>
+                            )}
                           </div>
                         </div>
-
                       </td>
 
                       {/* Visiting Home */}
@@ -1442,6 +1603,95 @@ export default function VisitorsPage() {
               </button>
             </div>
 
+            {/* Returning Visitor Auto-Fill Box */}
+            <div
+              style={{
+                background: '#f0fdfa',
+                border: '1px solid #99f6e4',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 14px',
+                marginBottom: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ fontSize: '0.78rem', fontWeight: 800, color: '#0f766e', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <span>⚡ Returning Visitor? Quick Auto-Fill</span>
+                </span>
+                {lookupFound && (
+                  <span style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <CheckCircle size={13} /> Details Loaded
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type="text"
+                    placeholder="Enter Gate Pass # or Phone No."
+                    value={lookupQuery}
+                    onChange={(e) => {
+                      setLookupQuery(e.target.value);
+                      if (lookupFound) setLookupFound(false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleLookupVisitor();
+                      }
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.85rem',
+                      background: '#FFFFFF',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 'var(--radius-sm)',
+                      color: 'var(--color-dark-brown)',
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleLookupVisitor()}
+                  disabled={lookupLoading || !lookupQuery.trim()}
+                  style={{
+                    padding: '8px 14px',
+                    fontSize: '0.82rem',
+                    fontWeight: 700,
+                    background: '#0d9488',
+                    color: '#ffffff',
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: lookupLoading || !lookupQuery.trim() ? 'not-allowed' : 'pointer',
+                    opacity: lookupLoading || !lookupQuery.trim() ? 0.7 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <Search size={14} />
+                  {lookupLoading ? 'Searching...' : 'Find & Auto-Fill'}
+                </button>
+              </div>
+              {lookupMessage && (
+                <div
+                  style={{
+                    fontSize: '0.74rem',
+                    marginTop: '6px',
+                    fontWeight: 600,
+                    color: lookupFound ? '#0f766e' : '#b91c1c',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  {lookupFound ? <CheckCircle size={12} /> : <AlertCircle size={12} />}
+                  {lookupMessage}
+                </div>
+              )}
+            </div>
+
             <form onSubmit={handleVisitorSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Visitor Full Name *</label>
@@ -1463,8 +1713,89 @@ export default function VisitorsPage() {
                   placeholder="e.g. 9876543210"
                   value={visitorForm.phone}
                   onChange={(e) => setVisitorForm({ ...visitorForm, phone: e.target.value })}
+                  onBlur={() => {
+                    if (visitorForm.phone.trim().length >= 10 && !lookupFound && !visitorForm.name.trim()) {
+                      handleLookupVisitor(visitorForm.phone.trim());
+                    }
+                  }}
                   style={{ width: '100%', padding: '10px 12px', background: '#FFFFFF', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--color-dark-brown)', marginTop: '4px' }}
                 />
+              </div>
+
+              {/* Visitor Photo (Optional) */}
+              <div>
+                <label style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Visitor Photo <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>(Optional)</span></span>
+                  {visitorForm.photo_url && (
+                    <span style={{ fontSize: '0.72rem', color: '#16a34a', fontWeight: 700 }}>✓ Attached</span>
+                  )}
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px' }}>
+                  {visitorForm.photo_url ? (
+                    <div style={{ position: 'relative', width: '56px', height: '56px', borderRadius: '8px', overflow: 'hidden', border: '2px solid #06b6d4', flexShrink: 0 }}>
+                      <img src={visitorForm.photo_url} alt="Visitor" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      <button
+                        type="button"
+                        onClick={() => setVisitorForm({ ...visitorForm, photo_url: '' })}
+                        style={{
+                          position: 'absolute',
+                          top: 2,
+                          right: 2,
+                          background: 'rgba(0,0,0,0.65)',
+                          border: 'none',
+                          color: '#fff',
+                          borderRadius: '50%',
+                          width: '18px',
+                          height: '18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                        title="Remove photo"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ width: '56px', height: '56px', borderRadius: '8px', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', color: '#94a3b8', flexShrink: 0 }}>
+                      <Camera size={22} />
+                    </div>
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <input
+                      type="file"
+                      id="visitor-photo-input"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handlePhotoUpload}
+                      style={{ display: 'none' }}
+                    />
+                    <label
+                      htmlFor="visitor-photo-input"
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '6px 12px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        color: '#0891b2',
+                        background: '#ecfeff',
+                        border: '1px solid #a5f3fc',
+                        borderRadius: 'var(--radius-sm)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Camera size={14} />
+                      {visitorForm.photo_url ? 'Change Photo' : 'Upload / Capture Photo'}
+                    </label>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '4px' }}>
+                      Optional • JPG, PNG snapshot from camera or device
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1522,14 +1853,317 @@ export default function VisitorsPage() {
               </div>
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
-                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '10px', background: '#06b6d4', borderColor: '#06b6d4' }}>
-                  Confirm & Check In
+                <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '11px', background: '#06b6d4', borderColor: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <Ticket size={16} />
+                  Confirm & Create Gate Pass
                 </button>
                 <button type="button" onClick={() => setActiveModal(null)} className="btn btn-outline" style={{ padding: '10px 16px' }}>
                   Cancel
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          DIGITAL GATE PASS MODAL
+          ======================================================== */}
+      {showGatePassModal && activeGatePass && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="glass-panel gate-pass-printable"
+            style={{
+              width: '100%',
+              maxWidth: '480px',
+              padding: '0',
+              background: '#FFFFFF',
+              border: '2px solid #06b6d4',
+              borderRadius: '16px',
+              color: 'var(--color-dark-brown)',
+              overflow: 'hidden',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+            }}
+          >
+            {/* Pass Header Banner */}
+            <div
+              style={{
+                background: 'linear-gradient(135deg, #0e7490 0%, #06b6d4 100%)',
+                padding: '20px 24px',
+                color: '#FFFFFF',
+                position: 'relative',
+              }}
+            >
+              <button
+                type="button"
+                className="gate-pass-no-print"
+                onClick={() => setShowGatePassModal(false)}
+                style={{
+                  position: 'absolute',
+                  top: '16px',
+                  right: '16px',
+                  background: 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#FFFFFF',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={16} />
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <Ticket size={20} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.1em', textTransform: 'uppercase', opacity: 0.9 }}>
+                  Official Security Gate Pass
+                </span>
+              </div>
+              <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 800, color: '#FFFFFF' }}>
+                VISITOR ENTRY PASS
+              </h2>
+              <div style={{ fontSize: '0.78rem', opacity: 0.95, marginTop: '2px' }}>
+                Issued by {activeGatePass.gateName || 'Security Gate'}
+              </div>
+            </div>
+
+            {/* Pass Body */}
+            <div style={{ padding: '24px' }}>
+              {/* Highlight Pass Number & Status */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  background: '#f8fafc',
+                  border: '1px dashed #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '12px 16px',
+                  marginBottom: '18px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700, textTransform: 'uppercase' }}>
+                    Gate Pass Number
+                  </div>
+                  <div style={{ fontSize: '1.35rem', fontWeight: 900, color: '#0f766e', letterSpacing: '0.04em' }}>
+                    {activeGatePass.passNumber}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '4px 10px',
+                      borderRadius: '20px',
+                      background: '#dcfce7',
+                      color: '#15803d',
+                      border: '1px solid #86efac',
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                    }}
+                  >
+                    ● {activeGatePass.status || 'ACTIVE'}
+                  </span>
+                  <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '4px' }}>
+                    {new Date(String(activeGatePass.issuedAt || new Date()).replace(' ', 'T')).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Visitor Details Card with Photo */}
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', marginBottom: '18px' }}>
+                <div
+                  style={{
+                    width: '84px',
+                    height: '84px',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    border: '2px solid #06b6d4',
+                    background: '#f1f5f9',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    boxShadow: '0 4px 12px rgba(6,182,212,0.15)',
+                  }}
+                >
+                  {activeGatePass.photoUrl ? (
+                    <img
+                      src={activeGatePass.photoUrl}
+                      alt={activeGatePass.visitorName}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  ) : (
+                    <div style={{ textAlign: 'center', color: '#0891b2' }}>
+                      <Users size={32} />
+                      <div style={{ fontSize: '0.62rem', fontWeight: 700, marginTop: '2px' }}>NO PHOTO</div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ flex: 1 }}>
+                  <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#0f172a' }}>
+                    {activeGatePass.visitorName}
+                  </h3>
+                  <div style={{ fontSize: '0.85rem', color: '#475569', marginTop: '2px', fontWeight: 600 }}>
+                    📞 {activeGatePass.phone}
+                  </div>
+                  <div style={{ display: 'inline-block', marginTop: '6px', padding: '2px 8px', borderRadius: '4px', background: '#e0f2fe', color: '#0369a1', fontSize: '0.72rem', fontWeight: 700 }}>
+                    {activeGatePass.visitorType || 'GUEST'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Key Details Grid */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '12px',
+                  background: '#f8fafc',
+                  borderRadius: '10px',
+                  padding: '14px',
+                  fontSize: '0.82rem',
+                  marginBottom: '18px',
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>DESTINATION HOME</div>
+                  <div style={{ fontWeight: 800, color: '#0f172a', marginTop: '2px' }}>
+                    Unit {activeGatePass.homeNumber} {activeGatePass.buildingOrWing ? `(${activeGatePass.buildingOrWing})` : ''}
+                  </div>
+                  {activeGatePass.residentName && (
+                    <div style={{ fontSize: '0.7rem', color: '#059669', marginTop: '1px' }}>
+                      Host: {activeGatePass.residentName}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>PURPOSE</div>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
+                    {activeGatePass.purpose || 'Personal Visit'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>VEHICLE NO.</div>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
+                    {activeGatePass.vehicleNumber || 'Pedestrian / None'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 700 }}>ENTRY POINT</div>
+                  <div style={{ fontWeight: 700, color: '#0f172a', marginTop: '2px' }}>
+                    {activeGatePass.gateName || 'Main Gate'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Decorative Barcode / Safety Notice */}
+              <div
+                style={{
+                  borderTop: '1px dashed #e2e8f0',
+                  paddingTop: '12px',
+                  textAlign: 'center',
+                  marginBottom: '18px',
+                }}
+              >
+                <div style={{ letterSpacing: '4px', fontFamily: 'monospace', fontSize: '0.9rem', color: '#64748b', fontWeight: 700 }}>
+                  ||| | |||| || ||| |||| | || |||||
+                </div>
+                <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '4px' }}>
+                  Present this gate pass upon leaving the premises. Keep pass handy during your visit.
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="gate-pass-no-print" style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(activeGatePass.passNumber);
+                    setPassCopied(true);
+                    setTimeout(() => setPassCopied(false), 2500);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    color: '#334155',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {passCopied ? <CheckCircle size={16} color="#16a34a" /> : <Copy size={16} />}
+                  {passCopied ? 'Copied!' : 'Copy Pass #'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: 'none',
+                    background: '#06b6d4',
+                    color: '#ffffff',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  <Printer size={16} />
+                  Print Pass
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowGatePassModal(false)}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 'var(--radius-sm)',
+                    border: '1px solid #cbd5e1',
+                    background: '#ffffff',
+                    color: '#475569',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

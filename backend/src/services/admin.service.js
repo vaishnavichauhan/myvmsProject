@@ -96,9 +96,11 @@ class AdminService {
 
     // Society general info
     const [societyRow] = await pool.query(`
-      SELECT id, name, code, society_type, total_homes, address, contact_number, status
-      FROM societies
-      ${societyId ? 'WHERE id = ?' : 'ORDER BY id ASC LIMIT 1'}
+      SELECT 
+        s.id, s.name, s.code, s.society_type, s.total_homes, s.address, s.contact_number, s.status,
+        s.subscription_plan_id, s.subscription_status, s.max_units, s.max_users, s.max_workers
+      FROM societies s
+      ${societyId ? 'WHERE s.id = ?' : 'ORDER BY s.id ASC LIMIT 1'}
     `, societyId ? [societyId] : []);
 
     const societyTotal = Number(societyRow[0]?.total_homes || 0);
@@ -359,9 +361,74 @@ class AdminService {
       trafficDistribution[t.entry_person_type] = Number(t.count || 0);
     });
 
+    // 3. Subscription & Purchased Plan Information
+    let subscriptionInfo = null;
+    const targetSocId = societyRow[0]?.id;
+    if (targetSocId) {
+      const [subRows] = await pool.query(`
+        SELECT ss.id, ss.plan_id, ss.start_date, ss.end_date, ss.billing_cycle, ss.price_snapshot,
+               ss.status, ss.trial_ends_at, ss.auto_renew,
+               p.name AS plan_name, p.code AS plan_code, p.description AS plan_description,
+               p.price AS plan_catalog_price, p.trial_days AS plan_trial_days,
+               s.max_units, s.max_users, s.max_workers, s.max_gates, s.subscription_status
+        FROM societies s
+        LEFT JOIN society_subscriptions ss ON s.id = ss.society_id
+        LEFT JOIN subscription_plans p ON (ss.plan_id = p.id OR s.subscription_plan_id = p.id)
+        WHERE s.id = ?
+        ORDER BY ss.id DESC LIMIT 1
+      `, [targetSocId]);
+
+      if (subRows.length > 0 && (subRows[0].plan_name || subRows[0].plan_id || societyRow[0]?.subscription_plan_id)) {
+        const sub = subRows[0];
+        const planId = sub.plan_id || societyRow[0]?.subscription_plan_id;
+        let features = [];
+        if (planId) {
+          const [featRows] = await pool.query('SELECT feature_code FROM plan_features WHERE plan_id = ?', [planId]);
+          features = featRows.map(r => r.feature_code);
+        }
+
+        const maxUnits = Number(sub.max_units || societyRow[0]?.max_units || totalHomes || 100);
+        const maxUsers = Number(sub.max_users || societyRow[0]?.max_users || 100);
+        const maxWorkers = Number(sub.max_workers || societyRow[0]?.max_workers || 50);
+        const maxGates = Number(sub.max_gates || societyRow[0]?.max_gates || 5);
+
+        const [gatesCountRow] = await pool.query('SELECT COUNT(*) AS total FROM gates WHERE society_id = ?', [targetSocId]);
+
+        subscriptionInfo = {
+          planId,
+          planName: sub.plan_name || 'Basic Tier',
+          planCode: sub.plan_code || 'BASIC-01',
+          planDescription: sub.plan_description || '',
+          price: sub.price_snapshot || sub.plan_catalog_price || '0.00',
+          billingCycle: sub.billing_cycle || 'MONTHLY',
+          status: sub.status || sub.subscription_status || societyRow[0]?.subscription_status || 'ACTIVE',
+          startDate: sub.start_date,
+          endDate: sub.end_date,
+          trialEndsAt: sub.trial_ends_at,
+          autoRenew: Boolean(sub.auto_renew),
+          maxUnits,
+          maxUsers,
+          maxWorkers,
+          maxGates,
+          trialDays: sub.plan_trial_days || 14,
+          features,
+          usage: {
+            totalUnits: totalHomes,
+            occupiedUnits: occupiedHomes,
+            vacantUnits: vacantHomes,
+            totalUsers: Number(ownersRow[0]?.total || 0) + Number(tenantsRow[0]?.total || 0) + Number(familyRow[0]?.total || 0),
+            totalGates: Number(gatesCountRow[0]?.total || 0),
+            totalWorkers: Number(workersRow[0]?.total || 0),
+            totalSecurity: Number(securityRow[0]?.total || 0),
+          }
+        };
+      }
+    }
+
     return {
       society: societyRow[0] || null,
       stats,
+      subscription: subscriptionInfo,
       recentActivity: formattedActivities,
       occupancyBreakdown,
       trafficDistribution,

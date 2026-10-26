@@ -111,6 +111,8 @@ class CommitteeRepository {
    * Delete committee
    */
   static async deleteCommittee(id) {
+    // Delete members assigned to this committee
+    await pool.query('DELETE FROM committee_members WHERE committee_id = ?', [id]);
     const [result] = await pool.query('DELETE FROM committees WHERE id = ?', [id]);
     return result.affectedRows > 0;
   }

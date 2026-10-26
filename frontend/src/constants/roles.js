@@ -2,6 +2,7 @@
  * Residential Society User Roles & Configurations
  */
 export const ROLES = Object.freeze({
+  SUPER_ADMIN: 'SUPER_ADMIN',
   ADMIN: 'ADMIN',
   OWNER: 'OWNER',
   TENANT: 'TENANT',
@@ -11,8 +12,14 @@ export const ROLES = Object.freeze({
 });
 
 export const ROLE_CONFIG = {
+  [ROLES.SUPER_ADMIN]: {
+    label: 'Super Admin',
+    badgeClass: 'badge-SUPER_ADMIN',
+    description: 'Platform owner with full multi-society, subscription, billing, and platform management privileges.',
+    color: '#8B5CF6',
+  },
   [ROLES.ADMIN]: {
-    label: 'System Admin',
+    label: 'Society Admin',
     badgeClass: 'badge-ADMIN',
     description: 'Complete administrative control over societies, units, accounts, and system settings.',
     color: '#fb7185',

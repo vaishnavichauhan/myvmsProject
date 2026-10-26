@@ -109,6 +109,19 @@ class VisitorController {
       next(err);
     }
   }
+
+  /**
+   * GET /api/visitors/lookup
+   * Quick search by phone number or gate pass number for returning visitors
+   */
+  static async lookupVisitor(req, res, next) {
+    try {
+      const visitor = await VisitorService.lookupVisitor(req.user, req.query.query || req.query.q);
+      return ApiResponse.success(res, 'Visitor lookup completed', { visitor });
+    } catch (err) {
+      next(err);
+    }
+  }
 }
 
 module.exports = VisitorController;

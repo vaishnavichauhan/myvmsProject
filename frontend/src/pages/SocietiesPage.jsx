@@ -21,6 +21,7 @@ import {
   PhoneCall,
   Mail,
   FileText,
+  Lock,
 } from 'lucide-react';
 import { societyApi } from '../api/societyApi';
 import { useAuthStore } from '../store/authStore';
@@ -41,6 +42,7 @@ export default function SocietiesPage() {
   const location = useLocation();
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const [societies, setSocieties] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -626,6 +628,7 @@ export default function SocietiesPage() {
     setSelectedSociety(soc);
     setSocietyForm({
       name: soc.name || '',
+      code: soc.code || '',
       address: soc.address || '',
       registration_number: soc.registration_number || '',
       contact_email: soc.contact_email || '',
@@ -737,23 +740,37 @@ export default function SocietiesPage() {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      const sumFlatUnits = flatTowers.reduce((acc, t) => acc + (parseInt(t.count, 10) || 5), 0);
-      const specifiedTotal = parseInt(societyForm.total_homes, 10) || 10;
-      const finalTotalHomes = societyForm.society_type === 'FLAT' && flatTowers.length > 0
-        ? sumFlatUnits
-        : specifiedTotal;
+      const specifiedTotal = parseInt(societyForm.total_homes, 10);
+      const sumFlatUnits = flatTowers.length > 0
+        ? flatTowers.reduce((acc, t) => acc + (parseInt(t.count, 10) || 0), 0)
+        : 0;
+
+      const finalTotalHomes = !isNaN(specifiedTotal) && specifiedTotal > 0
+        ? specifiedTotal
+        : (sumFlatUnits > 0 ? sumFlatUnits : 10);
 
       const payload = {
         ...societyForm,
         total_homes: finalTotalHomes,
+        max_units: finalTotalHomes,
+        towers: flatTowers,
+        bungalow_start_no: bungalowStartNo,
       };
+
+      // Society Name, Unique Society Code, and Society Structure Type are superAdmin created, so Admin cannot modify them
+      if (!isSuperAdmin) {
+        delete payload.name;
+        delete payload.code;
+        delete payload.society_type;
+      }
+
       await societyApi.updateSociety(selectedSociety.id, payload);
       setSuccessMsg('Society updated successfully!');
       setShowEditModal(false);
       fetchSocieties();
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (err) {
-      setErrorMsg(err.message || 'Error updating society.');
+      setErrorMsg(err.response?.data?.message || err.message || 'Error updating society.');
     }
   };
 
@@ -962,10 +979,11 @@ export default function SocietiesPage() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {societies.map((soc) => {
+            const configuredHomes = Number(soc.total_homes || soc.max_units || 0);
             const actualCount = soc.actual_homes_count !== undefined && soc.actual_homes_count !== null
               ? Number(soc.actual_homes_count)
-              : Number(soc.total_homes || 0);
-            const totalUnits = actualCount > 0 ? actualCount : Number(soc.total_homes || 0);
+              : configuredHomes;
+            const totalUnits = configuredHomes > 0 ? configuredHomes : actualCount;
             const occupiedUnits = soc.occupied_homes_count ?? 0;
             const vacantUnits = Math.max(0, totalUnits - occupiedUnits);
             const societyType = soc.society_type || 'FLAT';
@@ -1846,15 +1864,63 @@ export default function SocietiesPage() {
             {/* Scrollable Form Body */}
             <div style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
               <form id="form-edit-society" onSubmit={handleEditSociety}>
-                <div className="input-group">
-                  <label className="input-label">Society Name *</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    value={societyForm.name}
-                    onChange={(e) => setSocietyForm({ ...societyForm, name: e.target.value })}
-                  />
+                {/* Super Admin Provisioned Fields (Locked for Admin) */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                  <div className="input-group">
+                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Society Name *</span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Lock size={10} /> SuperAdmin Created
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      className="input-field"
+                      style={{
+                        backgroundColor: 'var(--bg-main, #f8fafc)',
+                        cursor: 'not-allowed',
+                        opacity: 0.85,
+                        borderColor: 'var(--border-subtle)',
+                        fontWeight: 600,
+                      }}
+                      value={societyForm.name}
+                      title="Society Name was created by SuperAdmin and cannot be modified."
+                    />
+                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
+                      Locked: Set by Super Admin.
+                    </small>
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Unique Society Code *</span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Lock size={10} /> SuperAdmin Created
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
+                      className="input-field"
+                      style={{
+                        backgroundColor: 'var(--bg-main, #f8fafc)',
+                        cursor: 'not-allowed',
+                        opacity: 0.85,
+                        borderColor: 'var(--border-subtle)',
+                        fontFamily: 'monospace',
+                        fontWeight: 700,
+                        letterSpacing: '0.5px',
+                      }}
+                      value={selectedSociety?.code || societyForm.code || 'N/A'}
+                      title="Unique Society Code was created by SuperAdmin and cannot be modified."
+                    />
+                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
+                      Locked: Set by Super Admin.
+                    </small>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -1894,32 +1960,41 @@ export default function SocietiesPage() {
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                   <div className="input-group">
-                    <label className="input-label">Society Type *</label>
-                    <select
+                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span>Society Structure Type *</span>
+                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <Lock size={10} /> SuperAdmin Created
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      readOnly
                       id="select-edit-society-type"
                       className="input-field"
-                      value={societyForm.society_type}
-                      onChange={(e) => {
-                        const newType = e.target.value;
-                        const currentTotal = parseInt(societyForm.total_homes, 10) || 10;
-                        if (newType === 'FLAT' && flatTowers.length === 0) {
-                          setFlatTowers([
-                            {
-                              id: Date.now(),
-                              name: 'A',
-                              floor: '1',
-                              startNo: '1',
-                              endNo: String(currentTotal),
-                              count: currentTotal,
-                            },
-                          ]);
-                        }
-                        setSocietyForm({ ...societyForm, society_type: newType });
+                      style={{
+                        backgroundColor: 'var(--bg-main, #f8fafc)',
+                        cursor: 'not-allowed',
+                        opacity: 0.85,
+                        borderColor: 'var(--border-subtle)',
+                        fontWeight: 600,
                       }}
-                    >
-                      <option value="BUNGALOW">Bungalow</option>
-                      <option value="FLAT">Flat</option>
-                    </select>
+                      value={
+                        societyForm.society_type === 'FLAT'
+                          ? 'Flat / Apartment Complex'
+                          : societyForm.society_type === 'BUNGALOW'
+                          ? 'Bungalow / Row House'
+                          : societyForm.society_type === 'GATED_COMMUNITY'
+                          ? 'Gated Community / Mixed'
+                          : societyForm.society_type === 'COMMERCIAL'
+                          ? 'Commercial Complex'
+                          : (societyForm.society_type || 'Flat')
+                      }
+                      title="Society Structure Type was created by SuperAdmin and cannot be modified."
+                    />
+                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
+                      Locked: Structure is fixed by Super Admin.
+                    </small>
                   </div>
 
                   <div className="input-group">
@@ -1999,6 +2074,9 @@ export default function SocietiesPage() {
                         }
                       }}
                     />
+                    <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block', lineHeight: 1.3 }}>
+                      Note: Changing Total Units updates total & vacant capacity. Occupied Units is strictly determined by registered residents assigned in the Residents section.
+                    </small>
                   </div>
 
                   <div className="input-group">

@@ -1,6 +1,7 @@
 const GateRepository = require('../repositories/gate.repository');
 const SecurityRepository = require('../repositories/security.repository');
 const UserRepository = require('../repositories/user.repository');
+const SubscriptionRepository = require('../repositories/subscription.repository');
 const ApiError = require('../utils/apiError');
 
 /**
@@ -25,6 +26,13 @@ class GateService {
 
     if (!name || !name.trim()) {
       throw ApiError.badRequest('Gate Name is required (e.g. Main Gate, Gate 2, Service Gate, Parking Gate).');
+    }
+
+    if (society_id) {
+      const limitCheck = await SubscriptionRepository.checkLimit(society_id, 'GATES', 1);
+      if (!limitCheck.allowed) {
+        throw ApiError.badRequest(limitCheck.reason);
+      }
     }
 
     return GateRepository.create({

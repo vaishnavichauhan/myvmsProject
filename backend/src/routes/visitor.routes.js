@@ -54,7 +54,16 @@ router.patch(
 );
 
 // --------------------------------------------------------------------------
-// 5. Complete Visitor History
+// 5. Visitor Lookup (Returning visitor by Phone or Gate Pass #)
+// --------------------------------------------------------------------------
+router.get(
+  '/lookup',
+  roleMiddleware('SECURITY', 'ADMIN', 'OWNER', 'TENANT', 'FAMILY_MEMBER'),
+  VisitorController.lookupVisitor
+);
+
+// --------------------------------------------------------------------------
+// 6. Complete Visitor History
 // Keep complete visitor history accessible to Security, Residents (own home), & Admin
 // --------------------------------------------------------------------------
 router.get(

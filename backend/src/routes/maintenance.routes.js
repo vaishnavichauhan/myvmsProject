@@ -1,11 +1,12 @@
 const { Router } = require('express');
 const MaintenanceController = require('../controllers/maintenance.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
+const { requireFeature } = require('../middlewares/entitlement.middleware');
 
 const router = Router();
 
-// Authentication required for all maintenance endpoints
-router.use(authMiddleware);
+// Authentication and SOCIETY_FINANCE module required for all maintenance endpoints
+router.use(authMiddleware, requireFeature('SOCIETY_FINANCE'));
 
 // Statistics & Overview KPIs
 router.get('/stats', MaintenanceController.getStats);

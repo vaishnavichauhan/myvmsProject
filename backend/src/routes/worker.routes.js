@@ -3,9 +3,10 @@ const router = express.Router();
 const WorkerController = require('../controllers/worker.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
 const { roleMiddleware } = require('../middlewares/role.middleware');
+const { requireFeature, enforceLimit } = require('../middlewares/entitlement.middleware');
 
-// All worker routes require authentication
-router.use(authMiddleware);
+// All worker routes require authentication and WORKERS module entitlement
+router.use(authMiddleware, requireFeature('WORKERS'));
 
 /**
  * GET /api/workers
@@ -34,6 +35,7 @@ router.get(
 router.post(
   '/assign',
   roleMiddleware('OWNER', 'TENANT', 'FAMILY_MEMBER', 'ADMIN'),
+  enforceLimit('WORKERS'),
   WorkerController.addExistingWorker
 );
 
@@ -44,6 +46,7 @@ router.post(
 router.post(
   '/',
   roleMiddleware('OWNER', 'TENANT', 'FAMILY_MEMBER', 'ADMIN'),
+  enforceLimit('WORKERS'),
   WorkerController.createWorker
 );
 

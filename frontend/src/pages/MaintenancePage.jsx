@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Receipt,
   Plus,
@@ -24,6 +25,8 @@ import {
   ShieldAlert,
   Percent,
   Home,
+  Coins,
+  Landmark,
 } from 'lucide-react';
 import { maintenanceApi } from '../api/maintenanceApi';
 import { societyApi } from '../api/societyApi';
@@ -151,6 +154,44 @@ export default function MaintenancePage() {
     return String(billing_period);
   }
 
+  function getCoveredMonthsForPeriod(period, cycle) {
+    if (!period) return [];
+    const qMatch = String(period).match(/Q([1-4])[-_\s]*(\d{4})/i);
+    if (qMatch) {
+      const q = parseInt(qMatch[1], 10);
+      const y = qMatch[2];
+      const map = {
+        1: [`${y}-01`, `${y}-02`, `${y}-03`],
+        2: [`${y}-04`, `${y}-05`, `${y}-06`],
+        3: [`${y}-07`, `${y}-08`, `${y}-09`],
+        4: [`${y}-10`, `${y}-11`, `${y}-12`],
+      };
+      return map[q] || [];
+    }
+    const hMatch = String(period).match(/H([1-2])[-_\s]*(\d{4})/i);
+    if (hMatch) {
+      const h = parseInt(hMatch[1], 10);
+      const y = hMatch[2];
+      if (h === 1) return [`${y}-01`, `${y}-02`, `${y}-03`, `${y}-04`, `${y}-05`, `${y}-06`];
+      return [`${y}-07`, `${y}-08`, `${y}-09`, `${y}-10`, `${y}-11`, `${y}-12`];
+    }
+    if (cycle === 'YEARLY' || String(period).startsWith('FY-')) {
+      const y = String(period).replace(/\D/g, '') || new Date().getFullYear();
+      const months = [];
+      for (let i = 1; i <= 12; i++) {
+        months.push(`${y}-${String(i).padStart(2, '0')}`);
+      }
+      return months;
+    }
+    const mMatch = String(period).match(/(\d{4})[-_](\d{1,2})/);
+    if (mMatch) {
+      const y = mMatch[1];
+      const m = String(parseInt(mMatch[2], 10)).padStart(2, '0');
+      return [`${y}-${m}`];
+    }
+    return [];
+  }
+
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3500);
@@ -166,7 +207,8 @@ export default function MaintenancePage() {
     const fetchSocieties = async () => {
       try {
         const res = await societyApi.getSocieties();
-        const list = res.data?.societies || res.data || [];
+        const raw = res?.data?.societies || res?.societies || res?.data || res || [];
+        const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.societies) ? raw.societies : []);
         setSocieties(list);
         if (list.length > 0) {
           const userMatch = user?.societyId && list.find((s) => String(s.id) === String(user.societyId));
@@ -228,6 +270,21 @@ export default function MaintenancePage() {
 
       if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
       if (cycleFilter !== 'ALL' && b.billing_cycle !== cycleFilter) return false;
+
+      // Redundant bill prevention:
+      // If this is an unpaid monthly bill, and there is an active/paid quarterly or annual bill for the same home covering this month, exclude it!
+      if (b.billing_cycle === 'MONTHLY' && (b.status === 'PENDING' || Number(b.paid_amount || 0) === 0)) {
+        const hasCoveringPaid = bills.some(
+          (qb) =>
+            qb.id !== b.id &&
+            String(qb.home_id) === String(b.home_id) &&
+            qb.status === 'PAID' &&
+            ['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(qb.billing_cycle) &&
+            getCoveredMonthsForPeriod(qb.billing_period, qb.billing_cycle).includes(b.billing_period)
+        );
+        if (hasCoveringPaid) return false;
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const homeNum = (b.home_number || '').toLowerCase();
@@ -282,6 +339,7 @@ export default function MaintenancePage() {
 
   // Active Society & Property Configurations
   const activeSociety = useMemo(() => {
+    if (!Array.isArray(societies) || societies.length === 0) return null;
     return societies.find((s) => String(s.id) === String(selectedSocietyId)) || societies[0] || null;
   }, [societies, selectedSocietyId]);
   const selectedSociety = activeSociety;
@@ -543,6 +601,122 @@ export default function MaintenancePage() {
           <span>{errorMsg}</span>
         </div>
       )}
+
+      {/* Society Finance Hub - Row UI Switcher */}
+      <div
+        style={{
+          background: 'var(--bg-card)',
+          borderRadius: 'var(--radius-lg)',
+          border: '1px solid var(--border-card)',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexWrap: 'wrap',
+          boxShadow: 'var(--shadow-sm)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div
+            style={{
+              padding: '6px 12px',
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(196, 154, 108, 0.16)',
+              color: 'var(--color-clay)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              fontWeight: 700,
+              fontSize: '0.82rem',
+              letterSpacing: '0.02em',
+              textTransform: 'uppercase',
+            }}
+          >
+            <Landmark size={15} />
+            <span>Society Finance</span>
+          </div>
+          <span style={{ color: 'var(--text-dim)', fontSize: '0.82rem', fontWeight: 500 }}>
+            Financial Hub • Select Module:
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          {/* Active Maintenance Row Button */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--color-clay)',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.84rem',
+              boxShadow: '0 2px 8px rgba(196, 154, 108, 0.35)',
+            }}
+          >
+            <Receipt size={16} />
+            <span>Maintenance</span>
+            <span
+              style={{
+                fontSize: '0.62rem',
+                padding: '2px 6px',
+                borderRadius: '10px',
+                background: 'rgba(255, 255, 255, 0.25)',
+                color: '#ffffff',
+                fontWeight: 700,
+              }}
+            >
+              Recurring
+            </span>
+          </div>
+
+          {/* Special Charges Row Link */}
+          <Link
+            to="/dashboard/special-charges"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              padding: '8px 16px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-secondary)',
+              color: 'var(--text-main)',
+              border: '1px solid var(--border-subtle)',
+              fontWeight: 600,
+              fontSize: '0.84rem',
+              textDecoration: 'none',
+              transition: 'all var(--transition-fast)',
+              cursor: 'pointer',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = 'var(--color-clay)';
+              e.currentTarget.style.color = 'var(--color-clay)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = 'var(--border-subtle)';
+              e.currentTarget.style.color = 'var(--text-main)';
+            }}
+          >
+            <Coins size={16} color="var(--color-clay)" />
+            <span>Special Charges</span>
+            <span
+              style={{
+                fontSize: '0.62rem',
+                padding: '2px 6px',
+                borderRadius: '10px',
+                background: 'rgba(196, 154, 108, 0.15)',
+                color: 'var(--color-clay)',
+                fontWeight: 700,
+              }}
+            >
+              One-Time Levies
+            </span>
+          </Link>
+        </div>
+      </div>
 
       {/* Page Header */}
       <div
@@ -933,11 +1107,25 @@ export default function MaintenancePage() {
                   const periodKey = isQuarterly ? getCurrentPeriod('QUARTERLY') : getCurrentPeriod('MONTHLY');
                   const periodCoveredDesc = getCoveredMonthsDescription(periodKey, plan.billing_cycle);
                   
-                  // Find existing bill for this home and plan/period
+                  // Find exact bill for this home and plan/period
                   const linkedBill = filteredBills.find(
-                    (b) => b.billing_cycle === plan.billing_cycle || b.plan_id === plan.id || b.billing_period === periodKey
+                    (b) => (b.plan_id === plan.id || b.billing_cycle === plan.billing_cycle) && b.billing_period === periodKey
                   );
-                  const isPaid = linkedBill?.status === 'PAID';
+
+                  // Check if this plan's period is already covered by ANY paid bill (e.g. Paid Quarterly bill covers Monthly)
+                  const planCoveredMonths = getCoveredMonthsForPeriod(periodKey, plan.billing_cycle);
+                  const coveringPaidBill = filteredBills.find(
+                    (b) =>
+                      b.status === 'PAID' &&
+                      ((b.plan_id === plan.id && b.billing_period === periodKey) ||
+                        getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle).some((m) => planCoveredMonths.includes(m)))
+                  );
+
+                  const isPaid = linkedBill?.status === 'PAID' || !!coveringPaidBill;
+                  const isCoveredByOther =
+                    linkedBill?.status !== 'PAID' &&
+                    !!coveringPaidBill &&
+                    coveringPaidBill.billing_cycle !== plan.billing_cycle;
 
                   return (
                     <div
@@ -986,7 +1174,11 @@ export default function MaintenancePage() {
                         {isPaid ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#10b981', fontWeight: 700, fontSize: '0.82rem' }}>
                             <CheckCircle2 size={16} />
-                            <span>{periodCoveredDesc} Payment Done</span>
+                            <span>
+                              {isCoveredByOther
+                                ? `${periodCoveredDesc} Paid (via ${coveringPaidBill.billing_cycle === 'QUARTERLY' ? 'Quarterly' : coveringPaidBill.billing_cycle} Plan)`
+                                : `${periodCoveredDesc} Payment Done`}
+                            </span>
                           </div>
                         ) : linkedBill ? (
                           <>

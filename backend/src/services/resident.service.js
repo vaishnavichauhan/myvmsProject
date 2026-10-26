@@ -11,7 +11,7 @@ class ResidentService {
   /**
    * Register a primary resident for a home
    */
-  static async createResident(data) {
+  static async createResident(data, user = null) {
     const {
       home_id,
       home_number,
@@ -25,6 +25,9 @@ class ResidentService {
       avatar_url = null,
       status = 'ACTIVE',
     } = data;
+
+    const callerSocietyId = (user && user.role !== 'SUPER_ADMIN') ? (user.society_id || user.societyId) : null;
+    const socId = callerSocietyId || society_id || 1;
 
     const residentName = (name || full_name || '').trim();
     if (!residentName) {
@@ -50,7 +53,6 @@ class ResidentService {
     if (!targetHomeId && (home_number || data.homeNumber)) {
       const hNum = home_number || data.homeNumber;
       // Look up home by society_id and home_number
-      const socId = society_id || 1;
       const homes = await HomeRepository.findBySocietyId(socId, { search: hNum });
       const matched = homes.find(
         (h) => String(h.home_number).toLowerCase() === String(hNum).toLowerCase()
@@ -78,6 +80,10 @@ class ResidentService {
     const home = await HomeRepository.findById(targetHomeId);
     if (!home) {
       throw ApiError.notFound(`Home with ID ${targetHomeId} not found.`);
+    }
+
+    if (callerSocietyId && String(home.society_id) !== String(callerSocietyId)) {
+      throw ApiError.forbidden('You are not authorized to create residents in another society.');
     }
 
     // 2. Business Rule: A home can have only ONE primary active owner/tenant
@@ -118,19 +124,29 @@ class ResidentService {
   }
 
   /**
-   * Get all residents with optional filters
+   * Get all residents with optional filters (Scoped to caller's society if Admin)
    */
-  static async getAllResidents(filters) {
-    return ResidentRepository.findAll(filters);
+  static async getAllResidents(filters = {}, user = null) {
+    const finalFilters = { ...filters };
+    if (user && user.role !== 'SUPER_ADMIN') {
+      finalFilters.society_id = user.society_id || user.societyId;
+    }
+    return ResidentRepository.findAll(finalFilters);
   }
 
   /**
    * Get resident by ID
    */
-  static async getResidentById(id) {
+  static async getResidentById(id, user = null) {
     const resident = await ResidentRepository.findById(id);
     if (!resident) {
       throw ApiError.notFound(`Resident with ID ${id} not found.`);
+    }
+    if (user && user.role !== 'SUPER_ADMIN') {
+      const userSocId = user.society_id || user.societyId;
+      if (userSocId && resident.society_id && String(resident.society_id) !== String(userSocId)) {
+        throw ApiError.forbidden('Access denied. You cannot view residents from another society.');
+      }
     }
     return resident;
   }

@@ -11,7 +11,7 @@ class AdminController {
    */
   static async getDashboard(req, res, next) {
     try {
-      const societyId = req.user?.societyId || null;
+      const societyId = req.query.societyId || req.user?.societyId || null;
       const data = await AdminService.getDashboardData(societyId);
       return ApiResponse.success(res, 'Admin Dashboard data retrieved successfully', data);
     } catch (error) {

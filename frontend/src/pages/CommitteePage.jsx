@@ -151,6 +151,24 @@ export default function CommitteePage() {
   const [positionFilter, setPositionFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
+  // Primary View Switcher: 'COMMITTEES' (All Society Committees) vs 'MEMBERS' (Assigned Members Directory)
+  const [activeMainTab, setActiveMainTab] = useState('COMMITTEES');
+  const [committeeSearch, setCommitteeSearch] = useState('');
+  const [committeeStatusFilter, setCommitteeStatusFilter] = useState('ALL');
+  const [committeeViewMode, setCommitteeViewMode] = useState('GRID'); // 'GRID' | 'TABLE'
+
+  // Committee Delete & Edit state (Admin operations)
+  const [committeeToDelete, setCommitteeToDelete] = useState(null);
+  const [deletingCommitteeId, setDeletingCommitteeId] = useState(null);
+  const [isEditCommitteeModalOpen, setIsEditCommitteeModalOpen] = useState(false);
+  const [editingCommittee, setEditingCommittee] = useState(null);
+  const [editCommitteeFormData, setEditCommitteeFormData] = useState({
+    name: '',
+    description: '',
+    status: 'ACTIVE',
+  });
+  const [updatingCommittee, setUpdatingCommittee] = useState(false);
+
   // User appointment if committee member
   const [userCommittees, setUserCommittees] = useState([]);
 
@@ -253,8 +271,9 @@ export default function CommitteePage() {
 
       if (socRes && socRes.status === 'fulfilled') {
         const val = socRes.value;
-        const socList = val?.data?.societies || val?.societies || (val?.success ? val.data?.societies : []);
-        setSocieties(socList || []);
+        const rawSoc = val?.data?.societies || val?.societies || val?.data || val || [];
+        const socList = Array.isArray(rawSoc) ? rawSoc : (Array.isArray(rawSoc?.societies) ? rawSoc.societies : []);
+        setSocieties(socList);
       }
     } catch (err) {
       console.error('Failed to load committee data:', err);
@@ -429,6 +448,65 @@ export default function CommitteePage() {
     } finally {
       setCreatingCommittee(false);
     }
+  };
+
+  // Open Edit Committee Modal
+  const handleOpenEditCommitteeModal = (c) => {
+    setEditingCommittee(c);
+    setEditCommitteeFormData({
+      name: c.name || '',
+      description: c.description || '',
+      status: c.status || 'ACTIVE',
+    });
+    setIsEditCommitteeModalOpen(true);
+  };
+
+  // Submit Edit Committee
+  const handleUpdateCommitteeSubmit = async (e) => {
+    e.preventDefault();
+    if (!editCommitteeFormData.name.trim()) {
+      alert('Please enter a committee name');
+      return;
+    }
+    try {
+      setUpdatingCommittee(true);
+      await committeeApi.updateCommittee(editingCommittee.id, editCommitteeFormData);
+      showToast(`Committee "${editCommitteeFormData.name}" updated successfully!`);
+      setIsEditCommitteeModalOpen(false);
+      setEditingCommittee(null);
+      await fetchAllData();
+    } catch (err) {
+      alert(err.message || err.response?.data?.message || 'Failed to update committee');
+    } finally {
+      setUpdatingCommittee(false);
+    }
+  };
+
+  // Confirm Delete Committee (Admin)
+  const handleConfirmDeleteCommittee = async () => {
+    if (!committeeToDelete) return;
+    try {
+      setDeletingCommitteeId(committeeToDelete.id);
+      await committeeApi.deleteCommittee(committeeToDelete.id);
+      showToast(`Committee "${committeeToDelete.name}" deleted successfully.`);
+      const deletedId = committeeToDelete.id;
+      setCommitteeToDelete(null);
+      // Reset filter if deleted committee was active filter
+      if (String(selectedCommitteeFilter) === String(deletedId)) {
+        setSelectedCommitteeFilter('ALL');
+      }
+      await fetchAllData();
+    } catch (err) {
+      alert(err.message || err.response?.data?.message || 'Failed to delete committee');
+    } finally {
+      setDeletingCommitteeId(null);
+    }
+  };
+
+  // Jump from committee card/table directly to members directory filtered by that committee
+  const handleSwitchToCommitteeMembers = (committeeId) => {
+    setSelectedCommitteeFilter(committeeId);
+    setActiveMainTab('MEMBERS');
   };
 
   // Open Assign Member Modal
@@ -627,6 +705,22 @@ export default function CommitteePage() {
       (m.status && m.status.toUpperCase() === statusFilter.toUpperCase());
 
     return matchesSearch && matchesCommittee && matchesPosition && matchesStatus;
+  });
+
+  // Filtered Committees (Name, Description, Status)
+  const filteredCommittees = committees.filter((c) => {
+    const q = (committeeSearch || '').toLowerCase();
+    const matchesSearch =
+      !q ||
+      (c.name && c.name.toLowerCase().includes(q)) ||
+      (c.description && c.description.toLowerCase().includes(q)) ||
+      (c.society_name && c.society_name.toLowerCase().includes(q));
+
+    const matchesStatus =
+      committeeStatusFilter === 'ALL' ||
+      (c.status && c.status.toUpperCase() === committeeStatusFilter.toUpperCase());
+
+    return matchesSearch && matchesStatus;
   });
 
   return (
@@ -837,7 +931,7 @@ export default function CommitteePage() {
             {committees.length}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Registered committee wings for {societies.find((s) => String(s.id) === String(selectedSocietyId))?.name || user?.societyName || 'Active Society'}
+            Registered committee wings for {(Array.isArray(societies) ? societies.find((s) => String(s.id) === String(selectedSocietyId))?.name : null) || user?.societyName || 'Active Society'}
           </div>
         </div>
 
@@ -925,24 +1019,680 @@ export default function CommitteePage() {
         </div>
       )}
 
-      {/* 4. Filter Chips Bar with SHOW ALL Button at First */}
+      {/* 4. PRIMARY VIEW TAB SWITCHER: ALL COMMITTEES VS ASSIGNED MEMBERS */}
       <div
-        className="glass-panel"
         style={{
-          padding: '16px 20px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          overflowX: 'auto',
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--color-sand)',
-          background: 'var(--color-white)',
-          boxShadow: '0 2px 10px rgba(196, 154, 108, 0.05)',
+          borderBottom: '2px solid var(--color-sand)',
+          paddingBottom: '2px',
+          marginTop: '6px',
         }}
       >
-        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-clay)', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Tag size={15} /> Committee:
-        </span>
+        <button
+          type="button"
+          onClick={() => setActiveMainTab('COMMITTEES')}
+          style={{
+            padding: '10px 20px',
+            fontSize: '0.95rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeMainTab === 'COMMITTEES' ? '3px solid var(--color-clay)' : '3px solid transparent',
+            color: activeMainTab === 'COMMITTEES' ? 'var(--color-clay)' : 'var(--text-muted)',
+            transition: 'all 0.2s ease',
+            marginBottom: '-2px',
+          }}
+        >
+          <Building2 size={18} />
+          <span>All Society Committees</span>
+          <span
+            style={{
+              background: activeMainTab === 'COMMITTEES' ? 'rgba(196, 154, 108, 0.2)' : 'var(--color-sand)',
+              color: activeMainTab === 'COMMITTEES' ? 'var(--color-dark-brown)' : 'var(--text-dim)',
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontWeight: 700,
+            }}
+          >
+            {committees.length}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveMainTab('MEMBERS')}
+          style={{
+            padding: '10px 20px',
+            fontSize: '0.95rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: activeMainTab === 'MEMBERS' ? '3px solid var(--color-clay)' : '3px solid transparent',
+            color: activeMainTab === 'MEMBERS' ? 'var(--color-clay)' : 'var(--text-muted)',
+            transition: 'all 0.2s ease',
+            marginBottom: '-2px',
+          }}
+        >
+          <Users size={18} />
+          <span>Assigned Members Directory</span>
+          <span
+            style={{
+              background: activeMainTab === 'MEMBERS' ? 'rgba(196, 154, 108, 0.2)' : 'var(--color-sand)',
+              color: activeMainTab === 'MEMBERS' ? 'var(--color-dark-brown)' : 'var(--text-dim)',
+              fontSize: '0.75rem',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontWeight: 700,
+            }}
+          >
+            {committeeMembers.length}
+          </span>
+        </button>
+      </div>
+
+      {/* 5A. ALL COMMITTEES VIEW (NAME, DESCRIPTION, STATUS & ADMIN DELETE) */}
+      {activeMainTab === 'COMMITTEES' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Controls Bar: Search, Status Filter, Grid/Table Switcher, Create Button */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              flexWrap: 'wrap',
+              gap: '14px',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--color-sand)',
+              background: 'var(--color-white)',
+              boxShadow: '0 2px 10px rgba(196, 154, 108, 0.05)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px' }}>
+              <div style={{ position: 'relative', width: '100%' }}>
+                <Search size={16} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-clay)' }} />
+                <input
+                  type="text"
+                  placeholder="Search committee by name, description, society..."
+                  value={committeeSearch}
+                  onChange={(e) => setCommitteeSearch(e.target.value)}
+                  className="input-field"
+                  style={{
+                    width: '100%',
+                    paddingLeft: '40px',
+                    margin: 0,
+                    height: '42px',
+                    borderRadius: 'var(--radius-md)',
+                    background: 'var(--color-background)',
+                    border: '1px solid var(--color-sand)',
+                    color: 'var(--color-dark-brown)',
+                    fontSize: '0.875rem',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)', fontWeight: 600 }}>Status:</span>
+                <select
+                  value={committeeStatusFilter}
+                  onChange={(e) => setCommitteeStatusFilter(e.target.value)}
+                  className="input-field"
+                  style={{
+                    width: 'auto',
+                    padding: '6px 12px',
+                    margin: 0,
+                    height: '40px',
+                    fontSize: '0.85rem',
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--color-sand)',
+                    background: 'var(--color-background)',
+                    color: 'var(--color-dark-brown)',
+                  }}
+                >
+                  <option value="ALL">All Status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                </select>
+              </div>
+
+              {/* Grid / Table View Switcher */}
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  background: 'var(--color-background)',
+                  border: '1px solid var(--color-sand)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '3px',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setCommitteeViewMode('GRID')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    background: committeeViewMode === 'GRID' ? 'var(--color-clay)' : 'transparent',
+                    color: committeeViewMode === 'GRID' ? '#FFFFFF' : 'var(--color-dark-brown)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCommitteeViewMode('TABLE')}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: 'var(--radius-sm)',
+                    background: committeeViewMode === 'TABLE' ? 'var(--color-clay)' : 'transparent',
+                    color: committeeViewMode === 'TABLE' ? '#FFFFFF' : 'var(--color-dark-brown)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Table
+                </button>
+              </div>
+
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={handleOpenCreateCommitteeModal}
+                  className="btn btn-primary"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    background: 'var(--color-clay)',
+                    boxShadow: '0 4px 14px rgba(196, 154, 108, 0.4)',
+                  }}
+                >
+                  <Plus size={16} /> Create Committee
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Loading */}
+          {loading && (
+            <div style={{ padding: '60px 0', textAlign: 'center', color: 'var(--text-muted)' }}>
+              <div className="pulse-indicator" style={{ width: '12px', height: '12px', marginBottom: '12px' }} />
+              <div>Loading society committees...</div>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && filteredCommittees.length === 0 && (
+            <div className="glass-panel" style={{ padding: '48px 24px', textAlign: 'center', borderRadius: 'var(--radius-lg)', background: 'var(--color-white)', border: '1px solid var(--color-sand)' }}>
+              <Building2 size={48} color="var(--color-clay)" style={{ marginBottom: '12px' }} />
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '6px', color: 'var(--color-dark-brown)' }}>No committees found</h3>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '16px', maxWidth: '500px', margin: '0 auto 16px auto' }}>
+                {committeeSearch || committeeStatusFilter !== 'ALL'
+                  ? 'No committees match your search or status filter.'
+                  : 'No society committees have been created yet. Create one to organize society management wings.'}
+              </p>
+              {isAdmin && (
+                <button type="button" onClick={handleOpenCreateCommitteeModal} className="btn btn-primary">
+                  <Plus size={16} /> Create First Committee
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* GRID CARDS VIEW */}
+          {!loading && filteredCommittees.length > 0 && committeeViewMode === 'GRID' && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
+                gap: '20px',
+              }}
+            >
+              {filteredCommittees.map((c) => (
+                <div
+                  key={c.id}
+                  className="glass-panel"
+                  style={{
+                    padding: '24px',
+                    borderRadius: 'var(--radius-lg)',
+                    border: '1px solid var(--color-sand)',
+                    background: 'var(--color-white)',
+                    boxShadow: '0 4px 16px rgba(196, 154, 108, 0.08)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    gap: '16px',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <div>
+                    {/* Top row: icon + status */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px', marginBottom: '12px' }}>
+                      <div
+                        style={{
+                          width: '42px',
+                          height: '42px',
+                          borderRadius: '10px',
+                          background: 'rgba(196, 154, 108, 0.16)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--color-clay)',
+                        }}
+                      >
+                        <Building2 size={22} />
+                      </div>
+
+                      <span
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: 'var(--radius-full)',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          background: c.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(156, 163, 175, 0.18)',
+                          color: c.status === 'ACTIVE' ? 'var(--color-fern-green)' : 'var(--text-dim)',
+                          border: c.status === 'ACTIVE' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(156, 163, 175, 0.3)',
+                        }}
+                      >
+                        {c.status === 'ACTIVE' ? <CheckCircle2 size={12} /> : <XCircle size={12} />}
+                        <span>{c.status || 'ACTIVE'}</span>
+                      </span>
+                    </div>
+
+                    {/* Committee Name */}
+                    <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: '0 0 8px 0', lineHeight: 1.3 }}>
+                      {c.name}
+                    </h3>
+
+                    {/* Committee Description */}
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0 0 14px 0', lineHeight: 1.5, minHeight: '40px' }}>
+                      {c.description || 'No specific description provided for this society committee.'}
+                    </p>
+
+                    {/* Meta Info */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', paddingTop: '10px', borderTop: '1px solid rgba(196, 154, 108, 0.15)' }}>
+                      <span
+                        style={{
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          color: 'var(--color-dark-brown)',
+                          background: 'rgba(196, 154, 108, 0.12)',
+                          padding: '3px 8px',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <Users size={13} style={{ color: 'var(--color-clay)' }} />
+                        {c.member_count || 0} Members
+                      </span>
+
+                      {c.society_name && (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <Building size={12} /> {c.society_name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                      paddingTop: '14px',
+                      borderTop: '1px solid rgba(196, 154, 108, 0.15)',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchToCommitteeMembers(c.id)}
+                      className="btn btn-outline"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        flex: 1,
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Users size={14} />
+                      <span>View Members ({c.member_count || 0})</span>
+                    </button>
+
+                    {isAdmin && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditCommitteeModal(c)}
+                          className="btn btn-outline"
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--color-sand)',
+                          }}
+                          title="Edit Committee"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setCommitteeToDelete(c)}
+                          className="btn btn-outline"
+                          style={{
+                            padding: '6px 10px',
+                            borderRadius: 'var(--radius-sm)',
+                            color: '#ef4444',
+                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            background: 'rgba(239, 68, 68, 0.05)',
+                          }}
+                          title="Delete Committee"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* TABLE VIEW */}
+          {!loading && filteredCommittees.length > 0 && committeeViewMode === 'TABLE' && (
+            <div
+              className="glass-panel"
+              style={{
+                overflowX: 'auto',
+                borderRadius: 'var(--radius-xl)',
+                border: '1px solid var(--color-sand)',
+                background: 'var(--color-white)',
+                boxShadow: '0 4px 20px rgba(196, 154, 108, 0.08)',
+              }}
+            >
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.875rem' }}>
+                <thead>
+                  <tr style={{ background: 'rgba(196, 154, 108, 0.1)', borderBottom: '1px solid var(--color-sand)' }}>
+                    <th style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-dark-brown)' }}>Committee Name</th>
+                    <th style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-dark-brown)' }}>Description</th>
+                    <th style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-dark-brown)' }}>Status</th>
+                    <th style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-dark-brown)' }}>Members</th>
+                    <th style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--color-dark-brown)', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCommittees.map((c, idx) => (
+                    <tr
+                      key={c.id}
+                      style={{
+                        borderBottom: '1px solid rgba(196, 154, 108, 0.12)',
+                        background: idx % 2 === 0 ? '#FFFFFF' : 'rgba(247, 244, 238, 0.35)',
+                      }}
+                    >
+                      <td style={{ padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div
+                            style={{
+                              width: '34px',
+                              height: '34px',
+                              borderRadius: '8px',
+                              background: 'rgba(196, 154, 108, 0.15)',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'var(--color-clay)',
+                              flexShrink: 0,
+                            }}
+                          >
+                            <Building2 size={16} />
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 800, color: 'var(--color-dark-brown)' }}>{c.name}</div>
+                            {c.society_name && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>{c.society_name}</div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
+                      <td style={{ padding: '14px 16px', maxWidth: '380px' }}>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1.4 }}>
+                          {c.description || <span style={{ color: 'var(--text-dim)', fontStyle: 'italic' }}>No description</span>}
+                        </div>
+                      </td>
+
+                      <td style={{ padding: '14px 16px' }}>
+                        <span
+                          style={{
+                            padding: '3px 10px',
+                            borderRadius: 'var(--radius-full)',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            background: c.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(156, 163, 175, 0.18)',
+                            color: c.status === 'ACTIVE' ? 'var(--color-fern-green)' : 'var(--text-dim)',
+                            border: c.status === 'ACTIVE' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(156, 163, 175, 0.3)',
+                          }}
+                        >
+                          {c.status === 'ACTIVE' ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                          <span>{c.status || 'ACTIVE'}</span>
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '14px 16px' }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            color: 'var(--color-dark-brown)',
+                            background: 'rgba(196, 154, 108, 0.12)',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <Users size={13} style={{ color: 'var(--color-clay)' }} />
+                          {c.member_count || 0}
+                        </span>
+                      </td>
+
+                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleSwitchToCommitteeMembers(c.id)}
+                            className="btn btn-outline"
+                            style={{ padding: '6px 12px', fontSize: '0.78rem', fontWeight: 700 }}
+                          >
+                            View Members
+                          </button>
+
+                          {isAdmin && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditCommitteeModal(c)}
+                                className="btn btn-outline"
+                                style={{ padding: '6px 10px', borderRadius: 'var(--radius-sm)' }}
+                                title="Edit Committee"
+                              >
+                                <Edit2 size={14} />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setCommitteeToDelete(c)}
+                                className="btn btn-outline"
+                                style={{
+                                  padding: '6px 10px',
+                                  borderRadius: 'var(--radius-sm)',
+                                  color: '#ef4444',
+                                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                                  background: 'rgba(239, 68, 68, 0.05)',
+                                }}
+                                title="Delete Committee"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 5B. ASSIGNED MEMBERS DIRECTORY VIEW */}
+      {activeMainTab === 'MEMBERS' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          {/* Selected Committee Details Banner (shows Name, Description, Status and Admin Delete) */}
+          {selectedCommitteeFilter !== 'ALL' && (() => {
+            const activeComm = committees.find(
+              (c) => String(c.id) === String(selectedCommitteeFilter) || c.name === selectedCommitteeFilter
+            );
+            if (!activeComm) return null;
+            return (
+              <div
+                className="glass-panel"
+                style={{
+                  padding: '16px 20px',
+                  borderRadius: 'var(--radius-lg)',
+                  border: '1px solid var(--color-sand)',
+                  background: 'linear-gradient(135deg, rgba(196, 154, 108, 0.08) 0%, rgba(247, 244, 238, 0.6) 100%)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <Building2 size={18} style={{ color: 'var(--color-clay)' }} />
+                    <span style={{ fontWeight: 800, fontSize: '1.05rem', color: 'var(--color-dark-brown)' }}>
+                      {activeComm.name}
+                    </span>
+                    <span
+                      style={{
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        background: activeComm.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(156, 163, 175, 0.18)',
+                        color: activeComm.status === 'ACTIVE' ? 'var(--color-fern-green)' : 'var(--text-dim)',
+                      }}
+                    >
+                      {activeComm.status}
+                    </span>
+                  </div>
+                  {activeComm.description && (
+                    <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      {activeComm.description}
+                    </p>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCommitteeFilter('ALL')}
+                    className="btn btn-outline"
+                    style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600 }}
+                  >
+                    Show All Committees
+                  </button>
+                  {isAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditCommitteeModal(activeComm)}
+                        className="btn btn-outline"
+                        style={{ padding: '6px 12px', fontSize: '0.8rem', fontWeight: 600 }}
+                      >
+                        <Edit2 size={13} /> Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCommitteeToDelete(activeComm)}
+                        className="btn btn-outline"
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          color: '#ef4444',
+                          borderColor: 'rgba(239, 68, 68, 0.3)',
+                          background: 'rgba(239, 68, 68, 0.05)',
+                        }}
+                      >
+                        <Trash2 size={13} /> Delete Committee
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Committee Filter Chips Bar with SHOW ALL Button */}
+          <div
+            className="glass-panel"
+            style={{
+              padding: '16px 20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              overflowX: 'auto',
+              borderRadius: 'var(--radius-lg)',
+              border: '1px solid var(--color-sand)',
+              background: 'var(--color-white)',
+              boxShadow: '0 2px 10px rgba(196, 154, 108, 0.05)',
+            }}
+          >
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-clay)', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <Tag size={15} /> Filter:
+            </span>
 
         {/* SHOW ALL BUTTON */}
         <button
@@ -1359,6 +2109,8 @@ export default function CommitteePage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
         </div>
       )}
 
@@ -2138,6 +2890,234 @@ export default function CommitteePage() {
                 style={{ marginTop: '6px' }}
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* MODAL 5: EDIT COMMITTEE (Admin Only) */}
+      {isEditCommitteeModalOpen && editingCommittee && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '520px',
+              padding: '28px',
+              border: '1px solid var(--border-card)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--color-white)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <div>
+                <h3 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                  Edit Society Committee
+                </h3>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  Update committee name, description, and status
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditCommitteeModalOpen(false);
+                  setEditingCommittee(null);
+                }}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateCommitteeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.85rem' }}>Committee Name *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Festival & Celebration Committee"
+                  value={editCommitteeFormData.name}
+                  onChange={(e) => setEditCommitteeFormData({ ...editCommitteeFormData, name: e.target.value })}
+                  className="input-field"
+                  style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--color-sand)' }}
+                />
+              </div>
+
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.85rem' }}>Description / Scope</label>
+                <textarea
+                  rows={3}
+                  placeholder="Describe committee responsibilities..."
+                  value={editCommitteeFormData.description}
+                  onChange={(e) => setEditCommitteeFormData({ ...editCommitteeFormData, description: e.target.value })}
+                  className="input-field"
+                  style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--color-sand)' }}
+                />
+              </div>
+
+              <div className="input-group" style={{ margin: 0 }}>
+                <label className="input-label" style={{ fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.85rem' }}>Status</label>
+                <select
+                  value={editCommitteeFormData.status}
+                  onChange={(e) => setEditCommitteeFormData({ ...editCommitteeFormData, status: e.target.value })}
+                  className="input-field"
+                  style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--color-sand)' }}
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditCommitteeModalOpen(false);
+                    setEditingCommittee(null);
+                  }}
+                  className="btn btn-outline"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  style={{ background: 'var(--color-clay)', display: 'flex', alignItems: 'center', gap: '8px' }}
+                  disabled={updatingCommittee}
+                >
+                  {updatingCommittee && <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />}
+                  <span>{updatingCommittee ? 'Saving...' : 'Save Changes'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 6: DELETE COMMITTEE CONFIRMATION (Admin Only) */}
+      {committeeToDelete && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0, 0, 0, 0.75)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              padding: '28px',
+              border: '1px solid rgba(239, 68, 68, 0.3)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+              borderRadius: 'var(--radius-lg)',
+              background: 'var(--color-white)',
+              textAlign: 'center',
+            }}
+          >
+            <div
+              style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.12)',
+                color: '#ef4444',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px auto',
+              }}
+            >
+              <Trash2 size={28} />
+            </div>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)', marginBottom: '8px' }}>
+              Delete Committee?
+            </h3>
+
+            <p style={{ fontSize: '0.9rem', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.5 }}>
+              Are you sure you want to permanently delete{' '}
+              <strong style={{ color: 'var(--color-dark-brown)' }}>"{committeeToDelete.name}"</strong>?
+            </p>
+
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px',
+                fontSize: '0.8rem',
+                color: '#b91c1c',
+                textAlign: 'left',
+                display: 'flex',
+                gap: '8px',
+                marginBottom: '20px',
+              }}
+            >
+              <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+              <div>
+                <strong>Warning:</strong> All members assigned to this committee will be automatically unlinked. This action cannot be undone.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setCommitteeToDelete(null)}
+                className="btn btn-outline"
+                disabled={deletingCommitteeId !== null}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteCommittee}
+                className="btn btn-danger"
+                style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  fontWeight: 700,
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                }}
+                disabled={deletingCommitteeId !== null}
+              >
+                {deletingCommitteeId !== null ? (
+                  <>
+                    <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={16} />
+                    <span>Delete Committee</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

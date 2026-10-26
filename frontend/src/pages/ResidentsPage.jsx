@@ -24,9 +24,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Lock,
+  Eye,
 } from 'lucide-react';
 import { residentApi } from '../api/residentApi';
 import { societyApi } from '../api/societyApi';
+import { adminApi } from '../api/adminApi';
 import apiClient from '../api/apiClient';
 import { useAuthStore } from '../store/authStore';
 
@@ -67,7 +69,9 @@ export default function ResidentsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
+  const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [selectedResident, setSelectedResident] = useState(null);
+  const [totalUsersCount, setTotalUsersCount] = useState(0);
 
   // Unified Form: Merges "Add Residential Unit" fields + "Resident Details"
   const defaultCreateForm = {
@@ -82,7 +86,7 @@ export default function ResidentsPage() {
     name: '',
     phone: '',
     email: '',
-    password: 'Password@123',
+    password: '123456',
     resident_type: 'OWNER',
     move_in_date: new Date().toISOString().split('T')[0],
     status: 'ACTIVE',
@@ -109,32 +113,41 @@ export default function ResidentsPage() {
   const fetchInitialData = async () => {
     setLoading(true);
     try {
-      const [resRes, socRes, homesRes] = await Promise.all([
+      const [resRes, socRes, homesRes, dashRes] = await Promise.all([
         residentApi.getResidents(),
         societyApi.getSocieties(),
         apiClient.get('/homes'),
+        adminApi.getAdminDashboard().catch(() => null),
       ]);
 
       const socList = socRes.data?.societies || socRes.societies || [];
       setSocieties(socList);
 
-      const activeSocId = socList[0]?.id;
+      const activeSocId = user?.societyId || user?.society_id || socList[0]?.id;
       const allResidents = (resRes.data?.residents || []).filter(
         (r) => !activeSocId || !r.society_id || String(r.society_id) === String(activeSocId)
       );
       setResidents(allResidents);
+
+      // Total Users Count from dashboard stats or allResidents fallback
+      const dashStats = dashRes?.data?.stats || dashRes?.stats;
+      const totalUsers = dashStats?.totalUsers ?? (
+        dashStats ? (dashStats.owners || 0) + (dashStats.tenants || 0) + (dashStats.familyMembers || 0) : allResidents.length
+      );
+      setTotalUsersCount(totalUsers || allResidents.length);
 
       const allHomes = (homesRes.data?.homes || homesRes.homes || []).filter(
         (h) => !activeSocId || !h.society_id || String(h.society_id) === String(activeSocId)
       );
       setHomes(allHomes);
 
-      if (socList.length > 0) {
-        const socConfigs = parsePropertyConfigs(socList[0].property_configuration);
+      const targetSoc = socList.find((s) => String(s.id) === String(activeSocId)) || socList[0];
+      if (targetSoc) {
+        const socConfigs = parsePropertyConfigs(targetSoc.property_configuration);
         setCreateForm((prev) => ({
           ...prev,
-          society_id: socList[0].id,
-          society_type: socList[0].society_type || 'FLAT',
+          society_id: targetSoc.id,
+          society_type: targetSoc.society_type || 'FLAT',
           building_or_wing: '',
           floor: '',
           home_type: socConfigs[0] || '2BHK',
@@ -148,7 +161,8 @@ export default function ResidentsPage() {
   };
 
   // Active Society & Total capacity
-  const currentSociety = societies[0] || null;
+  const mySocId = user?.societyId || user?.society_id;
+  const currentSociety = (mySocId ? societies.find((s) => String(s.id) === String(mySocId)) : null) || societies[0] || null;
   const isFlat = currentSociety?.society_type === 'FLAT';
   const totalSocietyHomes = currentSociety ? (currentSociety.actual_homes_count || homes.length || currentSociety.total_homes || 0) : 0;
 
@@ -453,7 +467,7 @@ export default function ResidentsPage() {
         name: createForm.name.trim(),
         phone: createForm.phone.trim(),
         email: createForm.email ? createForm.email.trim() : null,
-        password: createForm.password || 'Password@123',
+        password: createForm.password || '123456',
         resident_type: createForm.resident_type || 'OWNER',
         move_in_date: createForm.move_in_date || new Date().toISOString().split('T')[0],
         status: createForm.status || 'ACTIVE',
@@ -664,8 +678,8 @@ export default function ResidentsPage() {
             <Users size={20} color="var(--color-dark-brown)" />
           </div>
           <div>
-            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Primary Residents</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>{residents.length}</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Total Users</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>{totalUsersCount}</div>
           </div>
         </div>
       </div>
@@ -773,11 +787,14 @@ export default function ResidentsPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
             <thead>
               <tr style={{ background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap' }}>
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase', width: '60px', textAlign: 'center' }}>
+                  Sr. No
+                </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Unit
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Home
+                  Home no.
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Type
@@ -799,7 +816,7 @@ export default function ResidentsPage() {
                   Occupancy
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Resident Name
+                  User Name
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Resident Type
@@ -808,27 +825,27 @@ export default function ResidentsPage() {
                   Phone Number
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
-                  Email
+                  Email ID
                 </th>
                 <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase' }}>
                   Move-In Date
                 </th>
-                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase', textAlign: 'right' }}>
-                  Actions
+                <th style={{ padding: '12px 14px', fontWeight: 700, color: 'var(--color-dark-brown)', fontSize: '0.75rem', textTransform: 'uppercase', textAlign: 'center' }}>
+                  User Details
                 </th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={isFlat ? 13 : 11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={isFlat ? 14 : 12} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     <RefreshCw size={22} className="animate-spin" style={{ margin: '0 auto 8px', display: 'block' }} />
                     Loading residential units and residents...
                   </td>
                 </tr>
               ) : filteredUnits.length === 0 ? (
                 <tr>
-                  <td colSpan={isFlat ? 13 : 11} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
+                  <td colSpan={isFlat ? 14 : 12} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-muted)' }}>
                     {!currentSociety ? (
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
                         <Home size={32} color="var(--color-clay)" style={{ opacity: 0.6 }} />
@@ -845,7 +862,7 @@ export default function ResidentsPage() {
                   </td>
                 </tr>
               ) : (
-                paginatedUnits.map((u) => {
+                paginatedUnits.map((u, index) => {
                   const res = u.resident;
                   const isOcc = u.isOccupied;
 
@@ -859,6 +876,11 @@ export default function ResidentsPage() {
                         whiteSpace: 'nowrap',
                       }}
                     >
+                      {/* Sr. No */}
+                      <td style={{ padding: '14px 14px', fontWeight: 600, color: 'var(--text-dim)', fontSize: '0.8rem', textAlign: 'center' }}>
+                        {(currentPage - 1) * pageSize + index + 1}
+                      </td>
+
                       {/* Unit */}
                       <td style={{ padding: '14px 14px', fontWeight: 700 }}>
                         <span
@@ -1039,85 +1061,34 @@ export default function ResidentsPage() {
                         )}
                       </td>
 
-                      {/* Actions */}
-                      <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                      {/* User Details */}
+                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                         {isOcc ? (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                            {isAdmin && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setSelectedResident(res);
-                                    setEditForm({
-                                      name: res.full_name,
-                                      phone: res.phone,
-                                      email: res.email || '',
-                                      resident_type: res.resident_type,
-                                      status: res.status,
-                                    });
-                                    setShowEditModal(true);
-                                  }}
-                                  className="btn btn-outline"
-                                  style={{ padding: '6px 8px', fontSize: '0.72rem' }}
-                                  title="Edit Resident"
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    setSelectedResident(res);
-                                    setNewPasswordInput('');
-                                    setShowResetPasswordModal(true);
-                                  }}
-                                  className="btn btn-secondary"
-                                  style={{ padding: '6px 8px', fontSize: '0.72rem' }}
-                                  title="Reset Password"
-                                >
-                                  <KeyRound size={13} color="var(--accent-amber)" />
-                                </button>
-
-                                <button
-                                  onClick={() => handleToggleStatus(res)}
-                                  className="btn btn-outline"
-                                  style={{ padding: '6px 8px', fontSize: '0.72rem' }}
-                                  title={res.status === 'ACTIVE' ? 'Deactivate Resident' : 'Activate Resident'}
-                                >
-                                  <Power size={13} color={res.status === 'ACTIVE' ? '#fb7185' : '#34d399'} />
-                                </button>
-
-                                <button
-                                  onClick={() => handleDeleteResident(res)}
-                                  className="btn btn-danger"
-                                  style={{ padding: '6px 8px', fontSize: '0.72rem' }}
-                                  title="Delete Resident"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-                              </>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedResident(res);
+                              setShowUserDetailsModal(true);
+                            }}
+                            className="btn btn-outline"
+                            style={{
+                              padding: '6px 14px',
+                              fontSize: '0.76rem',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              borderRadius: 'var(--radius-sm)',
+                              fontWeight: 600,
+                            }}
+                            title="View User Details"
+                          >
+                            <Eye size={13} color="var(--color-clay)" />
+                            <span>View Details</span>
+                          </button>
                         ) : (
-                          isAdmin && (
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                              <button
-                                onClick={() => handleOpenCreateModal(u)}
-                                className="btn btn-primary"
-                                style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                              >
-                                <Plus size={12} />
-                                <span>Create Resident</span>
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUnit(u)}
-                                className="btn btn-danger"
-                                style={{ padding: '6px 8px', fontSize: '0.72rem' }}
-                                title="Delete Unit"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          )
+                          <span style={{ color: 'var(--text-dim)', fontSize: '0.78rem', fontStyle: 'italic' }}>
+                            — Vacant —
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -1429,7 +1400,7 @@ export default function ResidentsPage() {
                       required
                       minLength={6}
                       className="input-field"
-                      placeholder="Min 6 characters"
+                      placeholder="e.g. 123456"
                       value={createForm.password}
                       onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
                     />
@@ -1602,6 +1573,155 @@ export default function ResidentsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ---------------------------------------------------- */}
+      {/* MODAL: View User Details (Read-Only) */}
+      {/* ---------------------------------------------------- */}
+      {showUserDetailsModal && selectedResident && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.65)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            padding: '20px',
+          }}
+        >
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '480px',
+              padding: '26px',
+              background: 'var(--color-white)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: 'var(--shadow-lg)',
+              border: '1px solid var(--border-card)',
+            }}
+          >
+            {/* Modal Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '14px', borderBottom: '1px solid var(--border-subtle)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(196, 154, 108, 0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users size={18} color="var(--color-clay)" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                    User Details
+                  </h3>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Resident Information (Read-Only)
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUserDetailsModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  borderRadius: '4px',
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Read-Only Details Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '22px' }}>
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  User Name
+                </div>
+                <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)' }}>
+                  {selectedResident.full_name || '—'}
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Resident Type
+                </div>
+                <div>
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.75rem',
+                      fontWeight: 800,
+                      background: selectedResident.resident_type === 'OWNER' ? 'rgba(107, 142, 90, 0.15)' : 'rgba(135, 206, 235, 0.2)',
+                      color: selectedResident.resident_type === 'OWNER' ? 'var(--color-fern-green)' : '#0284c7',
+                    }}
+                  >
+                    {selectedResident.resident_type || 'OWNER'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Phone Number
+                </div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-dark-brown)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Phone size={13} color="var(--color-clay)" />
+                  <span>{selectedResident.phone || '—'}</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Email ID
+                </div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--color-dark-brown)', display: 'flex', alignItems: 'center', gap: '6px', wordBreak: 'break-all' }}>
+                  <Mail size={13} color="var(--accent-amber)" />
+                  <span>{selectedResident.email || '—'}</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Move-In Date
+                </div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-dark-brown)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Calendar size={13} color="var(--text-dim)" />
+                  <span>{selectedResident.move_in_date ? selectedResident.move_in_date.split('T')[0] : '—'}</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 14px', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-md)' }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', marginBottom: '4px' }}>
+                  Home no.
+                </div>
+                <div style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-dark-brown)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Home size={13} color="var(--color-clay)" />
+                  <span>{selectedResident.home_number || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Strictly Close Button Only - Admin cannot perform any action */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => setShowUserDetailsModal(false)}
+                className="btn btn-primary"
+                style={{ padding: '8px 22px', fontSize: '0.85rem' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

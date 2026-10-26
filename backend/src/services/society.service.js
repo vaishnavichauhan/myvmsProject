@@ -25,7 +25,7 @@ class SocietyService {
       throw ApiError.badRequest('Society Address is required.');
     }
 
-    const validTypes = ['BUNGALOW', 'FLAT'];
+    const validTypes = ['BUNGALOW', 'FLAT', 'GATED_COMMUNITY', 'APARTMENT', 'COMMERCIAL', 'OTHER'];
     const typeUpper = (society_type || 'FLAT').toUpperCase();
     if (!validTypes.includes(typeUpper)) {
       throw ApiError.badRequest(`Invalid Society Type. Must be one of: ${validTypes.join(', ')}`);
@@ -158,10 +158,13 @@ class SocietyService {
   }
 
   /**
-   * Retrieve all societies with search/filters
+   * Retrieve all societies with search/filters (Scoped to caller's society if Admin)
    */
-  static async getAllSocieties(filters) {
-    return SocietyRepository.findAll(filters);
+  static async getAllSocieties(filters, user = null) {
+    const isSuperAdmin = user && user.role === 'SUPER_ADMIN';
+    const callerSocietyId = !isSuperAdmin && user ? (user.society_id || user.societyId) : null;
+    const callerUserId = !isSuperAdmin && user ? user.id : null;
+    return SocietyRepository.findAll(filters, callerSocietyId, callerUserId);
   }
 
   /**
@@ -178,16 +181,24 @@ class SocietyService {
   /**
    * Update society information
    */
-  static async updateSociety(id, data) {
+  static async updateSociety(id, data, user = null) {
     const existing = await SocietyRepository.findById(id);
     if (!existing) {
       throw ApiError.notFound(`Society with ID ${id} not found.`);
     }
 
+    // Society Name, Unique Society Code, and Structure Type are created by SuperAdmin, so Admin cannot modify them
+    if (user && user.role !== 'SUPER_ADMIN') {
+      delete data.name;
+      delete data.code;
+      delete data.society_type;
+    }
+
     if (data.society_type) {
+      const validTypes = ['BUNGALOW', 'FLAT', 'GATED_COMMUNITY', 'APARTMENT', 'COMMERCIAL', 'OTHER'];
       const typeUpper = data.society_type.toUpperCase();
-      if (!['BUNGALOW', 'FLAT'].includes(typeUpper)) {
-        throw ApiError.badRequest('Invalid Society Type. Must be BUNGALOW or FLAT.');
+      if (!validTypes.includes(typeUpper)) {
+        throw ApiError.badRequest(`Invalid Society Type. Must be one of: ${validTypes.join(', ')}`);
       }
       data.society_type = typeUpper;
     }
@@ -214,22 +225,53 @@ class SocietyService {
     if (data.total_homes !== undefined) {
       const newTotal = parseInt(data.total_homes, 10);
       if (!isNaN(newTotal) && newTotal > 0) {
+        // Enforce subscription plan max_units limit if society has a plan
+        if (existing.subscription_plan_id) {
+          const { pool } = require('../config/db');
+          const [planRows] = await pool.query('SELECT name, max_units FROM subscription_plans WHERE id = ?', [existing.subscription_plan_id]);
+          if (planRows.length > 0 && planRows[0].max_units) {
+            const [overrideRows] = await pool.query('SELECT max_units FROM society_limit_overrides WHERE society_id = ?', [id]);
+            const allowedMax = (overrideRows.length > 0 && overrideRows[0].max_units !== null) ? overrideRows[0].max_units : planRows[0].max_units;
+            if (newTotal > allowedMax) {
+              throw ApiError.badRequest(
+                `Total units (${newTotal}) exceeds your subscription plan limit of ${allowedMax} units (${planRows[0].name} Plan). Please upgrade your plan or request a limit override.`
+              );
+            }
+          }
+        }
+
         data.total_homes = newTotal;
+        data.max_units = Math.max(existing.max_units || 0, newTotal);
         const HomeRepository = require('../repositories/home.repository');
         const existingHomes = await HomeRepository.findBySocietyId(id);
+        const occupiedCount = existingHomes.filter(
+          (h) => h.occupancy_status === 'OCCUPIED_BY_OWNER' || h.occupancy_status === 'OCCUPIED_BY_TENANT'
+        ).length;
+
+        if (newTotal < occupiedCount) {
+          throw ApiError.badRequest(
+            `Cannot set Total Units to ${newTotal}. Society currently has ${occupiedCount} occupied units with active residents. Occupied units are determined by registered residents.`
+          );
+        }
+
         const existingNums = new Set(existingHomes.map((h) => String(h.home_number)));
-        const socType = data.society_type || existing.society_type || 'BUNGALOW';
+        const socType = data.society_type || existing.society_type || 'FLAT';
         const startNo = parseInt(data.bungalow_start_no, 10) || 1;
         const toCreate = [];
 
-        if (socType === 'BUNGALOW') {
-          for (let i = 0; i < newTotal; i++) {
-            const hNum = String(startNo + i);
+        if (existingHomes.length < newTotal) {
+          const needed = newTotal - existingHomes.length;
+          const isBungalow = socType === 'BUNGALOW';
+          for (let i = 0; i < newTotal && toCreate.length < needed; i++) {
+            const hNum = isBungalow
+              ? String(startNo + i)
+              : (existingHomes.length > 0 ? `Unit ${existingHomes.length + toCreate.length + 1}` : String(101 + toCreate.length));
             if (!existingNums.has(hNum)) {
+              existingNums.add(hNum);
               toCreate.push({
                 home_number: hNum,
-                building_or_wing: null,
-                floor: null,
+                building_or_wing: isBungalow ? null : (data.towers?.[0]?.name ? `Tower ${data.towers[0].name}` : 'Wing A'),
+                floor: isBungalow ? null : 1,
                 home_type: data.property_configuration || existing.property_configuration || '2BHK',
                 occupancy_status: 'VACANT',
                 status: 'ACTIVE',

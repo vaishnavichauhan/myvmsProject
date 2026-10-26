@@ -11,7 +11,7 @@ class ResidentController {
    */
   static async create(req, res, next) {
     try {
-      const resident = await ResidentService.createResident(req.body);
+      const resident = await ResidentService.createResident(req.body, req.user);
       return ApiResponse.created(res, 'Resident registered successfully', { resident });
     } catch (error) {
       next(error);
@@ -24,7 +24,7 @@ class ResidentController {
    */
   static async getAll(req, res, next) {
     try {
-      const residents = await ResidentService.getAllResidents(req.query);
+      const residents = await ResidentService.getAllResidents(req.query, req.user);
       return ApiResponse.success(res, 'Residents retrieved successfully', { residents });
     } catch (error) {
       next(error);
@@ -36,7 +36,7 @@ class ResidentController {
    */
   static async getById(req, res, next) {
     try {
-      const resident = await ResidentService.getResidentById(req.params.id);
+      const resident = await ResidentService.getResidentById(req.params.id, req.user);
       return ApiResponse.success(res, 'Resident details retrieved', { resident });
     } catch (error) {
       next(error);
@@ -49,7 +49,7 @@ class ResidentController {
    */
   static async update(req, res, next) {
     try {
-      const resident = await ResidentService.updateResident(req.params.id, req.body);
+      const resident = await ResidentService.updateResident(req.params.id, req.body, req.user);
       return ApiResponse.success(res, 'Resident updated successfully', { resident });
     } catch (error) {
       next(error);
@@ -63,7 +63,7 @@ class ResidentController {
   static async updateStatus(req, res, next) {
     try {
       const { status } = req.body;
-      const resident = await ResidentService.changeResidentStatus(req.params.id, status);
+      const resident = await ResidentService.changeResidentStatus(req.params.id, status, req.user);
       return ApiResponse.success(res, `Resident status updated to ${status}`, { resident });
     } catch (error) {
       next(error);
@@ -77,7 +77,7 @@ class ResidentController {
   static async resetPassword(req, res, next) {
     try {
       const { newPassword } = req.body;
-      const result = await ResidentService.resetResidentPassword(req.params.id, newPassword);
+      const result = await ResidentService.resetResidentPassword(req.params.id, newPassword, req.user);
       return ApiResponse.success(res, result.message, null);
     } catch (error) {
       next(error);
@@ -90,7 +90,7 @@ class ResidentController {
    */
   static async delete(req, res, next) {
     try {
-      const result = await ResidentService.deleteResident(req.params.id);
+      const result = await ResidentService.deleteResident(req.params.id, req.user);
       return ApiResponse.success(res, result.message, null);
     } catch (error) {
       next(error);

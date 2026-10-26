@@ -271,6 +271,20 @@ class VisitorService {
 
     return entry;
   }
+
+  /**
+   * Quick Lookup for Returning Visitor:
+   * Security & Admin search by Phone Number OR Gate Pass Number
+   */
+  static async lookupVisitor(user, query) {
+    if (!query || !query.trim()) {
+      return null;
+    }
+
+    const societyId = user.societyId || null;
+    const visitor = await VisitorRepository.findVisitorByPhoneOrPass(societyId, query);
+    return visitor;
+  }
 }
 
 module.exports = VisitorService;

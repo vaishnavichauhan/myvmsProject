@@ -178,7 +178,7 @@ export default function GatesPage() {
       });
       fetchInitialData();
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create gate.');
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to create gate.');
     }
   };
 

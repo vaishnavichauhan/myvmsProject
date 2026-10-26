@@ -11,11 +11,12 @@ export default function DashboardLayout() {
         <Sidebar />
         <main style={{
           flex: 1,
-          padding: '32px',
+          padding: '24px 18px',
           overflowY: 'auto',
           background: 'var(--color-background)',
+          minWidth: 0,
         }}>
-          <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+          <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
             <Outlet />
           </div>
         </main>

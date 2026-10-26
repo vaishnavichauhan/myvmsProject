@@ -20,6 +20,9 @@ const reportRoutes = require('./routes/report.routes');
 const healthRoutes = require('./routes/health.routes');
 const maintenanceRoutes = require('./routes/maintenance.routes');
 const specialChargeRoutes = require('./routes/special-charge.routes');
+const pollRoutes = require('./routes/poll.routes');
+const amenityRoutes = require('./routes/amenity.routes');
+const superAdminRoutes = require('./routes/superadmin.routes');
 const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
 
 const app = express();
@@ -76,6 +79,9 @@ app.use('/api/reports', reportRoutes);
 app.use('/api/health', healthRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/special-charges', specialChargeRoutes);
+app.use('/api/polls', pollRoutes);
+app.use('/api/amenities', amenityRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 
 // Versioned /api/v1 routes
 app.use('/api/v1', apiV1Router);

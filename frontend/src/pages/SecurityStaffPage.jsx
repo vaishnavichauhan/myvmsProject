@@ -26,10 +26,12 @@ import { useAuthStore } from '../store/authStore';
 export default function SecurityStaffPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN';
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  const userSocId = user?.societyId || user?.society_id || '';
 
   const [staffList, setStaffList] = useState([]);
   const [societies, setSocieties] = useState([]);
-  const [selectedSocietyId, setSelectedSocietyId] = useState('ALL');
+  const [selectedSocietyId, setSelectedSocietyId] = useState(isSuperAdmin ? 'ALL' : (userSocId || 'ALL'));
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterShift, setFilterShift] = useState('ALL');
@@ -51,7 +53,7 @@ export default function SecurityStaffPage() {
     agency_name: 'In-House Security Staff',
     shift: 'ROTATIONAL',
     status: 'ACTIVE',
-    society_id: '',
+    society_id: userSocId || '',
   });
 
   const [editForm, setEditForm] = useState({
@@ -71,16 +73,21 @@ export default function SecurityStaffPage() {
 
   useEffect(() => {
     loadSocieties();
-    fetchStaff('ALL');
-  }, []);
+    const initSoc = !isSuperAdmin && userSocId ? userSocId : 'ALL';
+    fetchStaff(initSoc);
+  }, [userSocId, isSuperAdmin]);
 
   const loadSocieties = async () => {
     try {
       const res = await societyApi.getSocieties();
       const list = res.data?.societies || res.societies || [];
       setSocieties(list);
-      if (list.length > 0) {
-        setCreateForm((p) => ({ ...p, society_id: list[0].id }));
+      const chosenSoc = !isSuperAdmin ? (userSocId || list[0]?.id || '') : (list[0]?.id || '');
+      if (chosenSoc) {
+        setCreateForm((p) => ({ ...p, society_id: chosenSoc }));
+        if (!isSuperAdmin) {
+          setSelectedSocietyId(chosenSoc);
+        }
       }
     } catch (err) {
       console.error('Failed to load societies', err);
@@ -110,7 +117,7 @@ export default function SecurityStaffPage() {
   };
 
   const handleOpenCreateModal = () => {
-    const defaultSoc = selectedSocietyId !== 'ALL' ? selectedSocietyId : (societies[0]?.id || 1);
+    const defaultSoc = !isSuperAdmin ? (userSocId || societies[0]?.id || 1) : (selectedSocietyId !== 'ALL' ? selectedSocietyId : (societies[0]?.id || 1));
     setCreateForm((p) => ({ ...p, society_id: defaultSoc }));
     setShowCreateModal(true);
   };
@@ -119,7 +126,7 @@ export default function SecurityStaffPage() {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      const targetSoc = createForm.society_id || (selectedSocietyId !== 'ALL' ? selectedSocietyId : (societies[0]?.id || 1));
+      const targetSoc = !isSuperAdmin ? (userSocId || createForm.society_id) : (createForm.society_id || (selectedSocietyId !== 'ALL' ? selectedSocietyId : (societies[0]?.id || 1)));
       await securityApi.createSecurityStaff({
         ...createForm,
         society_id: targetSoc,

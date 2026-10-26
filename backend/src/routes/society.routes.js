@@ -37,6 +37,8 @@ router.delete(
   SocietyController.delete
 );
 
+const { enforceLimit } = require('../middlewares/entitlement.middleware');
+
 // ==========================================
 // Nested Home Routes within Society
 // ==========================================
@@ -48,7 +50,8 @@ router.get('/:societyId/homes', authMiddleware, HomeController.getAllBySociety);
 router.post(
   '/:societyId/homes',
   authMiddleware,
-  roleMiddleware(ROLES.ADMIN),
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
+  enforceLimit('UNITS'),
   HomeController.create
 );
 
@@ -56,7 +59,8 @@ router.post(
 router.post(
   '/:societyId/homes/batch',
   authMiddleware,
-  roleMiddleware(ROLES.ADMIN),
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
+  enforceLimit('UNITS'),
   HomeController.batchGenerate
 );
 

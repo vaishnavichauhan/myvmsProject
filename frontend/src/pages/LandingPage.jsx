@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Building2,
@@ -21,18 +21,120 @@ import {
   Globe,
   Lock,
   Layers,
+  Sparkles,
+  Zap,
+  Check,
+  HelpCircle,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { ROLES, ROLE_CONFIG } from '../constants/roles';
 import Navbar from '../components/layout/Navbar';
+import apiClient from '../api/apiClient';
+
+const ALL_POSSIBLE_FEATURES = [
+  'RESIDENTS',
+  'GATES_VISITORS',
+  'COURIER_DELIVERIES',
+  'SECURITY_STAFF',
+  'SOCIETY_FINANCE',
+  'WORKERS',
+  'AMENITIES',
+  'ANNOUNCEMENTS',
+  'POLLS',
+  'COMMITTEES',
+];
+
+const FEATURE_LABELS = {
+  RESIDENTS: 'Resident & Flat Directory',
+  GATES_VISITORS: 'Visitor Management & Gate Pass',
+  COURIER_DELIVERIES: 'Parcel & Courier Deliveries',
+  SECURITY_STAFF: 'Security Guard Roster & Console',
+  SOCIETY_FINANCE: 'Maintenance Bills & Online Invoicing',
+  WORKERS: 'Domestic Staff & Helpers Log',
+  AMENITIES: 'Amenities & Clubhouse Booking',
+  ANNOUNCEMENTS: 'Broadcasts & Digital Notice Board',
+  POLLS: 'Society Polls & Digital Voting',
+  COMMITTEES: 'Management Committee Portal',
+};
+
+const DEFAULT_PLANS = [
+  {
+    id: 1,
+    name: 'Essential',
+    code: 'PLAN-ESSENTIAL',
+    description: 'Starter tier for small societies with core resident, worker and community polling features.',
+    price: '999.00',
+    billing_cycle: 'MONTHLY',
+    max_users: 50,
+    max_units: 30,
+    max_gates: 2,
+    trial_days: 14,
+    features: ['POLLS', 'RESIDENTS', 'WORKERS'],
+  },
+  {
+    id: 2,
+    name: 'Professional',
+    code: 'PLAN-PROFESSIONAL',
+    description: 'Mid-sized societies needing complete maintenance invoicing, special charges, workers, and resident directory.',
+    price: '2499.00',
+    billing_cycle: 'MONTHLY',
+    max_users: 150,
+    max_units: 100,
+    max_gates: 5,
+    trial_days: 14,
+    isPopular: true,
+    features: ['RESIDENTS', 'SOCIETY_FINANCE', 'WORKERS', 'ANNOUNCEMENTS', 'COMMITTEES', 'COURIER_DELIVERIES'],
+  },
+  {
+    id: 3,
+    name: 'Enterprise',
+    code: 'PLAN-ENTERPRISE',
+    description: 'Comprehensive luxury tier unlocking all available MYVMS facilities, amenities, security, finance, and portals.',
+    price: '4999.00',
+    billing_cycle: 'MONTHLY',
+    max_users: 500,
+    max_units: 350,
+    max_gates: 20,
+    trial_days: 30,
+    features: ['AMENITIES', 'ANNOUNCEMENTS', 'COMMITTEES', 'COURIER_DELIVERIES', 'GATES_VISITORS', 'POLLS', 'RESIDENTS', 'SECURITY_STAFF', 'SOCIETY_FINANCE', 'WORKERS'],
+  },
+];
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const { isAuthenticated, checkHealth } = useAuthStore();
+  const [plans, setPlans] = useState([]);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+  const [billingCycle, setBillingCycle] = useState('MONTHLY'); // 'MONTHLY' | 'ANNUAL'
 
   useEffect(() => {
     checkHealth();
   }, [checkHealth]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchPlans = async () => {
+      try {
+        const res = await apiClient.get('/plans');
+        if (res.data?.success && Array.isArray(res.data.data?.plans)) {
+          if (isMounted) setPlans(res.data.data.plans);
+        }
+      } catch (err) {
+        console.warn('Could not fetch public plans, falling back to defaults:', err);
+      } finally {
+        if (isMounted) setLoadingPlans(false);
+      }
+    };
+    fetchPlans();
+    return () => { isMounted = false; };
+  }, []);
+
+  // Filter out experimental copy plans or plans without valid names
+  const activePlans = plans && plans.length > 0
+    ? plans.filter(p => !p.code?.includes('_COPY') && p.description !== 'mcmdc')
+    : [];
+
+  const displayPlans = activePlans.length > 0 ? activePlans : DEFAULT_PLANS;
 
   const rolesList = [
     {
@@ -77,8 +179,8 @@ export default function LandingPage() {
     <div className="app-container">
       <Navbar />
 
-      <main className="main-content" style={{ padding: '48px 24px 80px' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <main className="main-content" style={{ padding: '28px 14px 72px' }}>
+        <div style={{ maxWidth: '1440px', margin: '0 auto' }}>
 
           {/* Hero Section */}
           <section style={{ textAlign: 'center', marginBottom: '50px' }}>
@@ -126,26 +228,7 @@ export default function LandingPage() {
                   pointerEvents: 'none',
                 }}
               />
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: '24px',
-                  left: '24px',
-                  right: '24px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-end',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                  color: '#FFFFFF',
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--color-sand)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Residential Excellence
-                  </div>
-                </div>
-              </div>
+
             </div>
 
             {/* Full Width Banner After Image */}
@@ -703,6 +786,393 @@ export default function LandingPage() {
           </section>
 
           {/* ========================================================
+              SUBSCRIPTION PLANS & TIERS SECTION
+              ======================================================== */}
+          <section id="subscription-plans" style={{ marginBottom: '72px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '36px' }}>
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 16px',
+                  borderRadius: 'var(--radius-full)',
+                  background: 'rgba(196, 154, 108, 0.16)',
+                  border: '1px solid var(--color-sand)',
+                  color: 'var(--color-clay)',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  marginBottom: '14px',
+                }}
+              >
+                <Sparkles size={16} /> Subscription Plans & Tiers
+              </div>
+
+              <h2
+                style={{
+                  fontSize: 'clamp(1.9rem, 3.2vw, 2.5rem)',
+                  fontWeight: 800,
+                  color: 'var(--color-dark-brown)',
+                  letterSpacing: '-0.02em',
+                  marginBottom: '12px',
+                }}
+              >
+                Predictable, All-Inclusive Plans for Every Society
+              </h2>
+
+              <p
+                style={{
+                  fontSize: '1rem',
+                  color: 'var(--text-muted)',
+                  maxWidth: '720px',
+                  margin: '0 auto 24px',
+                  lineHeight: 1.6,
+                }}
+              >
+                Transparent society pricing scaled to your unit size. All plans include continuous software updates, 99.9% uptime SLA, security compliance, and direct support.
+              </p>
+
+              {/* Billing Cycle Toggle */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  background: '#F1E9DF',
+                  padding: '4px',
+                  borderRadius: 'var(--radius-full)',
+                  border: '1px solid var(--color-sand)',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('MONTHLY')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: 'var(--radius-full)',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    background: billingCycle === 'MONTHLY' ? 'var(--color-clay)' : 'transparent',
+                    color: billingCycle === 'MONTHLY' ? '#FFFFFF' : 'var(--color-dark-brown)',
+                    transition: 'all 0.2s ease',
+                    boxShadow: billingCycle === 'MONTHLY' ? '0 2px 8px rgba(196, 154, 108, 0.3)' : 'none',
+                  }}
+                >
+                  Monthly Billing
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBillingCycle('ANNUAL')}
+                  style={{
+                    padding: '8px 18px',
+                    borderRadius: 'var(--radius-full)',
+                    border: 'none',
+                    fontWeight: 700,
+                    fontSize: '0.86rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    background: billingCycle === 'ANNUAL' ? 'var(--color-clay)' : 'transparent',
+                    color: billingCycle === 'ANNUAL' ? '#FFFFFF' : 'var(--color-dark-brown)',
+                    transition: 'all 0.2s ease',
+                    boxShadow: billingCycle === 'ANNUAL' ? '0 2px 8px rgba(196, 154, 108, 0.3)' : 'none',
+                  }}
+                >
+                  <span>Annual Billing</span>
+                  <span
+                    style={{
+                      fontSize: '0.68rem',
+                      fontWeight: 800,
+                      background: billingCycle === 'ANNUAL' ? '#FFFFFF' : 'var(--color-fern-green)',
+                      color: billingCycle === 'ANNUAL' ? 'var(--color-clay)' : '#FFFFFF',
+                      padding: '2px 7px',
+                      borderRadius: '10px',
+                      letterSpacing: '0.02em',
+                    }}
+                  >
+                    SAVE 20%
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Plans Cards Grid */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+                gap: '24px',
+                alignItems: 'stretch',
+              }}
+            >
+              {displayPlans.map((plan, idx) => {
+                const isPopular = plan.isPopular || plan.code === 'PLAN-PROFESSIONAL' || plan.name?.toLowerCase().includes('pro');
+                const isEnterprise = plan.code === 'PLAN-ENTERPRISE' || plan.name?.toLowerCase().includes('enterprise');
+                const rawPrice = parseFloat(plan.price) || 0;
+                const monthlyPrice = billingCycle === 'ANNUAL' ? Math.round(rawPrice * 0.8) : Math.round(rawPrice);
+                const annualBilled = monthlyPrice * 12;
+
+                return (
+                  <div
+                    key={plan.id || plan.code || idx}
+                    className="glass-panel"
+                    style={{
+                      borderRadius: 'var(--radius-xl)',
+                      background: '#FFFFFF',
+                      border: isPopular ? '2px solid var(--color-clay)' : '1px solid var(--border-card)',
+                      boxShadow: isPopular
+                        ? '0 12px 35px rgba(196, 154, 108, 0.22), 0 0 0 1px rgba(196, 154, 108, 0.15)'
+                        : '0 6px 22px rgba(196, 154, 108, 0.08)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      position: 'relative',
+                      overflow: 'hidden',
+                      transform: isPopular ? 'scale(1.02)' : 'none',
+                      transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+                      zIndex: isPopular ? 2 : 1,
+                    }}
+                  >
+                    {/* Popular / Best Value Ribbon */}
+                    {isPopular && (
+                      <div
+                        style={{
+                          background: 'linear-gradient(135deg, var(--color-clay) 0%, #a8794d 100%)',
+                          color: '#FFFFFF',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          textAlign: 'center',
+                          padding: '6px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Zap size={13} /> Most Popular Society Choice
+                      </div>
+                    )}
+
+                    {isEnterprise && (
+                      <div
+                        style={{
+                          background: 'linear-gradient(135deg, var(--color-dark-brown) 0%, #302621 100%)',
+                          color: 'var(--color-sand)',
+                          fontSize: '0.72rem',
+                          fontWeight: 800,
+                          letterSpacing: '0.08em',
+                          textTransform: 'uppercase',
+                          textAlign: 'center',
+                          padding: '6px 12px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                        }}
+                      >
+                        <Star size={13} fill="var(--color-sand)" /> Full-Suite Enterprise Solution
+                      </div>
+                    )}
+
+                    <div style={{ padding: '28px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                      {/* Plan Header */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                        <div>
+                          <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                            {plan.name}
+                          </h3>
+                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-clay)', letterSpacing: '0.04em' }}>
+                            {plan.code}
+                          </span>
+                        </div>
+
+                        {/* Free Trial Pill */}
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            borderRadius: 'var(--radius-full)',
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            color: 'var(--color-fern-green)',
+                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                          }}
+                        >
+                          {plan.trial_days || 14}d Free Trial
+                        </span>
+                      </div>
+
+                      <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.5, minHeight: '40px', marginBottom: '18px' }}>
+                        {plan.description || 'Scalable features designed for smooth society management.'}
+                      </p>
+
+                      {/* Pricing */}
+                      <div style={{ marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid var(--border-card)' }}>
+                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                          <span style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-dark-brown)', letterSpacing: '-0.03em' }}>
+                            ₹{monthlyPrice.toLocaleString('en-IN')}
+                          </span>
+                          <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                            / month
+                          </span>
+                        </div>
+                        {billingCycle === 'ANNUAL' ? (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--color-fern-green)', fontWeight: 600, marginTop: '2px' }}>
+                            Billed annually (₹{annualBilled.toLocaleString('en-IN')}/yr) • Save 20%
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            Billed monthly per registered society
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Capacity Metrics */}
+                      <div style={{ marginBottom: '22px' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '8px' }}>
+                          Society Capacity Limits
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                              {plan.max_units}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Flats</div>
+                          </div>
+                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                              {plan.max_users}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Resident Users</div>
+                          </div>
+                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                              {plan.max_gates || 5}
+                            </div>
+                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Gates</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Features Matrix Checklist */}
+                      <div style={{ flex: 1, marginBottom: '24px' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '10px' }}>
+                          Included Features & Modules
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                          {ALL_POSSIBLE_FEATURES.map((featKey) => {
+                            const isIncluded = Array.isArray(plan.features) && plan.features.includes(featKey);
+                            return (
+                              <div
+                                key={featKey}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '9px',
+                                  fontSize: '0.84rem',
+                                  color: isIncluded ? 'var(--color-dark-brown)' : '#B8ACA2',
+                                }}
+                              >
+                                {isIncluded ? (
+                                  <CheckCircle2 size={16} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
+                                ) : (
+                                  <div style={{ width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <span style={{ width: '7px', height: '2px', background: '#D6C8BC', borderRadius: '1px' }} />
+                                  </div>
+                                )}
+                                <span style={{ fontWeight: isIncluded ? 600 : 400 }}>
+                                  {FEATURE_LABELS[featKey] || featKey}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* CTA Button */}
+                      <button
+                        type="button"
+                        onClick={() => navigate('/login')}
+                        className={`btn ${isPopular ? 'btn-primary' : 'btn-outline'}`}
+                        style={{
+                          width: '100%',
+                          padding: '12px 18px',
+                          fontSize: '0.9rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '8px',
+                          borderRadius: 'var(--radius-md)',
+                        }}
+                      >
+                        <span>Start {plan.trial_days || 14}-Day Free Trial</span>
+                        <ArrowRight size={16} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Enterprise Support Banner */}
+            <div
+              style={{
+                marginTop: '32px',
+                padding: '20px 24px',
+                borderRadius: 'var(--radius-lg)',
+                background: '#FAF5ED',
+                border: '1px solid var(--border-card)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '42px',
+                    height: '42px',
+                    borderRadius: '10px',
+                    background: 'var(--color-clay)',
+                    color: '#fff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Building2 size={22} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                    Need more than 350 residential units or multi-society township governance?
+                  </div>
+                  <div style={{ fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+                    We offer tailored dedicated database setups, high-security custom gateways, and white-labeled deployment.
+                  </div>
+                </div>
+              </div>
+
+              <a
+                href="mailto:support@jeenweb.com?subject=Inquiry:%20Enterprise%20Society%20Deployment"
+                className="btn btn-outline"
+                style={{ fontSize: '0.85rem', padding: '9px 18px', textDecoration: 'none' }}
+              >
+                <Mail size={15} />
+                <span>Talk to Enterprise Team</span>
+              </a>
+            </div>
+          </section>
+
+          {/* ========================================================
               MOBILE APP SHOWCASE SECTION (Android & iOS)
               Reference: https://ind.adda.io/
               ======================================================== */}
@@ -724,7 +1194,7 @@ export default function LandingPage() {
                 gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
                 alignItems: 'center',
                 gap: '40px',
-                padding: '44px 40px',
+                padding: '36px 20px',
               }}
             >
               {/* Left Column: Details & Store Badges */}
@@ -1040,9 +1510,9 @@ export default function LandingPage() {
       >
         <div
           style={{
-            maxWidth: '1240px',
+            maxWidth: '1440px',
             margin: '0 auto',
-            padding: '64px 24px 32px',
+            padding: '52px 16px 28px',
           }}
         >
           {/* 5-Column Grid */}
@@ -1103,6 +1573,7 @@ export default function LandingPage() {
                 Platform Solutions
               </h4>
               <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.88rem' }}>
+                <li><a href="#subscription-plans" style={{ color: '#E8CA9D', textDecoration: 'none', fontWeight: 700 }}>💎 Subscription Plans & Tiers</a></li>
                 <li><a href="#solutions" style={{ color: '#D6C2A1', textDecoration: 'none' }}>Resident Super App</a></li>
                 <li><a href="#solutions" style={{ color: '#D6C2A1', textDecoration: 'none' }}>Gatekeeper Security Console</a></li>
                 <li><a href="#solutions" style={{ color: '#D6C2A1', textDecoration: 'none' }}>Society Administration ERP</a></li>

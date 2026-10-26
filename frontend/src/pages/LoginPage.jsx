@@ -22,6 +22,15 @@ import { authApi } from '../api/authApi';
 // Fallback demo accounts if API hasn't resolved
 const FALLBACK_USERS = [
   {
+    id: 658,
+    full_name: 'Platform Super Administrator',
+    phone: '9900000000',
+    role: ROLES.SUPER_ADMIN,
+    password: '123456',
+    flat_number: 'Platform HQ',
+    society_name: 'Global Platform',
+  },
+  {
     id: 1,
     full_name: 'System Administrator',
     phone: '9800000000',

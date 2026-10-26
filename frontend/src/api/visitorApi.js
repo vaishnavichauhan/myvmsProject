@@ -39,4 +39,8 @@ export const visitorApi = {
   // Search homes with residents and permission summary
   searchHomes: (q) =>
     apiClient.get('/security/gate/search-homes', { params: { q } }),
+
+  // Quick lookup returning visitor by phone or gate pass number
+  lookupVisitor: (query) =>
+    apiClient.get('/visitors/lookup', { params: { query } }),
 };

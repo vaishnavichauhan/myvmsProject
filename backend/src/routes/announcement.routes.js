@@ -1,11 +1,12 @@
 const { Router } = require('express');
 const AnnouncementController = require('../controllers/announcement.controller');
 const { authMiddleware } = require('../middlewares/auth.middleware');
+const { requireFeature } = require('../middlewares/entitlement.middleware');
 
 const router = Router();
 
-// Authentication required
-router.use(authMiddleware);
+// Authentication and ANNOUNCEMENTS module entitlement required
+router.use(authMiddleware, requireFeature('ANNOUNCEMENTS'));
 
 // View announcements (All roles: Residents, Owners, Tenants, Committee Members, Security, Admins)
 router.get('/', AnnouncementController.getAll);

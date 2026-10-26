@@ -440,3 +440,25 @@ select option:checked {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-clay);
 }
+
+/* Print styles for Visitor Gate Pass */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .gate-pass-printable, .gate-pass-printable * {
+    visibility: visible;
+  }
+  .gate-pass-printable {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    max-width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .gate-pass-no-print {
+    display: none !important;
+  }
+}

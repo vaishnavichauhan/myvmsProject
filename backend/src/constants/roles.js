@@ -2,6 +2,7 @@
  * User roles definition for MYVMS Residential Society Management System.
  */
 const ROLES = Object.freeze({
+  SUPER_ADMIN: 'SUPER_ADMIN',
   ADMIN: 'ADMIN',
   OWNER: 'OWNER',
   TENANT: 'TENANT',

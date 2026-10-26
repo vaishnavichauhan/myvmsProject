@@ -188,11 +188,83 @@ class MaintenanceRepository {
     }
   }
 
+  /**
+   * Helper to determine which monthly periods are covered by a given billing period and cycle
+   */
+  static getCoveredMonthsForPeriod(period, cycle) {
+    if (!period) return [];
+    const qMatch = String(period).match(/Q([1-4])[-_\s]*(\d{4})/i);
+    if (qMatch) {
+      const q = parseInt(qMatch[1], 10);
+      const y = qMatch[2];
+      const map = {
+        1: [`${y}-01`, `${y}-02`, `${y}-03`],
+        2: [`${y}-04`, `${y}-05`, `${y}-06`],
+        3: [`${y}-07`, `${y}-08`, `${y}-09`],
+        4: [`${y}-10`, `${y}-11`, `${y}-12`],
+      };
+      return map[q] || [];
+    }
+    const hMatch = String(period).match(/H([1-2])[-_\s]*(\d{4})/i);
+    if (hMatch) {
+      const h = parseInt(hMatch[1], 10);
+      const y = hMatch[2];
+      if (h === 1) return [`${y}-01`, `${y}-02`, `${y}-03`, `${y}-04`, `${y}-05`, `${y}-06`];
+      return [`${y}-07`, `${y}-08`, `${y}-09`, `${y}-10`, `${y}-11`, `${y}-12`];
+    }
+    if (cycle === 'YEARLY' || String(period).startsWith('FY-')) {
+      const y = String(period).replace(/\D/g, '') || new Date().getFullYear();
+      const months = [];
+      for (let i = 1; i <= 12; i++) {
+        months.push(`${y}-${String(i).padStart(2, '0')}`);
+      }
+      return months;
+    }
+    const mMatch = String(period).match(/(\d{4})[-_](\d{1,2})/);
+    if (mMatch) {
+      const y = mMatch[1];
+      const m = String(parseInt(mMatch[2], 10)).padStart(2, '0');
+      return [`${y}-${m}`];
+    }
+    return [];
+  }
+
+  /**
+   * Reconciles overlapping bills: cleans up redundant unpaid monthly bills when an overlapping quarterly or annual bill is paid
+   */
+  static async reconcileOverlappingBills(societyId = null) {
+    try {
+      const [paidMultiBills] = await pool.query(
+        `SELECT home_id, billing_period, billing_cycle 
+         FROM maintenance_bills 
+         WHERE status = 'PAID' AND billing_cycle IN ('QUARTERLY', 'HALF_YEARLY', 'YEARLY')`
+      );
+      for (const b of paidMultiBills) {
+        const coveredMonths = this.getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
+        if (coveredMonths.length > 0) {
+          await pool.query(
+            `DELETE FROM maintenance_bills 
+             WHERE home_id = ? 
+               AND billing_cycle = 'MONTHLY' 
+               AND billing_period IN (?) 
+               AND paid_amount = 0`,
+            [b.home_id, coveredMonths]
+          );
+        }
+      }
+    } catch (err) {
+      console.error('[MaintenanceRepository.reconcileOverlappingBills] Error:', err.message);
+    }
+  }
+
   // ==========================================================================
   // 3. BILLS (INVOICES)
   // ==========================================================================
 
   static async findAllBills(societyId = null, filters = {}) {
+    // Reconcile any redundant unpaid bills before listing
+    await this.reconcileOverlappingBills(societyId);
+
     // Keep penalties and overdue statuses fresh
     await this.applyLatePenalties(societyId);
 
@@ -439,6 +511,32 @@ class MaintenanceRepository {
       ]
     );
 
+    // Clean up any overlapping UNPAID bills for this home so they do not see duplicate monthly/quarterly bills
+    if (['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(plan.billing_cycle)) {
+      const coveredMonths = MaintenanceRepository.getCoveredMonthsForPeriod(billing_period, plan.billing_cycle);
+      if (coveredMonths.length > 0) {
+        await pool.query(
+          `DELETE FROM maintenance_bills 
+           WHERE home_id = ? 
+             AND billing_cycle = 'MONTHLY' 
+             AND billing_period IN (?) 
+             AND paid_amount = 0`,
+          [resident.home_id, coveredMonths]
+        );
+      }
+    } else if (plan.billing_cycle === 'MONTHLY') {
+      const q = Math.ceil((today.getMonth() + 1) / 3);
+      const qPeriod = `Q${q}-${yyyy}`;
+      await pool.query(
+        `DELETE FROM maintenance_bills 
+         WHERE home_id = ? 
+           AND billing_cycle = 'QUARTERLY' 
+           AND billing_period = ? 
+           AND paid_amount = 0`,
+        [resident.home_id, qPeriod]
+      );
+    }
+
     return this.findBillById(res.insertId);
   }
 
@@ -487,6 +585,25 @@ class MaintenanceRepository {
       if (existingHomeIds.has(home.id)) {
         skippedCount++;
         continue;
+      }
+
+      // Check if home already has an active or paid quarterly/annual bill covering this billing period
+      if (billing_cycle === 'MONTHLY') {
+        const [coveringBills] = await pool.query(
+          `SELECT id, billing_period, billing_cycle, status 
+           FROM maintenance_bills 
+           WHERE home_id = ? 
+             AND billing_cycle IN ('QUARTERLY', 'HALF_YEARLY', 'YEARLY')
+             AND status IN ('PAID', 'PENDING')`,
+          [home.id]
+        );
+        const isCovered = coveringBills.some((cb) =>
+          MaintenanceRepository.getCoveredMonthsForPeriod(cb.billing_period, cb.billing_cycle).includes(billing_period)
+        );
+        if (isCovered) {
+          skippedCount++;
+          continue;
+        }
       }
 
       const resType = home.resident_type || 'OWNER';
@@ -642,6 +759,21 @@ class MaintenanceRepository {
          WHERE id = ?`,
         [newPaidAmount, newBalanceAmount, newStatus, bill.id]
       );
+
+      // 4. If a quarterly / half-yearly / yearly bill is paid, clean up any overlapping unpaid monthly bills for this home
+      if (newStatus === 'PAID' && ['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(bill.billing_cycle)) {
+        const coveredMonths = MaintenanceRepository.getCoveredMonthsForPeriod(bill.billing_period, bill.billing_cycle);
+        if (coveredMonths.length > 0) {
+          await connection.query(
+            `DELETE FROM maintenance_bills 
+             WHERE home_id = ? 
+               AND billing_cycle = 'MONTHLY' 
+               AND billing_period IN (?) 
+               AND paid_amount = 0`,
+            [bill.home_id, coveredMonths]
+          );
+        }
+      }
 
       await connection.commit();
 
