@@ -53,23 +53,6 @@ export default function SuperAdminDashboardPage() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span
-              style={{
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                color: '#8B5CF6',
-                background: 'rgba(139, 92, 246, 0.12)',
-                padding: '3px 8px',
-                borderRadius: '6px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em',
-              }}
-            >
-              Super Admin Console
-            </span>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>Multi-Society Platform Operations</span>
-          </div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-main)', marginTop: '4px' }}>
             Platform Overview & Analytics
           </h1>
@@ -93,7 +76,7 @@ export default function SuperAdminDashboardPage() {
               cursor: 'pointer',
             }}
           >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
           <button
             onClick={() => navigate('/super-admin/societies?action=create')}
@@ -370,14 +353,14 @@ export default function SuperAdminDashboardPage() {
                           soc.subscription_status === 'ACTIVE'
                             ? 'rgba(16, 185, 129, 0.15)'
                             : soc.subscription_status === 'TRIAL'
-                            ? 'rgba(245, 158, 11, 0.15)'
-                            : 'rgba(239, 68, 68, 0.15)',
+                              ? 'rgba(245, 158, 11, 0.15)'
+                              : 'rgba(239, 68, 68, 0.15)',
                         color:
                           soc.subscription_status === 'ACTIVE'
                             ? '#10b981'
                             : soc.subscription_status === 'TRIAL'
-                            ? '#f59e0b'
-                            : '#ef4444',
+                              ? '#f59e0b'
+                              : '#ef4444',
                         textTransform: 'uppercase',
                       }}
                     >

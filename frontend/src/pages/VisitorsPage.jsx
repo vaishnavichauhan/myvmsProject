@@ -23,6 +23,11 @@ import {
   Copy,
   CheckCircle,
   Ticket,
+  Phone,
+  PhoneCall,
+  AlertTriangle,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import { visitorApi } from '../api/visitorApi';
 import { securityApi } from '../api/securityApi';
@@ -83,19 +88,6 @@ export const GATE_VISIT_TYPES = [
     border: '#8b5cf6',
     glow: 'rgba(139, 92, 246, 0.25)',
     glowHover: 'rgba(139, 92, 246, 0.45)',
-  },
-  {
-    id: 'VEHICLE',
-    modal: 'VEHICLE',
-    label: 'Vehicle',
-    sublabel: 'Barrier Entry',
-    image: '/images/vehicle.png',
-    color: '#3b82f6',
-    gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-    circleBg: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15) 0%, rgba(29, 78, 216, 0.15) 100%)',
-    border: '#3b82f6',
-    glow: 'rgba(59, 130, 246, 0.25)',
-    glowHover: 'rgba(59, 130, 246, 0.45)',
   },
 ];
 
@@ -278,6 +270,219 @@ export default function VisitorsPage() {
   const showNotice = (type, message) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Live Home Permission & Resident Phone Look-up for Entry Modals
+  const [modalPermCheck, setModalPermCheck] = useState({ loading: false, data: null });
+
+  const currentModalHomeId =
+    activeModal === 'VISITOR' ? visitorForm.home_id :
+    activeModal === 'COURIER' ? courierForm.home_id :
+    activeModal === 'DELIVERY' ? deliveryForm.home_id :
+    activeModal === 'VEHICLE' ? vehicleForm.home_id : null;
+
+  useEffect(() => {
+    if (!activeModal || !currentModalHomeId) {
+      setModalPermCheck({ loading: false, data: null });
+      return;
+    }
+    let isMounted = true;
+    setModalPermCheck((prev) => ({ ...prev, loading: true }));
+    visitorApi.checkHomePermission(currentModalHomeId, { visit_type: activeModal })
+      .then((res) => {
+        if (isMounted) {
+          setModalPermCheck({ loading: false, data: res.data });
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setModalPermCheck({ loading: false, data: null });
+        }
+      });
+    return () => { isMounted = false; };
+  }, [activeModal, currentModalHomeId]);
+
+  const renderModalPermissionBox = () => {
+    if (!modalPermCheck.data) return null;
+    const isAllowed = modalPermCheck.data.permission_allowed;
+    const primaryContact = modalPermCheck.data.primary_contact;
+
+    return (
+      <div
+        style={{
+          borderRadius: '12px',
+          padding: '12px 14px',
+          background: isAllowed ? 'rgba(16, 185, 129, 0.08)' : '#FEF2F2',
+          border: isAllowed ? '1.5px solid rgba(16, 185, 129, 0.35)' : '1.5px solid #FCA5A5',
+          marginTop: '6px',
+          boxShadow: isAllowed ? 'none' : '0 3px 10px rgba(239, 68, 68, 0.1)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {isAllowed ? (
+              <CheckCircle2 size={17} color="#10b981" />
+            ) : (
+              <AlertTriangle size={17} color="#dc2626" />
+            )}
+            <span
+              style={{
+                fontWeight: 800,
+                fontSize: '0.84rem',
+                color: isAllowed ? '#065f46' : '#991B1B',
+              }}
+            >
+              {isAllowed
+                ? `Gate Permission: ALLOWED for Home ${modalPermCheck.data.home?.home_number}`
+                : `Permission Required for Home ${modalPermCheck.data.home?.home_number}!`}
+            </span>
+          </div>
+
+          <span
+            style={{
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              padding: '2px 8px',
+              borderRadius: '12px',
+              background: isAllowed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+              color: isAllowed ? '#059669' : '#dc2626',
+            }}
+          >
+            {isAllowed ? 'DIRECT ENTRY' : 'REQUIRES CONTACT'}
+          </span>
+        </div>
+
+        {!isAllowed && (
+          <>
+            <p style={{ fontSize: '0.78rem', color: '#7F1D1D', margin: '4px 0 0 0' }}>
+              Home settings restrict {activeModal} entry. Security must contact the Home Owner or Tenant below for approval:
+            </p>
+
+            {primaryContact && (
+              <div
+                style={{
+                  marginTop: '8px',
+                  background: '#FFFFFF',
+                  borderRadius: '8px',
+                  border: '1.5px solid #FCA5A5',
+                  padding: '10px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ fontWeight: 800, fontSize: '0.88rem', color: '#111827' }}>
+                      {primaryContact.name}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        color: '#dc2626',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        padding: '1px 6px',
+                        borderRadius: '4px',
+                      }}
+                    >
+                      {primaryContact.role === 'OWNER' ? 'Home Owner' : 'Home Tenant'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#B91C1C', fontWeight: 700, marginTop: '3px' }}>
+                    📞 Phone: {primaryContact.phone || 'Phone Not Available'}
+                  </div>
+                </div>
+
+                {primaryContact.phone && (() => {
+                  const rawPhone = String(primaryContact.phone).replace(/\D/g, '');
+                  const waNumber = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+                  const visitLabel = activeModal ? String(activeModal).toLowerCase() : 'visitor';
+                  const homeNum = modalPermCheck.data.home?.home_number || '';
+                  const msgText = `Hello ${primaryContact.name}, Security at the gate regarding a ${visitLabel} for Home ${homeNum}. Please provide permission.`;
+
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      {/* Call Button */}
+                      <a
+                        href={`tel:${primaryContact.phone}`}
+                        className="btn"
+                        style={{
+                          background: '#DC2626',
+                          color: '#FFFFFF',
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          textDecoration: 'none',
+                          boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)',
+                        }}
+                        title={`Call ${primaryContact.name}`}
+                      >
+                        <PhoneCall size={12} />
+                        <span>Call</span>
+                      </a>
+
+                      {/* WhatsApp Chat Button */}
+                      <a
+                        href={`https://wa.me/${waNumber}?text=${encodeURIComponent(msgText)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn"
+                        style={{
+                          background: '#25D366',
+                          color: '#FFFFFF',
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          textDecoration: 'none',
+                          boxShadow: '0 2px 6px rgba(37, 211, 102, 0.25)',
+                        }}
+                        title={`Chat on WhatsApp with ${primaryContact.name}`}
+                      >
+                        <MessageSquare size={12} />
+                        <span>Chat</span>
+                      </a>
+
+                      {/* SMS Button */}
+                      <a
+                        href={`sms:${primaryContact.phone}?body=${encodeURIComponent(msgText)}`}
+                        className="btn"
+                        style={{
+                          background: '#4B5563',
+                          color: '#FFFFFF',
+                          fontSize: '0.76rem',
+                          fontWeight: 800,
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          textDecoration: 'none',
+                        }}
+                        title={`Send SMS to ${primaryContact.name}`}
+                      >
+                        <Send size={12} />
+                        <span>SMS</span>
+                      </a>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
   };
 
   useEffect(() => {
@@ -1852,6 +2057,8 @@ export default function VisitorsPage() {
                 />
               </div>
 
+              {renderModalPermissionBox()}
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '11px', background: '#06b6d4', borderColor: '#06b6d4', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                   <Ticket size={16} />
@@ -2234,6 +2441,8 @@ export default function VisitorsPage() {
                 />
               </div>
 
+              {renderModalPermissionBox()}
+
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '10px', background: '#f59e0b', borderColor: '#f59e0b' }}>
                   Log Courier at Gate
@@ -2329,6 +2538,8 @@ export default function VisitorsPage() {
                   style={{ width: '100%', padding: '10px 12px', background: '#FFFFFF', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-sm)', color: 'var(--color-dark-brown)', marginTop: '4px' }}
                 />
               </div>
+
+              {renderModalPermissionBox()}
 
               <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button type="submit" className="btn btn-primary" style={{ flex: 1, padding: '10px', background: '#10b981', borderColor: '#10b981' }}>

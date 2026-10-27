@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Briefcase,
   Plus,
@@ -24,6 +24,10 @@ import {
   Zap,
   Utensils,
   BadgeCheck,
+  Camera,
+  Upload,
+  RotateCw,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { workerApi } from '../api/workerApi';
 import { societyApi } from '../api/societyApi';
@@ -122,6 +126,412 @@ const WORKER_TYPES = [
   },
 ];
 
+/**
+ * Reusable Photo Camera & Upload Picker with live webcam snapshot and preview
+ */
+function PhotoCameraPicker({ value, onChange, label = 'Helper Photo / Camera (Optional)' }) {
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState(null);
+  const [facingMode, setFacingMode] = useState('user');
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const startCamera = async (mode = facingMode) => {
+    setCameraError(null);
+    setIsCameraActive(true);
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: mode, width: { ideal: 640 }, height: { ideal: 640 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+    } catch (err) {
+      console.warn('Camera stream error:', err);
+      setCameraError('Camera access unavailable. You can upload an image file instead.');
+      if (fileInputRef.current) {
+        fileInputRef.current.click();
+      }
+    }
+  };
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setIsCameraActive(false);
+    setCameraError(null);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    const size = Math.min(video.videoWidth || 480, video.videoHeight || 480);
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    const startX = ((video.videoWidth || size) - size) / 2;
+    const startY = ((video.videoHeight || size) - size) / 2;
+    ctx.drawImage(video, startX, startY, size, size, 0, 0, size, size);
+
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    onChange(dataUrl);
+    stopCamera();
+  };
+
+  const toggleFacingMode = () => {
+    const nextMode = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(nextMode);
+    startCamera(nextMode);
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 600;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        onChange(dataUrl);
+      };
+      img.src = loadEvent.target.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>{label}</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Optional</span>
+      </label>
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={handleFileUpload}
+      />
+
+      {isCameraActive ? (
+        /* LIVE CAMERA VIEWPORT */
+        <div
+          style={{
+            position: 'relative',
+            borderRadius: 'var(--radius-md)',
+            overflow: 'hidden',
+            background: '#090D16',
+            border: '2px solid var(--accent-cyan)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            padding: '10px',
+          }}
+        >
+          <div style={{ position: 'relative', width: '100%', maxWidth: '280px', height: '220px', overflow: 'hidden', borderRadius: '12px', background: '#000' }}>
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                transform: facingMode === 'user' ? 'scaleX(-1)' : 'none',
+              }}
+            />
+            {/* Guide overlay */}
+            <div
+              style={{
+                position: 'absolute',
+                inset: '12px',
+                border: '2px dashed rgba(255,255,255,0.75)',
+                borderRadius: '50%',
+                pointerEvents: 'none',
+              }}
+            />
+          </div>
+
+          {cameraError && (
+            <div style={{ color: '#fb7185', fontSize: '0.75rem', marginTop: '6px', textAlign: 'center' }}>
+              {cameraError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '10px' }}>
+            <button
+              type="button"
+              onClick={toggleFacingMode}
+              title="Flip camera"
+              style={{
+                background: 'rgba(255,255,255,0.18)',
+                border: 'none',
+                color: '#fff',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '0.75rem',
+              }}
+            >
+              <RotateCw size={13} /> Flip
+            </button>
+
+            <button
+              type="button"
+              onClick={capturePhoto}
+              style={{
+                background: '#10B981',
+                border: 'none',
+                color: '#fff',
+                fontWeight: 700,
+                padding: '8px 18px',
+                borderRadius: '24px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '0.82rem',
+                boxShadow: '0 4px 12px rgba(16,185,129,0.4)',
+              }}
+            >
+              <Camera size={15} /> Snap Photo
+            </button>
+
+            <button
+              type="button"
+              onClick={stopCamera}
+              style={{
+                background: 'rgba(244,63,94,0.18)',
+                border: 'none',
+                color: '#fb7185',
+                padding: '7px 12px',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                fontSize: '0.75rem',
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : value ? (
+        /* PHOTO PREVIEW BOX */
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '14px',
+            background: 'var(--bg-tertiary)',
+            padding: '10px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border-card)',
+          }}
+        >
+          <div
+            style={{
+              width: '64px',
+              height: '64px',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              border: '2px solid var(--primary)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+              flexShrink: 0,
+            }}
+          >
+            <img src={value} alt="Helper Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#10B981', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <CheckCircle2 size={14} /> Photo Added
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Snapshot ready. You can retake with camera or upload a new one.
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => startCamera()}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-card)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.72rem',
+                  color: 'var(--color-dark-brown)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Camera size={12} /> Retake
+              </button>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  background: 'transparent',
+                  border: '1px solid var(--border-card)',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  fontSize: '0.72rem',
+                  color: 'var(--color-dark-brown)',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Upload size={12} /> Upload
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange('')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '4px 8px',
+                  fontSize: '0.72rem',
+                  color: '#fb7185',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                }}
+              >
+                <Trash2 size={12} /> Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* EMPTY STATE / CHOOSE PHOTO OR CAMERA */
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 14px',
+            background: 'var(--bg-tertiary)',
+            border: '1px dashed var(--border-card)',
+            borderRadius: 'var(--radius-md)',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: 'rgba(196, 154, 108, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--color-clay)',
+              }}
+            >
+              <Camera size={18} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>No Photo Attached</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Take a camera snapshot or upload</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => startCamera()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 12px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+                border: '1px solid var(--accent-cyan)',
+                background: 'rgba(6, 182, 212, 0.12)',
+                color: '#0891b2',
+                cursor: 'pointer',
+              }}
+            >
+              <Camera size={13} /> Camera
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '6px 12px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                borderRadius: '8px',
+                border: '1px solid var(--border-card)',
+                background: 'var(--color-white)',
+                color: 'var(--color-dark-brown)',
+                cursor: 'pointer',
+              }}
+            >
+              <Upload size={13} /> Upload
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkersPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === 'ADMIN';
@@ -159,6 +569,7 @@ export default function WorkersPage() {
     worker_type: 'GARDENER',
     address: '',
     photo_url: '',
+    aadhar_number: '',
     expected_time_in: '08:00',
     expected_time_out: '19:00',
   });
@@ -171,6 +582,7 @@ export default function WorkersPage() {
     society_id: '',
     address: '',
     photo_url: '',
+    aadhar_number: '',
     police_verified: true,
   });
 
@@ -181,6 +593,8 @@ export default function WorkersPage() {
     name: '',
     phone: '',
     address: '',
+    photo_url: '',
+    aadhar_number: '',
     worker_type: 'GARDENER',
   });
 
@@ -285,6 +699,7 @@ export default function WorkersPage() {
         society_id: targetSocId,
         address: '',
         photo_url: '',
+        aadhar_number: '',
         police_verified: true,
       });
       fetchWorkers(selectedSocietyId);
@@ -338,6 +753,7 @@ export default function WorkersPage() {
         worker_type: 'GARDENER',
         address: '',
         photo_url: '',
+        aadhar_number: '',
         expected_time_in: '08:00',
         expected_time_out: '19:00',
       });
@@ -421,6 +837,7 @@ export default function WorkersPage() {
       w.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       w.phone?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       w.pass_code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (w.aadhar_number && w.aadhar_number.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (w.all_assigned_homes && w.all_assigned_homes.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (w.society_name && w.society_name.toLowerCase().includes(searchTerm.toLowerCase()));
 
@@ -994,6 +1411,13 @@ export default function WorkersPage() {
                     <span><strong>Phone:</strong> {w.phone || 'N/A'}</span>
                   </div>
 
+                  {w.aadhar_number && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <ShieldCheck size={14} color="#0284c7" />
+                      <span><strong>AdharCard No:</strong> {w.aadhar_number}</span>
+                    </div>
+                  )}
+
                   {(w.expected_time_in || w.expected_time_out) && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Clock size={14} color="#d97706" />
@@ -1028,6 +1452,39 @@ export default function WorkersPage() {
                     {/* If resident or assignment exists */}
                     {w.assignment_id && (
                       <>
+                        <button
+                          onClick={() => {
+                            setSelectedAssignment(w);
+                            setEditForm({
+                              expected_time_in: w.expected_time_in || '08:00',
+                              expected_time_out: w.expected_time_out || '19:00',
+                              status: w.assignment_status || 'ACTIVE',
+                              name: w.full_name || '',
+                              phone: w.phone || '',
+                              address: w.address || '',
+                              photo_url: w.photo_url || '',
+                              aadhar_number: w.aadhar_number || '',
+                              worker_type: w.worker_type || 'GARDENER',
+                            });
+                            setShowEditModal(true);
+                          }}
+                          className="btn btn-outline"
+                          style={{
+                            flex: 1,
+                            padding: '8px 12px',
+                            fontSize: '0.8rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                            border: '1px solid var(--border-card)',
+                          }}
+                          title="Edit worker details & duty timings"
+                        >
+                          <Edit2 size={14} />
+                          <span>Edit</span>
+                        </button>
                         <button
                           id={`btn-delete-worker-${w.assignment_id || w.worker_id || w.id}`}
                           onClick={() => handleRemoveWorkerFromHome(w)}
@@ -1115,17 +1572,48 @@ export default function WorkersPage() {
             position: 'fixed',
             inset: 0,
             background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(4px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 100,
-            padding: '20px',
+            zIndex: 1000,
+            padding: '24px 16px',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
           }}
         >
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '520px', padding: '28px', background: 'var(--bg-secondary)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '540px',
+              maxHeight: 'min(90vh, 860px)',
+              display: 'flex',
+              flexDirection: 'column',
+              background: 'var(--bg-secondary)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+              border: '1px solid var(--border-card)',
+              overflow: 'hidden',
+              margin: 'auto',
+            }}
+          >
+            {/* Sticky Header: Never gets cut off */}
+            <div
+              style={{
+                padding: '20px 24px 16px',
+                borderBottom: '1px solid var(--border-subtle)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0,
+                background: 'var(--bg-secondary)',
+              }}
+            >
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-heading)' }}>
                   {isAdmin ? 'Register Society Helper' : 'Add Helper to My Home'}
                 </h2>
                 <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
@@ -1135,13 +1623,31 @@ export default function WorkersPage() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowAddModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '4px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
               >
                 <X size={20} />
               </button>
             </div>
 
+            {/* Scrollable Form Body */}
+            <div
+              style={{
+                padding: '20px 24px 24px',
+                overflowY: 'auto',
+                flex: 1,
+              }}
+            >
             {/* ======================================================== */}
             {/* VIEW A: ADMIN REGISTERS SOCIETY WORKER                    */}
             {/* ======================================================== */}
@@ -1202,6 +1708,31 @@ export default function WorkersPage() {
                     onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, phone: e.target.value })}
                   />
                 </div>
+
+                <div className="input-group">
+                  <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>AdharCard No (Optional)</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>12 Digits (UIDAI)</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    placeholder="e.g. 1234 5678 9012"
+                    maxLength={16}
+                    value={adminWorkerForm.aadhar_number || ''}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^\d\s]/g, '');
+                      setAdminWorkerForm({ ...adminWorkerForm, aadhar_number: val });
+                    }}
+                  />
+                </div>
+
+                {/* Photo / Camera Option */}
+                <PhotoCameraPicker
+                  value={adminWorkerForm.photo_url}
+                  onChange={(url) => setAdminWorkerForm({ ...adminWorkerForm, photo_url: url })}
+                  label="Helper Photo / Camera (Optional)"
+                />
 
                 <div className="input-group">
                   <label className="input-label">Address / Local Details (Optional)</label>
@@ -1466,6 +1997,31 @@ export default function WorkersPage() {
                     </div>
 
                     <div className="input-group">
+                      <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>AdharCard No (Optional)</span>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>12 Digits (UIDAI)</span>
+                      </label>
+                      <input
+                        type="text"
+                        className="input-field"
+                        placeholder="e.g. 1234 5678 9012"
+                        maxLength={16}
+                        value={newWorkerForm.aadhar_number || ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^\d\s]/g, '');
+                          setNewWorkerForm({ ...newWorkerForm, aadhar_number: val });
+                        }}
+                      />
+                    </div>
+
+                    {/* Photo / Camera Option */}
+                    <PhotoCameraPicker
+                      value={newWorkerForm.photo_url}
+                      onChange={(url) => setNewWorkerForm({ ...newWorkerForm, photo_url: url })}
+                      label="Helper Photo / Camera (Optional)"
+                    />
+
+                    <div className="input-group">
                       <label className="input-label">Address (Optional)</label>
                       <input
                         type="text"
@@ -1501,6 +2057,7 @@ export default function WorkersPage() {
                 )}
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
@@ -1514,14 +2071,33 @@ export default function WorkersPage() {
             position: 'fixed',
             inset: 0,
             background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(4px)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 100,
-            padding: '20px',
+            zIndex: 1000,
+            padding: '24px 16px',
+            overflowY: 'auto',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEditModal(false);
           }}
         >
-          <div className="glass-panel" style={{ width: '100%', maxWidth: '440px', padding: '24px', background: 'var(--bg-secondary)' }}>
+          <div
+            className="glass-panel"
+            style={{
+              width: '100%',
+              maxWidth: '460px',
+              maxHeight: 'min(90vh, 760px)',
+              overflowY: 'auto',
+              padding: '24px',
+              background: 'var(--bg-secondary)',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+              border: '1px solid var(--border-card)',
+              margin: 'auto',
+            }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Edit Timings: {selectedAssignment.full_name}</h3>
               <button
@@ -1554,6 +2130,31 @@ export default function WorkersPage() {
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                 />
               </div>
+
+              <div className="input-group">
+                <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>AdharCard No (Optional)</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>12 Digits (UIDAI)</span>
+                </label>
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder="e.g. 1234 5678 9012"
+                  maxLength={16}
+                  value={editForm.aadhar_number || ''}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^\d\s]/g, '');
+                    setEditForm({ ...editForm, aadhar_number: val });
+                  }}
+                />
+              </div>
+
+              {/* Photo / Camera Option */}
+              <PhotoCameraPicker
+                value={editForm.photo_url}
+                onChange={(url) => setEditForm({ ...editForm, photo_url: url })}
+                label="Helper Photo / Camera (Optional)"
+              />
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div className="input-group">

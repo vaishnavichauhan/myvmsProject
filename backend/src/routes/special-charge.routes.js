@@ -14,6 +14,12 @@ router.get('/stats', SpecialChargeController.getStats);
 // Resident specific charges
 router.get('/my-charges', SpecialChargeController.getResidentCharges);
 
+// Payments & Receipts (MUST be before /:id)
+router.get('/payments', SpecialChargeController.getAllPayments);
+router.post('/payments', SpecialChargeController.recordPayment);
+router.post('/payments/:id/approve', SpecialChargeController.approvePayment);
+router.post('/payments/:id/reject', SpecialChargeController.rejectPayment);
+
 // Special charges CRUD
 router.get('/', SpecialChargeController.getAllCharges);
 router.post('/', SpecialChargeController.createCharge);
@@ -23,9 +29,5 @@ router.delete('/:id', SpecialChargeController.deleteCharge);
 
 // Home assignments for a charge
 router.get('/:id/assignments', SpecialChargeController.getAssignmentsByCharge);
-
-// Payments & Receipts
-router.get('/payments', SpecialChargeController.getAllPayments);
-router.post('/payments', SpecialChargeController.recordPayment);
 
 module.exports = router;

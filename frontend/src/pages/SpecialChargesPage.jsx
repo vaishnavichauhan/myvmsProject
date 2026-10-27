@@ -17,11 +17,13 @@ import {
   TrendingUp,
   AlertCircle,
   X,
+  XCircle,
   Edit2,
   Trash2,
   Layers,
   ArrowUpRight,
   ShieldCheck,
+  Shield,
   Award,
   Sparkles,
   Wrench,
@@ -91,9 +93,6 @@ const CATEGORY_MAP = {
 export default function SpecialChargesPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === ROLES.ADMIN;
-  const isCommitteeMember = user?.role === ROLES.COMMITTEE_MEMBER;
-  const isResident = [ROLES.OWNER, ROLES.TENANT, ROLES.FAMILY_MEMBER].includes(user?.role);
-  const canCreate = isAdmin || isCommitteeMember;
 
   // Active Society State
   const [societies, setSocieties] = useState([]);
@@ -102,6 +101,11 @@ export default function SpecialChargesPage() {
   // Committee List for committee-wise tagging
   const [committees, setCommittees] = useState([]);
   const [userCommittees, setUserCommittees] = useState([]);
+
+  // Committee member & resident flags (checks both user.role and userCommittees membership)
+  const isCommitteeMember = user?.role === ROLES.COMMITTEE_MEMBER || userCommittees.length > 0;
+  const isResident = [ROLES.OWNER, ROLES.TENANT, ROLES.FAMILY_MEMBER].includes(user?.role);
+  const canCreate = isAdmin || isCommitteeMember;
 
   // Tab State: 'charges' | 'my-charges' | 'payments'
   const [activeTab, setActiveTab] = useState(isResident && !isCommitteeMember ? 'my-charges' : 'charges');
@@ -118,7 +122,7 @@ export default function SpecialChargesPage() {
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('ALL');
+  const [creatorFilter, setCreatorFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [committeeFilter, setCommitteeFilter] = useState('ALL');
 
@@ -126,7 +130,7 @@ export default function SpecialChargesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createFormData, setCreateFormData] = useState({
     title: '',
-    category: 'REPAIR',
+    category: 'SPECIAL_CHARGE',
     amount: '',
     due_date: '',
     description: '',
@@ -157,17 +161,24 @@ export default function SpecialChargesPage() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState(null);
 
+  // Admin Verification & Approval Modal
+  const [showVerifyModal, setShowVerifyModal] = useState(false);
+  const [selectedPaymentForVerify, setSelectedPaymentForVerify] = useState(null);
+  const [verifyRemarks, setVerifyRemarks] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
+
   // Load Initial Societies & Committees
   useEffect(() => {
     fetchInitialMeta();
   }, []);
 
-  // Reload data when active society changes
+  // Reload data when active society changes or permissions resolve
   useEffect(() => {
     if (selectedSocietyId) {
       loadData();
     }
-  }, [selectedSocietyId]);
+  }, [selectedSocietyId, canCreate]);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -199,21 +210,27 @@ export default function SpecialChargesPage() {
       const commList = Array.isArray(rawComm) ? rawComm : (Array.isArray(rawComm?.committees) ? rawComm.committees : []);
       setCommittees(commList);
 
-      // If user is committee member, fetch their specific member info
-      if (isCommitteeMember) {
-        try {
-          const permRes = await committeeApi.checkMyPermissions();
-          const permData = permRes?.data || permRes;
-          if (permData?.committee_id) {
-            setUserCommittees([
-              {
-                id: permData.committee_id,
-                name: permData.committee_name || 'Managing Committee',
-              },
-            ]);
-          }
-        } catch (_) { }
-      }
+      // Check if logged-in user belongs to any active committee
+      try {
+        const permRes = await committeeApi.checkMyPermissions();
+        const permData = permRes?.data || permRes;
+        const uComms = permData?.userCommittees || [];
+        if (Array.isArray(uComms) && uComms.length > 0) {
+          setUserCommittees(
+            uComms.map((c) => ({
+              id: c.committee_id || c.id,
+              name: c.committee_name || c.name || 'Managing Committee',
+            }))
+          );
+        } else if (permData?.committee_id) {
+          setUserCommittees([
+            {
+              id: permData.committee_id,
+              name: permData.committee_name || 'Managing Committee',
+            },
+          ]);
+        }
+      } catch (_) { }
     } catch (e) {
       console.error('Failed to load metadata', e);
     }
@@ -275,7 +292,7 @@ export default function SpecialChargesPage() {
 
     setCreateFormData({
       title: '',
-      category: 'REPAIR',
+      category: 'SPECIAL_CHARGE',
       amount: '',
       due_date: defaultDueDate,
       description: '',
@@ -304,11 +321,22 @@ export default function SpecialChargesPage() {
 
     setActionLoading(true);
     try {
+      const activeCommitteeId = isCommitteeMember && userCommittees.length > 0
+        ? userCommittees[0].id
+        : (createFormData.committee_id || null);
+      const activeCommitteeName = isCommitteeMember && userCommittees.length > 0
+        ? userCommittees[0].name
+        : (createFormData.committee_name || null);
+
       const payload = {
-        ...createFormData,
-        society_id: Number(createFormData.society_id || selectedSocietyId || 1),
+        title: createFormData.title.trim(),
+        category: 'SPECIAL_CHARGE',
         amount: Number(createFormData.amount),
-        committee_id: createFormData.committee_id ? Number(createFormData.committee_id) : null,
+        due_date: createFormData.due_date,
+        description: createFormData.description ? createFormData.description.trim() : '',
+        society_id: Number(createFormData.society_id || selectedSocietyId || 1),
+        committee_id: activeCommitteeId ? Number(activeCommitteeId) : null,
+        committee_name: activeCommitteeName || null,
       };
 
       const res = await specialChargeApi.createCharge(payload);
@@ -351,6 +379,88 @@ export default function SpecialChargesPage() {
     setShowPaymentModal(true);
   };
 
+  // Open Admin Verification Modal
+  const handleOpenVerifyModal = (target) => {
+    let resolved = target;
+    if (target && !target.receipt_number && !target.pending_payment_id && target.id) {
+      const match = payments.find((p) => Number(p.assignment_id) === Number(target.id) && p.status === 'PENDING_APPROVAL');
+      if (match) {
+        resolved = { ...target, pending_payment_id: match.id };
+      }
+    }
+    setSelectedPaymentForVerify(resolved);
+    setVerifyRemarks('');
+    setRejectReason('');
+    setIsRejecting(false);
+    setShowVerifyModal(true);
+  };
+
+  // Admin approves payment
+  const handleApprovePayment = async () => {
+    let rawId = selectedPaymentForVerify?.pending_payment_id;
+    if (!rawId && selectedPaymentForVerify?.receipt_number) {
+      rawId = selectedPaymentForVerify.id;
+    }
+    if (!rawId && selectedPaymentForVerify?.id) {
+      const match = payments.find((p) => Number(p.assignment_id) === Number(selectedPaymentForVerify.id) && p.status === 'PENDING_APPROVAL');
+      if (match) rawId = match.id;
+    }
+    const paymentId = Number(rawId);
+    if (!paymentId || isNaN(paymentId) || paymentId <= 0) {
+      showError('No pending payment identifier found.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await specialChargeApi.approvePayment(paymentId, { remarks: verifyRemarks.trim() || undefined });
+      showToast(res?.message || 'Payment confirmed & approved successfully! Status updated to Payment Done.');
+      setShowVerifyModal(false);
+      await loadData();
+      if (selectedChargeForAssignments) {
+        handleViewAssignments(selectedChargeForAssignments);
+      }
+    } catch (err) {
+      showError(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Admin rejects payment
+  const handleRejectPayment = async () => {
+    let rawId = selectedPaymentForVerify?.pending_payment_id;
+    if (!rawId && selectedPaymentForVerify?.receipt_number) {
+      rawId = selectedPaymentForVerify.id;
+    }
+    if (!rawId && selectedPaymentForVerify?.id) {
+      const match = payments.find((p) => Number(p.assignment_id) === Number(selectedPaymentForVerify.id) && p.status === 'PENDING_APPROVAL');
+      if (match) rawId = match.id;
+    }
+    const paymentId = Number(rawId);
+    if (!paymentId || isNaN(paymentId) || paymentId <= 0) {
+      showError('No pending payment identifier found.');
+      return;
+    }
+    if (!rejectReason.trim()) {
+      showError('Please provide a reason for rejecting this payment submission.');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await specialChargeApi.rejectPayment(paymentId, { reason: rejectReason.trim() });
+      showToast(res?.message || 'Payment submission rejected. Special charge balance restored to pending.');
+      setShowVerifyModal(false);
+      await loadData();
+      if (selectedChargeForAssignments) {
+        handleViewAssignments(selectedChargeForAssignments);
+      }
+    } catch (err) {
+      showError(err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Submit Payment
   const handleRecordPayment = async (e) => {
     e.preventDefault();
@@ -369,25 +479,31 @@ export default function SpecialChargesPage() {
         remarks: paymentFormData.remarks.trim() || null,
       });
 
-      showToast(res?.message || 'Payment recorded successfully! Receipt generated.');
       setShowPaymentModal(false);
-
-      // Open receipt immediately
       const data = res?.data || res;
-      setReceiptData({
-        receipt_number: data.receiptNumber || data.receipt_number,
-        charge_title: data.chargeTitle || paymentTarget.charge_title || paymentTarget.title,
-        home_number: data.homeNumber || paymentTarget.home_number,
-        resident_name: paymentTarget.resident_name || user?.fullName || 'Resident',
-        amount: data.amount || paymentFormData.amount,
-        payment_method: data.paymentMethod || paymentFormData.payment_method,
-        transaction_reference: data.transactionReference || paymentFormData.transaction_reference,
-        payment_date: new Date().toISOString(),
-        society_name: paymentTarget.society_name || 'Society Office',
-      });
-      setShowReceiptModal(true);
+      const isPendingApproval = data.status === 'PENDING_APPROVAL';
 
-      loadData();
+      if (isPendingApproval) {
+        showToast(res?.message || 'Payment submitted successfully! Waiting for admin approval.');
+      } else {
+        showToast(res?.message || 'Payment recorded successfully! Receipt generated.');
+        // Open receipt immediately if approved
+        setReceiptData({
+          receipt_number: data.receiptNumber || data.receipt_number,
+          charge_title: data.chargeTitle || paymentTarget.charge_title || paymentTarget.title,
+          home_number: data.homeNumber || paymentTarget.home_number,
+          resident_name: paymentTarget.resident_name || user?.fullName || 'Resident',
+          amount: data.amount || paymentFormData.amount,
+          payment_method: data.paymentMethod || paymentFormData.payment_method,
+          transaction_reference: data.transactionReference || paymentFormData.transaction_reference,
+          payment_date: new Date().toISOString(),
+          society_name: paymentTarget.society_name || 'Society Office',
+          approved_by_name: data.approvedByName || null,
+        });
+        setShowReceiptModal(true);
+      }
+
+      await loadData();
       if (selectedChargeForAssignments) {
         handleViewAssignments(selectedChargeForAssignments);
       }
@@ -401,16 +517,17 @@ export default function SpecialChargesPage() {
   // Open Receipt Modal
   const handleViewReceipt = (item) => {
     setReceiptData({
-      receipt_number: item.receipt_number || `RCP-SC-${item.id}`,
-      charge_title: item.charge_title || item.title || 'Special Charge',
+      receipt_number: item.receipt_number || `RCP-SC-${item.pending_payment_id || item.id}`,
+      charge_title: item.charge_title || item.title || selectedChargeForAssignments?.title || 'Special Charge',
       home_number: item.home_number || 'N/A',
       resident_name: item.resident_name || user?.fullName || 'Resident',
       amount: item.paid_amount || item.amount,
-      payment_method: item.payment_method || 'UPI',
-      transaction_reference: item.transaction_reference || 'N/A',
-      payment_date: item.paid_date || item.payment_date || item.created_at,
-      society_name: item.society_name || 'Society Office',
-      committee_name: item.committee_name || null,
+      payment_method: item.payment_method || item.pending_payment_method || 'UPI',
+      transaction_reference: item.transaction_reference || item.pending_payment_ref || 'N/A',
+      payment_date: item.paid_date || item.payment_date || item.created_at || new Date().toISOString(),
+      society_name: item.society_name || selectedChargeForAssignments?.society_name || 'Society Office',
+      committee_name: item.committee_name || selectedChargeForAssignments?.committee_name || null,
+      approved_by_name: item.approved_by_name || null,
     });
     setShowReceiptModal(true);
   };
@@ -435,7 +552,8 @@ export default function SpecialChargesPage() {
   // Filtered Special Charges (Overview tab)
   const filteredCharges = useMemo(() => {
     return charges.filter((c) => {
-      if (categoryFilter !== 'ALL' && c.category !== categoryFilter) return false;
+      if (creatorFilter === 'ADMIN' && (c.created_by_type === 'COMMITTEE' || c.committee_name)) return false;
+      if (creatorFilter === 'COMMITTEE' && !(c.created_by_type === 'COMMITTEE' || c.committee_name)) return false;
       if (statusFilter !== 'ALL' && c.status !== statusFilter) return false;
       if (committeeFilter !== 'ALL' && String(c.committee_id) !== committeeFilter) return false;
       if (searchQuery.trim()) {
@@ -443,11 +561,12 @@ export default function SpecialChargesPage() {
         const matchTitle = c.title?.toLowerCase().includes(q);
         const matchDesc = c.description?.toLowerCase().includes(q);
         const matchComm = c.committee_name?.toLowerCase().includes(q);
-        if (!matchTitle && !matchDesc && !matchComm) return false;
+        const matchCreator = (c.creator_member_name || c.created_by_name)?.toLowerCase().includes(q);
+        if (!matchTitle && !matchDesc && !matchComm && !matchCreator) return false;
       }
       return true;
     });
-  }, [charges, categoryFilter, statusFilter, committeeFilter, searchQuery]);
+  }, [charges, creatorFilter, statusFilter, committeeFilter, searchQuery]);
 
   // Filtered Charge Assignments (in Modal)
   const filteredAssignments = useMemo(() => {
@@ -1107,12 +1226,12 @@ export default function SpecialChargesPage() {
 
           {/* Filter Dropdowns */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            {/* Category Filter */}
+            {/* Created By Filter */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600 }}>Category:</span>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)', fontWeight: 600 }}>Created By:</span>
               <select
-                value={categoryFilter}
-                onChange={(e) => setCategoryFilter(e.target.value)}
+                value={creatorFilter}
+                onChange={(e) => setCreatorFilter(e.target.value)}
                 style={{
                   padding: '6px 12px',
                   borderRadius: 'var(--radius-md)',
@@ -1125,13 +1244,9 @@ export default function SpecialChargesPage() {
                   fontWeight: 500,
                 }}
               >
-                <option value="ALL">All Categories</option>
-                <option value="REPAIR">Society Repair</option>
-                <option value="FESTIVAL">Festival Charges</option>
-                <option value="INFRASTRUCTURE">Infrastructure</option>
-                <option value="EMERGENCY">Emergency Fund</option>
-                <option value="EVENT">Event & Celebration</option>
-                <option value="OTHER">Other</option>
+                <option value="ALL">All Authorities</option>
+                <option value="ADMIN">Created by Admin</option>
+                <option value="COMMITTEE">Created by Committee</option>
               </select>
             </div>
 
@@ -1277,40 +1392,44 @@ export default function SpecialChargesPage() {
                   {/* Top Bar: Category & Status */}
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '4px 10px',
-                          borderRadius: '8px',
-                          background: catConf.bg,
-                          color: catConf.color,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          border: `1px solid ${catConf.border}`,
-                        }}
-                      >
-                        <CatIcon size={13} />
-                        <span>{catConf.label}</span>
-                      </span>
-
-                      {charge.committee_name && (
+                      {charge.created_by_type === 'COMMITTEE' || charge.committee_name ? (
                         <span
                           style={{
-                            fontSize: '0.7rem',
-                            fontWeight: 600,
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: 'rgba(196, 154, 108, 0.12)',
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            background: 'rgba(196, 154, 108, 0.15)',
                             color: 'var(--color-clay)',
-                            display: 'flex',
+                            display: 'inline-flex',
                             alignItems: 'center',
-                            gap: '4px',
+                            gap: '6px',
+                            border: '1px solid rgba(196, 154, 108, 0.35)',
                           }}
                         >
-                          <Award size={12} />
-                          <span>{charge.committee_name}</span>
+                          <Award size={13} />
+                          <span>
+                            Created by: {charge.committee_name || 'Committee'}
+                            {charge.creator_member_name ? ` — ${charge.creator_member_name}` : ''}
+                          </span>
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.74rem',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            borderRadius: '8px',
+                            background: 'rgba(107, 142, 90, 0.14)',
+                            color: 'var(--color-fern-green)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            border: '1px solid rgba(107, 142, 90, 0.35)',
+                          }}
+                        >
+                          <Shield size={13} />
+                          <span>Created by Admin</span>
                         </span>
                       )}
                     </div>
@@ -1529,9 +1648,10 @@ export default function SpecialChargesPage() {
               const catConf = CATEGORY_MAP[item.charge_category] || CATEGORY_MAP.OTHER;
               const CatIcon = catConf.icon;
               const isPaid = item.status === 'PAID';
+              const isPendingApproval = item.status === 'PENDING_APPROVAL';
               const isPartial = item.status === 'PARTIALLY_PAID';
               const dueDateObj = item.charge_due_date ? new Date(item.charge_due_date) : null;
-              const isOverdue = !isPaid && dueDateObj && dueDateObj < new Date();
+              const isOverdue = !isPaid && !isPendingApproval && dueDateObj && dueDateObj < new Date();
 
               return (
                 <div
@@ -1568,30 +1688,44 @@ export default function SpecialChargesPage() {
                     </div>
                     <div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                        <span
-                          style={{
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: '6px',
-                            background: catConf.bg,
-                            color: catConf.color,
-                          }}
-                        >
-                          {catConf.label}
-                        </span>
-                        {item.committee_name && (
+                        {item.created_by_type === 'COMMITTEE' || item.committee_name ? (
                           <span
                             style={{
-                              fontSize: '0.7rem',
-                              fontWeight: 600,
-                              padding: '2px 8px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 9px',
                               borderRadius: '6px',
-                              background: 'rgba(196, 154, 108, 0.12)',
+                              background: 'rgba(196, 154, 108, 0.15)',
                               color: 'var(--color-clay)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              border: '1px solid rgba(196, 154, 108, 0.35)',
                             }}
                           >
-                            Issued by: {item.committee_name}
+                            <Award size={12} />
+                            <span>
+                              Created by: {item.committee_name || 'Committee'}
+                              {item.creator_member_name ? ` — ${item.creator_member_name}` : ''}
+                            </span>
+                          </span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 9px',
+                              borderRadius: '6px',
+                              background: 'rgba(107, 142, 90, 0.14)',
+                              color: 'var(--color-fern-green)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '5px',
+                              border: '1px solid rgba(107, 142, 90, 0.35)',
+                            }}
+                          >
+                            <Shield size={12} />
+                            <span>Created by Admin</span>
                           </span>
                         )}
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-dim)' }}>
@@ -1647,39 +1781,120 @@ export default function SpecialChargesPage() {
                   >
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 600 }}>
-                        {isPaid ? 'PAID AMOUNT' : 'BALANCE TO PAY'}
+                        {isPaid
+                          ? 'PAID AMOUNT'
+                          : isPendingApproval
+                            ? 'SUBMITTED (PENDING APPROVAL)'
+                            : 'BALANCE TO PAY'}
                       </div>
                       <div
                         style={{
                           fontSize: '1.35rem',
                           fontWeight: 800,
-                          color: isPaid ? 'var(--color-fern-green)' : 'var(--text-heading)',
+                          color: isPaid
+                            ? 'var(--color-fern-green)'
+                            : isPendingApproval
+                              ? '#D97706'
+                              : 'var(--text-heading)',
                         }}
                       >
-                        ₹{Number(isPaid ? item.paid_amount : item.balance_amount).toLocaleString('en-IN')}
+                        ₹{Number(
+                          isPaid
+                            ? item.paid_amount
+                            : isPendingApproval
+                              ? (item.pending_payment_amount || item.amount)
+                              : item.balance_amount
+                        ).toLocaleString('en-IN')}
                       </div>
-                      <span
-                        style={{
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          display: 'inline-block',
-                          marginTop: '3px',
-                          background: isPaid
-                            ? 'rgba(107, 142, 90, 0.15)'
-                            : isPartial
+
+                      {isPendingApproval ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '3px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 10px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: 'rgba(245, 158, 11, 0.15)',
+                              color: '#D97706',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                            }}
+                          >
+                            <Clock size={12} />
+                            Admin Approve
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: '#D97706', marginTop: '2px' }}>
+                            Awaiting admin verification
+                          </span>
+                        </div>
+                      ) : isPaid ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', marginTop: '3px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 10px',
+                              borderRadius: '6px',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              background: 'rgba(107, 142, 90, 0.15)',
+                              color: 'var(--color-fern-green)',
+                              border: '1px solid rgba(107, 142, 90, 0.3)',
+                            }}
+                          >
+                            <CheckCircle2 size={12} />
+                            Payment Done
+                          </span>
+                          {item.approved_by_name && (
+                            <span style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                              Approved by Admin ({item.approved_by_name})
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '6px',
+                            display: 'inline-block',
+                            marginTop: '3px',
+                            background: isPartial
                               ? 'rgba(2, 132, 199, 0.15)'
                               : 'rgba(217, 119, 6, 0.15)',
-                          color: isPaid ? 'var(--color-fern-green)' : isPartial ? 'var(--accent-blue)' : '#D97706',
-                        }}
-                      >
-                        {item.status}
-                      </span>
+                            color: isPartial ? 'var(--accent-blue)' : '#D97706',
+                          }}
+                        >
+                          {item.status}
+                        </span>
+                      )}
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {!isPaid && (
+                      {isPendingApproval ? (
+                        <div
+                          style={{
+                            padding: '9px 18px',
+                            borderRadius: 'var(--radius-md)',
+                            background: 'rgba(245, 158, 11, 0.1)',
+                            color: '#D97706',
+                            border: '1px dashed rgba(245, 158, 11, 0.4)',
+                            fontWeight: 600,
+                            fontSize: '0.82rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                          }}
+                        >
+                          <Clock size={16} />
+                          <span>Admin Approve</span>
+                        </div>
+                      ) : !isPaid ? (
                         <button
                           onClick={() => handleOpenPayment(item)}
                           style={{
@@ -1700,9 +1915,7 @@ export default function SpecialChargesPage() {
                           <CreditCard size={15} />
                           <span>Pay Now</span>
                         </button>
-                      )}
-
-                      {isPaid && (
+                      ) : (
                         <button
                           onClick={() => handleViewReceipt(item)}
                           style={{
@@ -1770,73 +1983,154 @@ export default function SpecialChargesPage() {
                   <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-dim)' }}>AMOUNT</th>
                   <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-dim)' }}>METHOD</th>
                   <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-dim)' }}>DATE</th>
+                  <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-dim)' }}>STATUS</th>
                   <th style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-dim)', textAlign: 'right' }}>
                     ACTION
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {payments.map((p) => (
-                  <tr
-                    key={p.id}
-                    style={{
-                      borderBottom: '1px solid var(--border-subtle)',
-                      transition: 'background var(--transition-fast)',
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                  >
-                    <td style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--color-clay)' }}>
-                      {p.receipt_number}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-heading)' }}>
-                      {p.charge_title}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontWeight: 600 }}>{p.home_number}</td>
-                    <td style={{ padding: '14px 18px', color: 'var(--text-muted)' }}>{p.resident_name || 'Resident'}</td>
-                    <td style={{ padding: '14px 18px', fontWeight: 800, color: 'var(--color-fern-green)' }}>
-                      ₹{Number(p.amount).toLocaleString('en-IN')}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: '6px',
-                          background: 'rgba(196, 154, 108, 0.12)',
-                          color: 'var(--color-clay)',
-                        }}
-                      >
-                        {p.payment_method}
-                      </span>
-                    </td>
-                    <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                      {new Date(p.payment_date).toLocaleDateString('en-GB')}
-                    </td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                      <button
-                        onClick={() => handleViewReceipt(p)}
-                        style={{
-                          padding: '6px 12px',
-                          borderRadius: 'var(--radius-md)',
-                          background: 'rgba(196, 154, 108, 0.12)',
-                          color: 'var(--color-clay)',
-                          border: 'none',
-                          fontWeight: 600,
-                          fontSize: '0.8rem',
-                          cursor: 'pointer',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <Printer size={14} />
-                        <span>Receipt</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {payments.map((p) => {
+                  const isPendingApproval = p.status === 'PENDING_APPROVAL';
+                  return (
+                    <tr
+                      key={p.id}
+                      style={{
+                        borderBottom: '1px solid var(--border-subtle)',
+                        transition: 'background var(--transition-fast)',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-card-hover)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <td style={{ padding: '14px 18px', fontWeight: 700, color: 'var(--color-clay)' }}>
+                        {p.receipt_number || `#PAY-${p.id}`}
+                      </td>
+                      <td style={{ padding: '14px 18px', fontWeight: 600, color: 'var(--text-heading)' }}>
+                        {p.charge_title}
+                      </td>
+                      <td style={{ padding: '14px 18px', fontWeight: 600 }}>{p.home_number}</td>
+                      <td style={{ padding: '14px 18px', color: 'var(--text-muted)' }}>{p.resident_name || 'Resident'}</td>
+                      <td style={{ padding: '14px 18px', fontWeight: 800, color: isPendingApproval ? '#D97706' : 'var(--color-fern-green)' }}>
+                        ₹{Number(p.amount).toLocaleString('en-IN')}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            background: 'rgba(196, 154, 108, 0.12)',
+                            color: 'var(--color-clay)',
+                          }}
+                        >
+                          {p.payment_method}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                        {new Date(p.payment_date).toLocaleDateString('en-GB')}
+                      </td>
+                      <td style={{ padding: '14px 18px' }}>
+                        {isPendingApproval ? (
+                          <div>
+                            <span
+                              style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(245, 158, 11, 0.15)',
+                                color: '#D97706',
+                                border: '1px solid rgba(245, 158, 11, 0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Clock size={11} />
+                              Admin Approve
+                            </span>
+                            <div style={{ fontSize: '0.68rem', color: '#D97706', marginTop: '2px' }}>
+                              Awaiting Verification
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span
+                              style={{
+                                fontSize: '0.72rem',
+                                fontWeight: 700,
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                background: 'rgba(107, 142, 90, 0.15)',
+                                color: 'var(--color-fern-green)',
+                                border: '1px solid rgba(107, 142, 90, 0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <CheckCircle2 size={11} />
+                              Payment Done
+                            </span>
+                            {p.approved_by_name && (
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                Approved by Admin ({p.approved_by_name})
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: '8px', alignItems: 'center' }}>
+                          {isPendingApproval && canCreate && (
+                            <button
+                              onClick={() => handleOpenVerifyModal(p)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 'var(--radius-md)',
+                                background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                color: '#ffffff',
+                                border: 'none',
+                                fontWeight: 700,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                boxShadow: '0 2px 6px rgba(245, 158, 11, 0.3)',
+                              }}
+                            >
+                              <ShieldCheck size={14} />
+                              <span>Check & Confirm</span>
+                            </button>
+                          )}
+                          {!isPendingApproval && (
+                            <button
+                              onClick={() => handleViewReceipt(p)}
+                              style={{
+                                padding: '6px 12px',
+                                borderRadius: 'var(--radius-md)',
+                                background: 'rgba(196, 154, 108, 0.12)',
+                                color: 'var(--color-clay)',
+                                border: 'none',
+                                fontWeight: 600,
+                                fontSize: '0.8rem',
+                                cursor: 'pointer',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                              }}
+                            >
+                              <Printer size={14} />
+                              <span>Receipt</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1991,67 +2285,34 @@ export default function SpecialChargesPage() {
                 />
               </div>
 
-              {/* Category & Committee Row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
-                {/* Category */}
+              {/* Creator Authority Banner */}
+              <div
+                style={{
+                  background: isCommitteeMember ? 'rgba(196, 154, 108, 0.12)' : 'rgba(107, 142, 90, 0.12)',
+                  border: isCommitteeMember ? '1px solid rgba(196, 154, 108, 0.3)' : '1px solid rgba(107, 142, 90, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                {isCommitteeMember ? (
+                  <Award size={20} color="var(--color-clay)" />
+                ) : (
+                  <Shield size={20} color="var(--color-fern-green)" />
+                )}
                 <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                    Category *
-                  </label>
-                  <select
-                    value={createFormData.category}
-                    onChange={(e) => setCreateFormData({ ...createFormData, category: e.target.value })}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-subtle)',
-                      background: 'var(--bg-secondary)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.86rem',
-                    }}
-                  >
-                    <option value="REPAIR">Society Repair</option>
-                    <option value="FESTIVAL">Festival Charges</option>
-                    <option value="INFRASTRUCTURE">Infrastructure</option>
-                    <option value="EMERGENCY">Emergency Fund</option>
-                    <option value="EVENT">Event & Celebration</option>
-                    <option value="OTHER">Other Occasional</option>
-                  </select>
-                </div>
-
-                {/* Committee Wise Tagging */}
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                    Committee Authority (Optional)
-                  </label>
-                  <select
-                    value={createFormData.committee_id}
-                    onChange={(e) => {
-                      const selected = committees.find((c) => String(c.id) === e.target.value);
-                      setCreateFormData({
-                        ...createFormData,
-                        committee_id: e.target.value,
-                        committee_name: selected?.name || '',
-                      });
-                    }}
-                    style={{
-                      width: '100%',
-                      padding: '10px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-subtle)',
-                      background: 'var(--bg-secondary)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.86rem',
-                    }}
-                  >
-                    <option value="">General Management Committee</option>
-                    {committees.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: isCommitteeMember ? 'var(--color-clay)' : 'var(--color-fern-green)' }}>
+                    {isCommitteeMember
+                      ? `Creating as Committee: ${userCommittees[0]?.name || 'Managing Committee'} — ${user?.fullName || user?.name || 'Member'}`
+                      : 'Creating as: Society Admin'}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    {isCommitteeMember
+                      ? `This special charge will display "Created by: ${userCommittees[0]?.name || 'Managing Committee'} — ${user?.fullName || user?.name || 'Member'}" on all resident dashboards.`
+                      : 'This special charge will display "Created by Admin" on all resident dashboards.'}
+                  </div>
                 </div>
               </div>
 
@@ -2237,14 +2498,54 @@ export default function SpecialChargesPage() {
               }}
             >
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  {selectedChargeForAssignments.created_by_type === 'COMMITTEE' || selectedChargeForAssignments.committee_name ? (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(196, 154, 108, 0.15)',
+                        color: 'var(--color-clay)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: '1px solid rgba(196, 154, 108, 0.35)',
+                      }}
+                    >
+                      <Award size={12} />
+                      <span>
+                        Created by: {selectedChargeForAssignments.committee_name || 'Committee'}
+                        {selectedChargeForAssignments.creator_member_name ? ` — ${selectedChargeForAssignments.creator_member_name}` : ''}
+                      </span>
+                    </span>
+                  ) : (
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        background: 'rgba(107, 142, 90, 0.14)',
+                        color: 'var(--color-fern-green)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        border: '1px solid rgba(107, 142, 90, 0.35)',
+                      }}
+                    >
+                      <Shield size={12} />
+                      <span>Created by Admin</span>
+                    </span>
+                  )}
                   <span
                     style={{
                       fontSize: '0.72rem',
                       fontWeight: 700,
                       padding: '2px 8px',
                       borderRadius: '6px',
-                      background: 'rgba(196, 154, 108, 0.15)',
+                      background: 'rgba(196, 154, 108, 0.12)',
                       color: 'var(--color-clay)',
                     }}
                   >
@@ -2358,6 +2659,7 @@ export default function SpecialChargesPage() {
                   <tbody>
                     {filteredAssignments.map((a) => {
                       const isPaid = a.status === 'PAID';
+                      const isPendingApproval = a.status === 'PENDING_APPROVAL';
                       return (
                         <tr
                           key={a.id}
@@ -2388,29 +2690,104 @@ export default function SpecialChargesPage() {
                           <td style={{ padding: '12px 18px', color: 'var(--color-fern-green)', fontWeight: 600 }}>
                             ₹{Number(a.paid_amount || 0).toLocaleString('en-IN')}
                           </td>
-                          <td style={{ padding: '12px 18px', color: isPaid ? 'var(--text-dim)' : '#D97706', fontWeight: 700 }}>
+                          <td style={{ padding: '12px 18px', color: isPaid ? 'var(--text-dim)' : isPendingApproval ? '#D97706' : '#D97706', fontWeight: 700 }}>
                             ₹{Number(a.balance_amount || 0).toLocaleString('en-IN')}
                           </td>
                           <td style={{ padding: '12px 18px' }}>
-                            <span
-                              style={{
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                                padding: '2px 8px',
-                                borderRadius: '6px',
-                                background: isPaid
-                                  ? 'rgba(107, 142, 90, 0.15)'
-                                  : a.status === 'PARTIALLY_PAID'
+                            {isPendingApproval ? (
+                              <div>
+                                <span
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: 'rgba(245, 158, 11, 0.15)',
+                                    color: '#D97706',
+                                    border: '1px solid rgba(245, 158, 11, 0.3)',
+                                  }}
+                                >
+                                  <Clock size={11} />
+                                  Admin Approve
+                                </span>
+                                <div style={{ fontSize: '0.68rem', color: '#D97706', marginTop: '2px' }}>
+                                  ₹{Number(a.pending_payment_amount || a.amount).toLocaleString('en-IN')} via {a.pending_payment_method || 'Online'}
+                                </div>
+                              </div>
+                            ) : isPaid ? (
+                              <div>
+                                <span
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    fontWeight: 700,
+                                    padding: '3px 8px',
+                                    borderRadius: '6px',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    background: 'rgba(107, 142, 90, 0.15)',
+                                    color: 'var(--color-fern-green)',
+                                    border: '1px solid rgba(107, 142, 90, 0.3)',
+                                  }}
+                                >
+                                  <CheckCircle2 size={11} />
+                                  Payment Done
+                                </span>
+                                {a.approved_by_name && (
+                                  <div style={{ fontSize: '0.68rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                                    Approved by Admin ({a.approved_by_name})
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  padding: '2px 8px',
+                                  borderRadius: '6px',
+                                  background: a.status === 'PARTIALLY_PAID'
                                     ? 'rgba(2, 132, 199, 0.15)'
                                     : 'rgba(217, 119, 6, 0.15)',
-                                color: isPaid ? 'var(--color-fern-green)' : a.status === 'PARTIALLY_PAID' ? 'var(--accent-blue)' : '#D97706',
-                              }}
-                            >
-                              {a.status}
-                            </span>
+                                  color: a.status === 'PARTIALLY_PAID' ? 'var(--accent-blue)' : '#D97706',
+                                }}
+                              >
+                                {a.status}
+                              </span>
+                            )}
                           </td>
                           <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                            {!isPaid ? (
+                            {isPendingApproval ? (
+                              canCreate ? (
+                                <button
+                                  onClick={() => handleOpenVerifyModal(a)}
+                                  style={{
+                                    padding: '6px 12px',
+                                    borderRadius: 'var(--radius-md)',
+                                    background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                                    color: '#ffffff',
+                                    border: 'none',
+                                    fontWeight: 700,
+                                    fontSize: '0.78rem',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '5px',
+                                    boxShadow: '0 2px 6px rgba(245, 158, 11, 0.3)',
+                                  }}
+                                >
+                                  <ShieldCheck size={14} />
+                                  <span>Check & Confirm</span>
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: '0.75rem', color: '#D97706', fontWeight: 600 }}>
+                                  Admin Approve
+                                </span>
+                              )
+                            ) : !isPaid ? (
                               <button
                                 onClick={() => handleOpenPayment(a)}
                                 style={{
@@ -2701,6 +3078,321 @@ export default function SpecialChargesPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          MODAL 4: ADMIN CHECK & CONFIRM PAYMENT APPROVAL MODAL
+          ======================================================== */}
+      {showVerifyModal && selectedPaymentForVerify && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.75)',
+            backdropFilter: 'blur(5px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-card)',
+              borderRadius: 'var(--radius-md)',
+              width: '100%',
+              maxWidth: '520px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '18px',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.5)',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+            }}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-card)', paddingBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck size={22} color="#f59e0b" />
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-main)' }}>
+                  Check & Confirm Special Charge Payment
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowVerifyModal(false)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Instruction Notice */}
+            <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              Please review the resident's payment details and verify that the funds have been received in the society bank account. Confirming will mark the charge as <strong>"Payment Done"</strong> and <strong>"Approved by Admin"</strong> for both resident and admin.
+            </p>
+
+            {/* Payment Details Card */}
+            <div
+              style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid var(--border-card)',
+                borderRadius: '8px',
+                padding: '14px',
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '12px',
+                fontSize: '0.84rem',
+              }}
+            >
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Receipt # / Ref:</span>
+                <div style={{ fontWeight: 700, color: 'var(--color-clay)' }}>
+                  {selectedPaymentForVerify.receipt_number || `#PAY-${selectedPaymentForVerify.pending_payment_id || selectedPaymentForVerify.id || 'NEW'}`}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Special Charge:</span>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  {selectedPaymentForVerify.charge_title || selectedPaymentForVerify.title || selectedChargeForAssignments?.title || 'Special Charge'}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Unit / Home:</span>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  {selectedPaymentForVerify.home_number || 'N/A'} {selectedPaymentForVerify.building_or_wing ? `(${selectedPaymentForVerify.building_or_wing})` : ''}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Resident:</span>
+                <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  {selectedPaymentForVerify.resident_name || 'Resident'}
+                </div>
+                {selectedPaymentForVerify.resident_phone && (
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    {selectedPaymentForVerify.resident_phone}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Amount Received:</span>
+                <div style={{ fontWeight: 800, color: '#10b981', fontSize: '1.2rem' }}>
+                  ₹{Number(selectedPaymentForVerify.amount || selectedPaymentForVerify.pending_payment_amount || selectedPaymentForVerify.paid_amount || 0).toLocaleString('en-IN')}
+                </div>
+              </div>
+
+              <div>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Payment Mode:</span>
+                <div>
+                  <span
+                    style={{
+                      background: 'rgba(59, 130, 246, 0.12)',
+                      color: '#3b82f6',
+                      padding: '3px 8px',
+                      borderRadius: '4px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selectedPaymentForVerify.payment_method || selectedPaymentForVerify.pending_payment_method || 'UPI'}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ gridColumn: '1 / -1' }}>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Transaction Ref / UTR / Cheque No:</span>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    color: 'var(--text-main)',
+                    background: 'var(--bg-primary)',
+                    padding: '8px 10px',
+                    borderRadius: '4px',
+                    marginTop: '3px',
+                    fontFamily: 'monospace',
+                    fontSize: '0.88rem',
+                    wordBreak: 'break-all',
+                    border: '1px solid var(--border-card)',
+                  }}
+                >
+                  {selectedPaymentForVerify.transaction_reference || selectedPaymentForVerify.pending_payment_ref || 'Direct / Bank Transfer'}
+                </div>
+              </div>
+
+              {(selectedPaymentForVerify.remarks || selectedPaymentForVerify.pending_payment_remarks) && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Resident Remarks:</span>
+                  <div style={{ color: 'var(--text-main)', fontStyle: 'italic', marginTop: '2px' }}>
+                    "{selectedPaymentForVerify.remarks || selectedPaymentForVerify.pending_payment_remarks}"
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Admin Remarks Input */}
+            <div>
+              <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
+                Admin Verification Remarks / Notes
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Bank statement verified, UTR matched, Cheque cleared"
+                value={verifyRemarks}
+                onChange={(e) => setVerifyRemarks(e.target.value)}
+                style={{
+                  width: '100%',
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--border-card)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '9px 12px',
+                  color: 'var(--text-main)',
+                  fontSize: '0.88rem',
+                }}
+              />
+            </div>
+
+            {/* Rejection Section if expanding */}
+            {isRejecting && (
+              <div
+                style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <label style={{ fontSize: '0.82rem', fontWeight: 600, color: '#ef4444' }}>
+                  Rejection Reason *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR not found in bank statement, amount mismatch"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  style={{
+                    width: '100%',
+                    background: 'var(--bg-primary)',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 12px',
+                    color: 'var(--text-main)',
+                    fontSize: '0.85rem',
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Modal Actions */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+              {!isRejecting ? (
+                <button
+                  type="button"
+                  onClick={() => setIsRejecting(true)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid rgba(239, 68, 68, 0.4)',
+                    color: '#ef4444',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 14px',
+                    fontSize: '0.82rem',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                >
+                  <XCircle size={14} />
+                  Reject Payment
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setIsRejecting(false); setRejectReason(''); }}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border-card)',
+                      color: 'var(--text-muted)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 12px',
+                      fontSize: '0.82rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRejectPayment()}
+                    disabled={actionLoading || !rejectReason.trim()}
+                    style={{
+                      background: '#ef4444',
+                      border: 'none',
+                      color: '#fff',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 14px',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {actionLoading ? 'Rejecting...' : 'Confirm Rejection'}
+                  </button>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowVerifyModal(false)}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-card)',
+                    color: 'var(--text-main)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 16px',
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleApprovePayment()}
+                  disabled={actionLoading || isRejecting}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    border: 'none',
+                    color: '#fff',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '8px 18px',
+                    fontSize: '0.85rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                  }}
+                >
+                  <ShieldCheck size={16} />
+                  <span>{actionLoading ? 'Approving...' : 'Confirm & Approve Payment'}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

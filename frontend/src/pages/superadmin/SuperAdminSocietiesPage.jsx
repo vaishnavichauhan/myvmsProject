@@ -183,12 +183,17 @@ export default function SuperAdminSocietiesPage() {
       setActionError(null);
 
       const selectedPlan = plans.find((p) => p.id === Number(formData.planId));
-      if (selectedPlan?.max_units && Number(formData.maxUnits) > selectedPlan.max_units) {
+      if (selectedPlan?.max_units && Number(formData.maxUnits) > selectedPlan.max_units && Number(selectedPlan.extra_unit_price || 0) <= 0) {
         setActionError(`Cannot create society with ${formData.maxUnits} units. The selected ${selectedPlan.name} Plan allows a maximum of ${selectedPlan.max_units} units. Please select an upgraded plan or set units up to ${selectedPlan.max_units}.`);
         setSubmitting(false);
         return;
       }
-      if (selectedPlan?.max_gates && Number(formData.maxGates) > selectedPlan.max_gates) {
+      if (selectedPlan?.max_users && Number(formData.maxUsers) > selectedPlan.max_users && Number(selectedPlan.extra_user_price || 0) <= 0) {
+        setActionError(`Cannot set max users to ${formData.maxUsers}. The selected ${selectedPlan.name} Plan allows a maximum of ${selectedPlan.max_users} users.`);
+        setSubmitting(false);
+        return;
+      }
+      if (selectedPlan?.max_gates && Number(formData.maxGates) > selectedPlan.max_gates && Number(selectedPlan.extra_gate_price || 0) <= 0) {
         setActionError(`Cannot create society with ${formData.maxGates} gates. The selected ${selectedPlan.name} Plan allows a maximum of ${selectedPlan.max_gates} gates. Please select an upgraded plan or set gates up to ${selectedPlan.max_gates}.`);
         setSubmitting(false);
         return;
@@ -578,14 +583,14 @@ export default function SuperAdminSocietiesPage() {
                               soc.subscription_status === 'ACTIVE'
                                 ? 'rgba(16, 185, 129, 0.15)'
                                 : soc.subscription_status === 'TRIAL'
-                                ? 'rgba(245, 158, 11, 0.15)'
-                                : 'rgba(239, 68, 68, 0.15)',
+                                  ? 'rgba(245, 158, 11, 0.15)'
+                                  : 'rgba(239, 68, 68, 0.15)',
                             color:
                               soc.subscription_status === 'ACTIVE'
                                 ? '#10b981'
                                 : soc.subscription_status === 'TRIAL'
-                                ? '#f59e0b'
-                                : '#ef4444',
+                                  ? '#f59e0b'
+                                  : '#ef4444',
                             textTransform: 'uppercase',
                           }}
                         >
@@ -782,8 +787,6 @@ export default function SuperAdminSocietiesPage() {
                   >
                     <option value="FLAT">Flat / Apartment Complex</option>
                     <option value="BUNGALOW">Bungalow / Row House</option>
-                    <option value="GATED_COMMUNITY">Gated Community / Mixed</option>
-                    <option value="COMMERCIAL">Commercial Complex</option>
                   </select>
                 </div>
 
@@ -950,11 +953,13 @@ export default function SuperAdminSocietiesPage() {
                   {(() => {
                     const selPlan = plans.find((p) => String(p.id) === String(formData.planId));
                     const isExceeded = selPlan?.max_units && Number(formData.maxUnits) > selPlan.max_units;
+                    const extraUnits = isExceeded ? Number(formData.maxUnits) - selPlan.max_units : 0;
+                    const extraCost = extraUnits * (Number(selPlan?.extra_unit_price) || 0);
                     return (
                       <>
                         <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
                           Max Units (Homes) {selPlan?.max_units && (
-                            <span style={{ color: isExceeded ? '#ef4444' : 'var(--color-clay)', fontWeight: 600 }}>
+                            <span style={{ color: isExceeded && Number(selPlan?.extra_unit_price) <= 0 ? '#ef4444' : 'var(--color-clay)', fontWeight: 600 }}>
                               (Plan Max: {selPlan.max_units})
                             </span>
                           )}
@@ -969,16 +974,20 @@ export default function SuperAdminSocietiesPage() {
                             padding: '8px 12px',
                             borderRadius: 'var(--radius-sm)',
                             background: 'var(--bg-main)',
-                            border: isExceeded ? '1px solid #ef4444' : '1px solid var(--border-card)',
+                            border: isExceeded && Number(selPlan?.extra_unit_price) <= 0 ? '1px solid #ef4444' : '1px solid var(--border-card)',
                             color: 'var(--text-main)',
                             fontSize: '0.85rem',
                           }}
                         />
-                        {isExceeded && (
+                        {isExceeded && Number(selPlan?.extra_unit_price) > 0 ? (
+                          <span style={{ color: 'var(--color-clay)', fontSize: '0.72rem', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                            +{extraUnits} extra units × ₹{selPlan.extra_unit_price} = +₹{extraCost}
+                          </span>
+                        ) : isExceeded ? (
                           <span style={{ color: '#ef4444', fontSize: '0.72rem', display: 'block', marginTop: '3px' }}>
                             Exceeds {selPlan.name} plan limit of {selPlan.max_units} units!
                           </span>
-                        )}
+                        ) : null}
                       </>
                     );
                   })()}
@@ -986,11 +995,14 @@ export default function SuperAdminSocietiesPage() {
                 <div>
                   {(() => {
                     const selPlan = plans.find((p) => String(p.id) === String(formData.planId));
+                    const isExceeded = selPlan?.max_users && Number(formData.maxUsers) > selPlan.max_users;
+                    const extraUsers = isExceeded ? Number(formData.maxUsers) - selPlan.max_users : 0;
+                    const extraCost = extraUsers * (Number(selPlan?.extra_user_price) || 0);
                     return (
                       <>
                         <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
                           Max Users {selPlan?.max_users && (
-                            <span style={{ color: 'var(--color-clay)', fontWeight: 600 }}>
+                            <span style={{ color: isExceeded ? (Number(selPlan?.extra_user_price) > 0 ? 'var(--color-clay)' : '#ef4444') : 'var(--color-clay)', fontWeight: 600 }}>
                               (Plan Default: {selPlan.max_users})
                             </span>
                           )}
@@ -1005,11 +1017,16 @@ export default function SuperAdminSocietiesPage() {
                             padding: '8px 12px',
                             borderRadius: 'var(--radius-sm)',
                             background: 'var(--bg-main)',
-                            border: '1px solid var(--border-card)',
+                            border: isExceeded && Number(selPlan?.extra_user_price) === 0 ? '1px solid #ef4444' : '1px solid var(--border-card)',
                             color: 'var(--text-main)',
                             fontSize: '0.85rem',
                           }}
                         />
+                        {isExceeded && Number(selPlan?.extra_user_price) > 0 && (
+                          <span style={{ color: 'var(--color-clay)', fontSize: '0.72rem', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                            +{extraUsers} extra users × ₹{selPlan.extra_user_price} = +₹{extraCost}
+                          </span>
+                        )}
                       </>
                     );
                   })()}
@@ -1017,11 +1034,14 @@ export default function SuperAdminSocietiesPage() {
                 <div>
                   {(() => {
                     const selPlan = plans.find((p) => String(p.id) === String(formData.planId));
+                    const isExceeded = selPlan?.max_gates && Number(formData.maxGates) > selPlan.max_gates;
+                    const extraGates = isExceeded ? Number(formData.maxGates) - selPlan.max_gates : 0;
+                    const extraCost = extraGates * (Number(selPlan?.extra_gate_price) || 0);
                     return (
                       <>
                         <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
                           Max Gates {selPlan?.max_gates && (
-                            <span style={{ color: 'var(--color-clay)', fontWeight: 600 }}>
+                            <span style={{ color: isExceeded ? (Number(selPlan?.extra_gate_price) > 0 ? 'var(--color-clay)' : '#ef4444') : 'var(--color-clay)', fontWeight: 600 }}>
                               (Plan Default: {selPlan.max_gates})
                             </span>
                           )}
@@ -1036,16 +1056,66 @@ export default function SuperAdminSocietiesPage() {
                             padding: '8px 12px',
                             borderRadius: 'var(--radius-sm)',
                             background: 'var(--bg-main)',
-                            border: '1px solid var(--border-card)',
+                            border: isExceeded && Number(selPlan?.extra_gate_price) === 0 ? '1px solid #ef4444' : '1px solid var(--border-card)',
                             color: 'var(--text-main)',
                             fontSize: '0.85rem',
                           }}
                         />
+                        {isExceeded && Number(selPlan?.extra_gate_price) > 0 && (
+                          <span style={{ color: 'var(--color-clay)', fontSize: '0.72rem', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                            +{extraGates} extra gates × ₹{selPlan.extra_gate_price} = +₹{extraCost}
+                          </span>
+                        )}
                       </>
                     );
                   })()}
                 </div>
               </div>
+
+              {/* Live Total Price Preview */}
+              {(() => {
+                const selPlan = plans.find((p) => String(p.id) === String(formData.planId));
+                if (!selPlan) return null;
+                const basePlanPrice = Number(selPlan.price) || 0;
+                const extraUnits = Math.max(0, Number(formData.maxUnits) - selPlan.max_units);
+                const extraUsers = Math.max(0, Number(formData.maxUsers) - selPlan.max_users);
+                const extraGates = Math.max(0, Number(formData.maxGates) - (selPlan.max_gates || 5));
+                const unitCost = extraUnits * (Number(selPlan.extra_unit_price) || 0);
+                const userCost = extraUsers * (Number(selPlan.extra_user_price) || 0);
+                const gateCost = extraGates * (Number(selPlan.extra_gate_price) || 0);
+                const totalExtra = unitCost + userCost + gateCost;
+                if (totalExtra === 0) return null;
+                const totalPrice = basePlanPrice + totalExtra;
+                return (
+                  <div
+                    style={{
+                      background: 'rgba(196, 154, 108, 0.08)',
+                      border: '1px solid rgba(196, 154, 108, 0.3)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '12px 16px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      flexWrap: 'wrap',
+                      gap: '8px',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--color-clay)' }}>Estimated Total Price</span>
+                      <span style={{ marginLeft: '8px', fontSize: '0.72rem' }}>
+                        Base ₹{basePlanPrice.toLocaleString('en-IN')}
+                        {unitCost > 0 && <span> + ₹{unitCost} ({extraUnits} extra units)</span>}
+                        {userCost > 0 && <span> + ₹{userCost} ({extraUsers} extra users)</span>}
+                        {gateCost > 0 && <span> + ₹{gateCost} ({extraGates} extra gates)</span>}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                      ₹{totalPrice.toLocaleString('en-IN')}
+                      <span style={{ fontSize: '0.72rem', fontWeight: 400, color: 'var(--text-dim)', marginLeft: '4px' }}>/ {selPlan.billing_cycle?.toLowerCase()}</span>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Society Admin Account */}
               <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--color-clay)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '6px', marginTop: '10px' }}>

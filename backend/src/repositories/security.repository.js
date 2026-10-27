@@ -98,6 +98,24 @@ class SecurityRepository {
   }
 
   /**
+   * Ensure a security_staff record exists for the given user, creating one if missing
+   */
+  static async ensureStaffRecord(user) {
+    let staff = await this.findByUserId(user.id);
+    if (!staff) {
+      const societyId = user.societyId || user.society_id || 1;
+      const empId = `SEC-${String(user.id).padStart(4, '0')}`;
+      const [res] = await pool.query(
+        `INSERT INTO security_staff (society_id, user_id, badge_number, employee_id, agency_name, shift, status)
+         VALUES (?, ?, ?, ?, 'In-House Security', 'ROTATIONAL', 'ACTIVE')`,
+        [societyId, user.id, empId, empId]
+      );
+      staff = await this.findById(res.insertId);
+    }
+    return staff;
+  }
+
+  /**
    * List all security personnel for a society
    */
   static async findAll(societyId, filters = {}) {

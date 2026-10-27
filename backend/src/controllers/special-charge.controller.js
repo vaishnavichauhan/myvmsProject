@@ -69,8 +69,44 @@ class SpecialChargeController {
       const payment = await SpecialChargeService.recordPayment(req.body, req.user);
       return res.status(201).json({
         success: true,
-        message: 'Payment recorded and receipt generated successfully',
+        message: payment.message || 'Payment recorded successfully',
         data: payment,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async approvePayment(req, res, next) {
+    try {
+      const paymentId = Number(req.params.id);
+      if (!paymentId || isNaN(paymentId) || paymentId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid payment ID provided for approval' });
+      }
+      const { remarks } = req.body;
+      const result = await SpecialChargeService.approvePayment(paymentId, req.user, remarks);
+      return res.status(200).json({
+        success: true,
+        message: result.message || 'Special charge payment approved successfully',
+        data: result,
+      });
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  static async rejectPayment(req, res, next) {
+    try {
+      const paymentId = Number(req.params.id);
+      if (!paymentId || isNaN(paymentId) || paymentId <= 0) {
+        return res.status(400).json({ success: false, message: 'Invalid payment ID provided for rejection' });
+      }
+      const { reason } = req.body;
+      const result = await SpecialChargeService.rejectPayment(paymentId, req.user, reason);
+      return res.status(200).json({
+        success: true,
+        message: result.message || 'Payment rejected',
+        data: result,
       });
     } catch (err) {
       next(err);

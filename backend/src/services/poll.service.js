@@ -8,7 +8,24 @@ class PollService {
    * User requirement: ONLY ADMIN and COMMITTEE MEMBER can create polls!
    */
   static async createPoll(data, user) {
-    if (!user || (user.role !== 'ADMIN' && user.role !== 'COMMITTEE_MEMBER')) {
+    if (!user) {
+      throw ApiError.unauthorized('Authentication required to create polls.');
+    }
+
+    // Check if creator is a committee member in the database
+    const [cmRows] = await pool.query(
+      `SELECT cm.society_id, cm.committee_id, COALESCE(c.name, cm.committee_name) AS committee_name, cm.name AS member_name
+       FROM committee_members cm
+       LEFT JOIN committees c ON cm.committee_id = c.id
+       WHERE cm.user_id = ? AND cm.status = 'ACTIVE' LIMIT 1`,
+      [user.id]
+    );
+
+    const userRole = String(user.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
+    const isCommitteeMember = userRole === 'COMMITTEE_MEMBER' || cmRows.length > 0;
+
+    if (!isAdmin && !isCommitteeMember) {
       throw ApiError.forbidden('Access denied. Only Administrators and Committee Members can create polls & surveys.');
     }
 
@@ -32,29 +49,29 @@ class PollService {
       throw ApiError.badRequest('A poll must have at least 2 distinct selectable options.');
     }
 
-    // Resolve society ID
+    // Resolve society ID & creator attribution
     let societyId = data.society_id || user.societyId || null;
-    let committeeName = data.committee_name || null;
-    let committeeId = data.committee_id || null;
+    let createdByType = 'ADMIN';
+    let creatorMemberName = null;
+    let committeeId = null;
+    let committeeName = null;
 
-    if (user.role === 'COMMITTEE_MEMBER') {
-      const [cmRows] = await pool.query(
-        `SELECT cm.society_id, cm.committee_id, COALESCE(c.name, cm.committee_name) AS committee_name
-         FROM committee_members cm
-         LEFT JOIN committees c ON cm.committee_id = c.id
-         WHERE cm.user_id = ? AND cm.status = 'ACTIVE' LIMIT 1`,
-        [user.id]
-      );
+    if (isCommitteeMember && !isAdmin) {
+      createdByType = 'COMMITTEE';
       if (cmRows.length > 0) {
         societyId = societyId || cmRows[0].society_id;
-        committeeId = committeeId || cmRows[0].committee_id;
-        committeeName = committeeName || cmRows[0].committee_name || 'Managing Committee';
+        committeeId = cmRows[0].committee_id;
+        committeeName = cmRows[0].committee_name || 'Managing Committee';
+        creatorMemberName = cmRows[0].member_name || user.fullName || user.name;
+      } else {
+        committeeName = data.committee_name || 'Managing Committee';
+        creatorMemberName = user.fullName || user.name || 'Committee Member';
       }
-    }
-
-    if (committeeId && !committeeName) {
-      const [cRows] = await pool.query('SELECT name FROM committees WHERE id = ? LIMIT 1', [committeeId]);
-      if (cRows.length > 0) committeeName = cRows[0].name;
+    } else {
+      createdByType = 'ADMIN';
+      creatorMemberName = user.fullName || user.name || 'Admin';
+      committeeId = null;
+      committeeName = null;
     }
 
     if (!societyId) {
@@ -67,6 +84,8 @@ class PollService {
       committee_id: committeeId || null,
       committee_name: committeeName || null,
       created_by_user_id: user.id,
+      created_by_type: createdByType,
+      creator_member_name: creatorMemberName,
       title: data.title.trim(),
       description: data.description ? data.description.trim() : null,
       category: data.category || 'GENERAL',

@@ -283,46 +283,43 @@ export const GatesScreen = ({ navigation }) => {
     );
   };
 
-  // Assign Staff Handler
-  const handleAssignStaff = async () => {
-    if (!assignForm.gate_id) {
-      showToastError('Please select a gate.');
-      return;
-    }
-    if (!assignForm.security_staff_id) {
-      showToastError('Please select a security guard.');
-      return;
-    }
+  // Security Self Check-In (IN TIME)
+  const handleSecurityCheckIn = async (gate) => {
+    const gateId = gate.id || gate.gate_id;
+    const gateName = gate.name || gate.gate_name;
     setSubmitting(true);
     try {
-      const res = await gateApi.assignSecurityStaff(assignForm);
-      showToastSuccess(res.message || 'Assigned security staff successfully!');
-      setShowAssignModal(false);
+      const res = await gateApi.selfCheckIn({ gate_id: gateId });
+      showToastSuccess(res.message || `Checked in at ${gateName}! IN TIME logged.`);
       fetchInitialData();
     } catch (err) {
-      showToastError(err.message || 'Failed to assign security staff.');
+      showToastError(err.response?.data?.message || err.message || 'Failed to check in to gate.');
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Unassign Staff Handler
-  const handleUnassignStaff = (assignmentId, gateName) => {
+  // Security Self Check-Out (EXIT GATE / OUT TIME)
+  const handleSecurityCheckOut = () => {
     Alert.alert(
-      'End Shift',
-      `Remove guard assignment from ${gateName}?`,
+      'Exit Gate Duty',
+      'Are you sure you want to exit your active gate duty? Your exit time will be recorded.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'End Shift',
+          text: 'Exit Gate',
           style: 'destructive',
           onPress: async () => {
+            setSubmitting(true);
             try {
-              await gateApi.unassignSecurityStaff(assignmentId);
-              showToastSuccess(`Guard assignment on ${gateName} closed.`);
+              const res = await gateApi.selfCheckOut();
+              showToastSuccess(res.message || 'Checked out from gate. Exit time recorded.');
+              setMyAssignedGate(null);
               fetchInitialData();
             } catch (err) {
-              showToastError(err.message || 'Failed to unassign staff.');
+              showToastError(err.response?.data?.message || err.message || 'Failed to exit gate.');
+            } finally {
+              setSubmitting(false);
             }
           },
         },
@@ -519,13 +516,19 @@ export const GatesScreen = ({ navigation }) => {
               </Text>
             </View>
 
-            {isAdmin && (
-              <TouchableOpacity
-                style={styles.assignGuardSmallBtn}
-                onPress={() => handleOpenAssign(g)}
-              >
-                <Text style={styles.assignGuardSmallBtnText}>+ Assign Guard</Text>
-              </TouchableOpacity>
+            {isSecurity && (
+              isAssignedToMe ? (
+                <View style={{ backgroundColor: 'rgba(16, 185, 129, 0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 }}>
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#065f46' }}>✓ Active Station</Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={{ backgroundColor: THEME.colors.fernGreen, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                  onPress={() => handleSecurityCheckIn(g)}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>Check In (IN TIME)</Text>
+                </TouchableOpacity>
+              )
             )}
           </View>
 
@@ -581,12 +584,12 @@ export const GatesScreen = ({ navigation }) => {
                       {/* <Text style={styles.messageBtnText}>Message</Text> */}
                     </TouchableOpacity>
 
-                    {isAdmin && guard.assignment_id && (
+                    {isSecurity && guard.security_user_id === user?.id && (
                       <TouchableOpacity
                         style={styles.endShiftBtn}
-                        onPress={() => handleUnassignStaff(guard.assignment_id, gateName)}
+                        onPress={handleSecurityCheckOut}
                       >
-                        <Text style={styles.endShiftBtnText}>End Shift</Text>
+                        <Text style={styles.endShiftBtnText}>Exit Gate</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -604,16 +607,7 @@ export const GatesScreen = ({ navigation }) => {
 
           {/* Admin Action Toolbar at Card Bottom */}
           {isAdmin && (
-            <View style={styles.cardAdminFooter}>
-              <TouchableOpacity
-                style={styles.changeGuardBtn}
-                onPress={() => handleOpenAssign(g)}
-              >
-                <CustomIcon name="userPlus" size={13} color={THEME.colors.clay} />
-                <Text style={styles.changeGuardBtnText}>
-                  {guardName ? 'Change Guard' : 'Assign Guard'}
-                </Text>
-              </TouchableOpacity>
+            <View style={[styles.cardAdminFooter, { justifyContent: 'flex-end' }]}>
 
               <View style={styles.editDeleteBtnGroup}>
                 <TouchableOpacity
@@ -651,25 +645,14 @@ export const GatesScreen = ({ navigation }) => {
         {/* Action Bar (Add Gate, Assign Staff, Refresh) */}
         <View style={styles.topActionBar}>
           {isAdmin && (
-            <>
-              <TouchableOpacity
-                style={styles.assignHeaderBtn}
-                onPress={() => handleOpenAssign(null)}
-                activeOpacity={0.8}
-              >
-                <CustomIcon name="userPlus" size={14} color={THEME.colors.clay} />
-                <Text style={styles.assignHeaderBtnText}>Assign Staff</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.addGateHeaderBtn}
-                onPress={() => setShowCreateModal(true)}
-                activeOpacity={0.8}
-              >
-                <CustomIcon name="plus" size={15} color="#FFFFFF" />
-                <Text style={styles.addGateHeaderBtnText}>Add New Gate</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              style={styles.addGateHeaderBtn}
+              onPress={() => setShowCreateModal(true)}
+              activeOpacity={0.8}
+            >
+              <CustomIcon name="plus" size={15} color="#FFFFFF" />
+              <Text style={styles.addGateHeaderBtnText}>Add New Gate</Text>
+            </TouchableOpacity>
           )}
 
 

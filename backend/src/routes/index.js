@@ -19,6 +19,7 @@ const maintenanceRoutes = require('./maintenance.routes');
 const specialChargeRoutes = require('./special-charge.routes');
 const pollRoutes = require('./poll.routes');
 const amenityRoutes = require('./amenity.routes');
+const accountRoutes = require('./account.routes');
 const superAdminRoutes = require('./superadmin.routes');
 const { ALL_ROLES } = require('../constants/roles');
 const ApiResponse = require('../utils/apiResponse');
@@ -127,6 +128,7 @@ router.use('/maintenance', maintenanceRoutes);
 router.use('/special-charges', specialChargeRoutes);
 router.use('/polls', pollRoutes);
 router.use('/amenities', amenityRoutes);
+router.use('/accounts', accountRoutes);
 router.use('/super-admin', superAdminRoutes);
 
 module.exports = router;

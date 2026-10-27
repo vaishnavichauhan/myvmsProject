@@ -41,6 +41,8 @@ export const superAdminApi = {
   // Subscription Billing & Invoices
   getInvoices: (params) => apiClient.get('/super-admin/billing/invoices', { params }),
   recordPayment: (invoiceId, data) => apiClient.post(`/super-admin/billing/invoices/${invoiceId}/payments`, data),
+  approvePayment: (invoiceId) => apiClient.post(`/super-admin/billing/invoices/${invoiceId}/approve`),
+  autoGenerateInvoices: () => apiClient.post('/super-admin/billing/auto-generate'),
 
   // Audit Logs
   getAuditLogs: (params) => apiClient.get('/super-admin/audit-logs', { params }),

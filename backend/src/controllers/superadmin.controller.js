@@ -99,12 +99,18 @@ class SuperAdminController {
         adminEmail,
         adminPhone,
         adminPassword,
+        adminData,
       } = req.body;
+
+      const finalAdminName = adminName || adminData?.full_name || adminData?.name || adminData?.adminName;
+      const finalAdminPhone = adminPhone || adminData?.phone || adminData?.adminPhone;
+      const finalAdminEmail = adminEmail || adminData?.email || adminData?.adminEmail;
+      const finalAdminPassword = adminPassword || adminData?.password || adminData?.adminPassword;
 
       if (!name || !code) {
         throw ApiError.badRequest('Society name and unique code are required.');
       }
-      if (!adminPhone || !adminPassword || !adminName) {
+      if (!finalAdminPhone || !finalAdminPassword || !finalAdminName) {
         throw ApiError.badRequest('Society admin name, phone number, and password are required.');
       }
 
@@ -125,11 +131,11 @@ class SuperAdminController {
         maxUnits: maxUnits ? parseInt(maxUnits, 10) : 100,
         maxUsers: maxUsers ? parseInt(maxUsers, 10) : 50,
         maxWorkers: maxWorkers ? parseInt(maxWorkers, 10) : 20,
-        trialDays: trialDays ? parseInt(trialDays, 10) : 0,
-        adminName,
-        adminEmail,
-        adminPhone,
-        adminPassword,
+        trialDays: trialDays !== undefined && trialDays !== '' ? parseInt(trialDays, 10) : 14,
+        adminName: finalAdminName,
+        adminEmail: finalAdminEmail,
+        adminPhone: finalAdminPhone,
+        adminPassword: finalAdminPassword,
         createdBy: req.user.id,
       });
 
@@ -242,21 +248,71 @@ class SuperAdminController {
    */
   static async createPlan(req, res, next) {
     try {
-      const { name, code, description, price, billingCycle, maxUsers, maxUnits, maxWorkers, trialDays, features } = req.body;
-      if (!name || !code) {
-        throw ApiError.badRequest('Plan name and unique plan code are required.');
-      }
-      const newPlan = await SubscriptionRepository.createPlan({
+      const {
         name,
         code,
         description,
+        price,
+        billingCycle,
+        maxUsers,
+        maxUnits,
+        maxWorkers,
+        maxGates,
+        trialDays,
+        features,
+        extraUnitPrice,
+        extraUserPrice,
+        extraGatePrice,
+        extra_unit_price,
+        extra_user_price,
+        extra_gate_price,
+      } = req.body;
+
+      if (!name || !name.trim()) {
+        throw ApiError.badRequest('Plan name is required.');
+      }
+      if (!code || !code.trim()) {
+        throw ApiError.badRequest('Unique plan code is required.');
+      }
+      if (price === undefined || price === null || price === '' || isNaN(price)) {
+        throw ApiError.badRequest('Price is required and must be a valid amount.');
+      }
+      if (!billingCycle) {
+        throw ApiError.badRequest('Billing cycle is required.');
+      }
+      if (!maxUnits || isNaN(maxUnits) || Number(maxUnits) <= 0) {
+        throw ApiError.badRequest('Max units allowed is required and must be greater than 0.');
+      }
+      if (!maxUsers || isNaN(maxUsers) || Number(maxUsers) <= 0) {
+        throw ApiError.badRequest('Max users allowed is required and must be greater than 0.');
+      }
+      if (!maxGates || isNaN(maxGates) || Number(maxGates) <= 0) {
+        throw ApiError.badRequest('Max gates allowed is required and must be greater than 0.');
+      }
+
+      const newPlan = await SubscriptionRepository.createPlan({
+        name: name.trim(),
+        code: code.trim().toUpperCase(),
+        description,
         price: parseFloat(price) || 0,
         billingCycle: billingCycle || 'MONTHLY',
-        maxUsers: parseInt(maxUsers, 10) || 50,
-        maxUnits: parseInt(maxUnits, 10) || 100,
+        billing_cycle: billingCycle || 'MONTHLY',
+        maxUsers: parseInt(maxUsers, 10),
+        max_users: parseInt(maxUsers, 10),
+        maxUnits: parseInt(maxUnits, 10),
+        max_units: parseInt(maxUnits, 10),
         maxWorkers: maxWorkers ? parseInt(maxWorkers, 10) : 20,
-        trialDays: parseInt(trialDays, 10) || 0,
+        maxGates: parseInt(maxGates, 10),
+        max_gates: parseInt(maxGates, 10),
+        trialDays: trialDays !== undefined && trialDays !== '' ? parseInt(trialDays, 10) : 0,
+        trial_days: trialDays !== undefined && trialDays !== '' ? parseInt(trialDays, 10) : 0,
         features: Array.isArray(features) ? features : [],
+        extraUnitPrice: extraUnitPrice !== undefined ? extraUnitPrice : extra_unit_price,
+        extraUserPrice: extraUserPrice !== undefined ? extraUserPrice : extra_user_price,
+        extraGatePrice: extraGatePrice !== undefined ? extraGatePrice : extra_gate_price,
+        extra_unit_price: extra_unit_price !== undefined ? extra_unit_price : extraUnitPrice,
+        extra_user_price: extra_user_price !== undefined ? extra_user_price : extraUserPrice,
+        extra_gate_price: extra_gate_price !== undefined ? extra_gate_price : extraGatePrice,
       }, req.user.id);
 
       return ApiResponse.created(res, 'Subscription plan created successfully', { plan: newPlan });
@@ -438,6 +494,31 @@ class SuperAdminController {
       }, req.user.id);
 
       return ApiResponse.success(res, 'Subscription payment recorded successfully', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/super-admin/billing/invoices/:invoiceId/approve
+   */
+  static async approvePayment(req, res, next) {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId, 10);
+      const result = await SubscriptionRepository.approveSubscriptionPayment(invoiceId, req.user.id);
+      return ApiResponse.success(res, 'Subscription payment approved successfully', result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/super-admin/billing/auto-generate
+   */
+  static async autoGenerateInvoices(req, res, next) {
+    try {
+      const generated = await SubscriptionRepository.autoGenerateRecurringInvoices();
+      return ApiResponse.success(res, `Auto-generated ${generated.length} recurring subscription invoices`, { generated });
     } catch (error) {
       next(error);
     }

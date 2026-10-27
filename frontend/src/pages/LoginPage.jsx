@@ -14,81 +14,27 @@ import {
   Home,
   Sparkles,
   Zap,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { ROLES, ROLE_CONFIG } from '../constants/roles';
 import { authApi } from '../api/authApi';
-
-// Fallback demo accounts if API hasn't resolved
-const FALLBACK_USERS = [
-  {
-    id: 658,
-    full_name: 'Platform Super Administrator',
-    phone: '9900000000',
-    role: ROLES.SUPER_ADMIN,
-    password: '123456',
-    flat_number: 'Platform HQ',
-    society_name: 'Global Platform',
-  },
-  {
-    id: 1,
-    full_name: 'System Administrator',
-    phone: '9800000000',
-    role: ROLES.ADMIN,
-    password: 'Password@123',
-    flat_number: 'Admin Office',
-    society_name: 'Main Society',
-  },
-  {
-    id: 643,
-    full_name: 'PravinBhai',
-    phone: '1212121212',
-    role: ROLES.OWNER,
-    password: '123456',
-    flat_number: 'Home 1',
-    society_name: 'Plam glory',
-  },
-  {
-    id: 644,
-    full_name: 'Amitbhai',
-    phone: '1231231231',
-    role: ROLES.OWNER,
-    password: '123456',
-    flat_number: 'Home 2',
-    society_name: 'Plam glory',
-  },
-  {
-    id: 645,
-    full_name: 'MaganBhai',
-    phone: '1234123412',
-    role: ROLES.TENANT,
-    password: '123456',
-    flat_number: 'Home 3',
-    society_name: 'Plam glory',
-  },
-  {
-    id: 646,
-    full_name: 'BahadurSing',
-    phone: '1111122222',
-    role: ROLES.SECURITY,
-    password: '123456',
-    flat_number: 'Main Gate',
-    society_name: 'Plam glory',
-  },
-];
 
 export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { login, isLoading, error, clearError, isAuthenticated } = useAuthStore();
 
-  const [phoneOrEmail, setPhoneOrEmail] = useState('9800000000');
-  const [password, setPassword] = useState('Password@123');
-  const [activeUserPhone, setActiveUserPhone] = useState('9800000000');
+  const [phoneOrEmail, setPhoneOrEmail] = useState('9900000000');
+  const [password, setPassword] = useState('123456');
+  const [activeUserPhone, setActiveUserPhone] = useState('9900000000');
+  const [showPassword, setShowPassword] = useState(false);
   const [localError, setLocalError] = useState(null);
 
   // Dynamic user list
-  const [usersList, setUsersList] = useState(FALLBACK_USERS);
+  const [usersList, setUsersList] = useState([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('ALL');
   const [loggingInUserId, setLoggingInUserId] = useState(null);
 
@@ -96,12 +42,22 @@ export default function LoginPage() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
+        setLoadingUsers(true);
         const res = await authApi.getTestUsers();
         if (res.data?.users && res.data.users.length > 0) {
           setUsersList(res.data.users);
+          const firstUser = res.data.users[0];
+          setPhoneOrEmail(firstUser.phone);
+          setPassword(firstUser.password || '123456');
+          setActiveUserPhone(firstUser.phone);
+        } else {
+          setUsersList([]);
         }
       } catch (err) {
-        console.warn('Using fallback test users:', err.message);
+        console.warn('Failed to load portal accounts:', err.message);
+        setUsersList([]);
+      } finally {
+        setLoadingUsers(false);
       }
     };
     fetchUsers();
@@ -150,7 +106,7 @@ export default function LoginPage() {
     setLocalError(null);
 
     if (!phoneOrEmail || !password) {
-      setLocalError('Please enter both your Phone Number (or Email) and password.');
+      setLocalError('Please enter both your Phone Number and password.');
       return;
     }
 
@@ -291,116 +247,134 @@ export default function LoginPage() {
 
           {/* User Cards List */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {filteredUsers.map((userItem) => {
-              const isSelected = activeUserPhone === userItem.phone;
-              const isLoggingIn = loggingInUserId === userItem.id;
-              const badge = getRoleBadgeStyle(userItem.role);
+            {loadingUsers ? (
+              <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                Loading accounts...
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No active accounts found
+              </div>
+            ) : (
+              filteredUsers.map((userItem) => {
+                const isSelected = activeUserPhone === userItem.phone;
+                const isLoggingIn = loggingInUserId === userItem.id;
+                const badge = getRoleBadgeStyle(userItem.role);
 
-              return (
-                <div
-                  key={userItem.id}
-                  style={{
-                    border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
-                    borderRadius: 'var(--radius-md)',
-                    background: isSelected ? 'rgba(196, 154, 108, 0.08)' : 'var(--bg-primary)',
-                    padding: '12px 14px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '10px',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          padding: '2px 6px',
-                          borderRadius: '4px',
-                          background: badge.bg,
-                          color: badge.color,
+                return (
+                  <div
+                    key={userItem.id}
+                    onClick={() => handleSelectUser(userItem)}
+                    style={{
+                      border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      background: isSelected ? 'rgba(196, 154, 108, 0.08)' : 'var(--bg-primary)',
+                      padding: '12px 14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '10px',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease',
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '3px' }}>
+                        <span
+                          style={{
+                            fontSize: '0.7rem',
+                            fontWeight: 700,
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            background: badge.bg,
+                            color: badge.color,
+                          }}
+                        >
+                          {badge.label}
+                        </span>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: '0.86rem',
+                            color: 'var(--text-main)',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {userItem.full_name}
+                        </span>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                        <span>📱 <strong>{userItem.phone}</strong></span>
+                        <span>🔑 {userItem.password || '123456'}</span>
+                        {userItem.flat_number && (
+                          <span>• 🏠 {userItem.flat_number}</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Action Buttons */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelectUser(userItem);
                         }}
-                      >
-                        {badge.label}
-                      </span>
-                      <span
                         style={{
-                          fontWeight: 700,
-                          fontSize: '0.86rem',
+                          background: 'transparent',
+                          border: '1px solid var(--border-card)',
                           color: 'var(--text-main)',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
+                          borderRadius: '6px',
+                          padding: '5px 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
                         }}
+                        title="Fill in credentials"
                       >
-                        {userItem.full_name}
-                      </span>
-                    </div>
+                        Fill
+                      </button>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      <span>📱 <strong>{userItem.phone}</strong></span>
-                      <span>🔑 {userItem.password || '123456'}</span>
-                      {userItem.flat_number && (
-                        <span>• 🏠 {userItem.flat_number}</span>
-                      )}
+                      <button
+                        type="button"
+                        disabled={isLoading}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickLogin(userItem);
+                        }}
+                        style={{
+                          background: 'var(--color-clay)',
+                          border: 'none',
+                          color: '#ffffff',
+                          borderRadius: '6px',
+                          padding: '5px 10px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '3px',
+                          boxShadow: '0 2px 6px rgba(196, 154, 108, 0.3)',
+                        }}
+                        title="1-Click Login"
+                      >
+                        {isLoggingIn ? (
+                          <span>...</span>
+                        ) : (
+                          <>
+                            <span>Login</span>
+                            <ArrowRight size={11} />
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
-
-                  {/* Quick Action Buttons */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <button
-                      type="button"
-                      onClick={() => handleSelectUser(userItem)}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid var(--border-card)',
-                        color: 'var(--text-main)',
-                        borderRadius: '6px',
-                        padding: '5px 8px',
-                        fontSize: '0.72rem',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                      }}
-                      title="Fill in credentials"
-                    >
-                      Fill
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={isLoading}
-                      onClick={() => handleQuickLogin(userItem)}
-                      style={{
-                        background: 'var(--color-clay)',
-                        border: 'none',
-                        color: '#ffffff',
-                        borderRadius: '6px',
-                        padding: '5px 10px',
-                        fontSize: '0.72rem',
-                        fontWeight: 700,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        boxShadow: '0 2px 6px rgba(196, 154, 108, 0.3)',
-                      }}
-                      title="1-Click Login"
-                    >
-                      {isLoggingIn ? (
-                        <span>...</span>
-                      ) : (
-                        <>
-                          <span>Login</span>
-                          <ArrowRight size={11} />
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -434,11 +408,9 @@ export default function LoginPage() {
 
           <div style={{ marginBottom: '22px' }}>
             <h3 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--color-dark-brown)', marginBottom: '4px' }}>
-              Sign in to Portal
+              Sign in
             </h3>
-            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Select a test account on the left or enter credentials manually.
-            </p>
+
           </div>
 
           {/* Error Alert */}
@@ -466,7 +438,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit}>
             <div className="input-group">
               <label className="input-label" htmlFor="input-phone">
-                Phone Number (or Email)
+                Phone Number
               </label>
               <div style={{ position: 'relative' }}>
                 <input
@@ -487,21 +459,43 @@ export default function LoginPage() {
                 <label className="input-label" htmlFor="input-password">
                   Password
                 </label>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                  Default: Password@123 / 123456
-                </span>
               </div>
               <div style={{ position: 'relative' }}>
                 <input
                   id="input-password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   className="input-field"
                   placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  style={{ paddingRight: '44px' }}
                 />
-                <Lock size={16} color="var(--text-dim)" style={{ position: 'absolute', right: '14px', top: '14px' }} />
+                <button
+                  type="button"
+                  id="btn-toggle-password"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: showPassword ? 'var(--color-clay)' : 'var(--text-dim)',
+                    borderRadius: '4px',
+                    transition: 'color 0.15s ease',
+                  }}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
               </div>
             </div>
 
@@ -516,7 +510,7 @@ export default function LoginPage() {
                 <span>Authenticating...</span>
               ) : (
                 <>
-                  <span>Sign In to Dashboard</span>
+                  <span>Sign In</span>
                   <ArrowRight size={16} />
                 </>
               )}

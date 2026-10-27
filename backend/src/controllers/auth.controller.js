@@ -24,10 +24,28 @@ class AuthController {
 
   /**
    * POST /api/auth/logout
-   * Client-side token invalidation / logout acknowledgment
+   * Client-side token invalidation & automatic Gate Exit for Security personnel
    */
   static async logout(req, res, next) {
     try {
+      const authHeader = req.headers.authorization;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        if (token) {
+          try {
+            const jwt = require('jsonwebtoken');
+            const config = require('../config/env');
+            const decoded = jwt.verify(token, config.jwt.secret);
+            if (decoded && decoded.role === 'SECURITY') {
+              const GateService = require('../services/gate.service');
+              await GateService.securitySelfCheckOut(decoded);
+            }
+          } catch (e) {
+            // Ignore expired/invalid token during logout
+          }
+        }
+      }
+
       return ApiResponse.success(res, 'Logged out successfully', {
         loggedOut: true,
       });

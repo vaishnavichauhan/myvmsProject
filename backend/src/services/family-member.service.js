@@ -158,6 +158,55 @@ class FamilyMemberService {
       }
     }
 
+    // 1. Enforce Home / Resident max_family_members limit assigned by Admin
+    let maxFamilyAllowed = 4;
+    if (residentId) {
+      const [rRows] = await pool.query('SELECT max_family_members FROM residents WHERE id = ?', [residentId]);
+      if (rRows.length > 0 && rRows[0].max_family_members !== null) {
+        maxFamilyAllowed = parseInt(rRows[0].max_family_members, 10);
+      }
+    } else if (targetHomeId) {
+      const [hRows] = await pool.query('SELECT max_family_members FROM homes WHERE id = ?', [targetHomeId]);
+      if (hRows.length > 0 && hRows[0].max_family_members !== null) {
+        maxFamilyAllowed = parseInt(hRows[0].max_family_members, 10);
+      }
+    }
+
+    const existingFamily = await FamilyMemberRepository.findByHomeId(targetHomeId);
+    if (existingFamily.length >= maxFamilyAllowed) {
+      throw ApiError.badRequest(
+        `Cannot add family member. Maximum family accounts allowed for your home is ${maxFamilyAllowed}. You have already registered ${existingFamily.length} account(s).`
+      );
+    }
+
+    // 2. Enforce Society max_users limit across society
+    const [homeRows] = await pool.query('SELECT society_id FROM homes WHERE id = ?', [targetHomeId]);
+    if (homeRows.length > 0) {
+      const societyId = homeRows[0].society_id;
+      const [socRows] = await pool.query(
+        `SELECT s.max_users, sp.max_users AS plan_max_users 
+         FROM societies s 
+         LEFT JOIN subscription_plans sp ON s.subscription_plan_id = sp.id 
+         WHERE s.id = ?`,
+        [societyId]
+      );
+      if (socRows.length > 0) {
+        const allowedMaxUsers = socRows[0].max_users || socRows[0].plan_max_users;
+        if (allowedMaxUsers) {
+          const [userCountRows] = await pool.query(
+            'SELECT COUNT(*) as total_users FROM users WHERE society_id = ? AND status != "INACTIVE"',
+            [societyId]
+          );
+          const currentUsers = userCountRows[0].total_users;
+          if (currentUsers >= allowedMaxUsers) {
+            throw ApiError.badRequest(
+              `Cannot add family member. Our society max user limit is ${allowedMaxUsers}. Current active users: ${currentUsers}. Society max user limit reached.`
+            );
+          }
+        }
+      }
+    }
+
     // Hash password with bcrypt
     const hashedPassword = await bcrypt.hash(password, 10);
 

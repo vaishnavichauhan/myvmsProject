@@ -828,6 +828,27 @@ export default function DashboardPage() {
                   </span>
                 </div>
               </div>
+              <div style={{ width: 1, height: 26, background: 'var(--color-sand)' }} />
+              <div>
+                <Link
+                  to="/dashboard/subscription-billing"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 14px',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'var(--color-clay)',
+                    color: '#ffffff',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    textDecoration: 'none',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                  }}
+                >
+                  Pay & View Invoices →
+                </Link>
+              </div>
             </div>
           </div>
 

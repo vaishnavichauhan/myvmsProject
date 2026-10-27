@@ -187,20 +187,44 @@ class SocietyService {
       throw ApiError.notFound(`Society with ID ${id} not found.`);
     }
 
-    // Society Name, Unique Society Code, and Structure Type are created by SuperAdmin, so Admin cannot modify them
+    // Non-superadmin (Society Admin) cannot modify name, code, society structure type, or status
     if (user && user.role !== 'SUPER_ADMIN') {
       delete data.name;
       delete data.code;
       delete data.society_type;
+      delete data.status;
+    }
+
+    if (data.name && !String(data.name).trim()) {
+      throw ApiError.badRequest('Society Name cannot be empty.');
+    }
+
+    if (data.code) {
+      const codeUpper = String(data.code).trim().toUpperCase();
+      if (codeUpper !== existing.code) {
+        const withCode = await SocietyRepository.findByCode(codeUpper);
+        if (withCode && withCode.id !== Number(id)) {
+          throw ApiError.conflict(`Society code "${codeUpper}" is already in use by another society.`);
+        }
+      }
+      data.code = codeUpper;
     }
 
     if (data.society_type) {
-      const validTypes = ['BUNGALOW', 'FLAT', 'GATED_COMMUNITY', 'APARTMENT', 'COMMERCIAL', 'OTHER'];
+      const validTypes = ['BUNGALOW', 'FLAT', 'GATED_COMMUNITY', 'APARTMENT', 'COMMERCIAL', 'PENTHOUSE', 'OTHER'];
       const typeUpper = data.society_type.toUpperCase();
       if (!validTypes.includes(typeUpper)) {
         throw ApiError.badRequest(`Invalid Society Type. Must be one of: ${validTypes.join(', ')}`);
       }
       data.society_type = typeUpper;
+    }
+
+    if (data.max_units !== undefined) {
+      const maxU = parseInt(data.max_units, 10);
+      if (!isNaN(maxU) && maxU > 0) {
+        data.max_units = maxU;
+        data.total_homes = maxU;
+      }
     }
 
     if (data.property_configuration) {
@@ -241,7 +265,7 @@ class SocietyService {
         }
 
         data.total_homes = newTotal;
-        data.max_units = Math.max(existing.max_units || 0, newTotal);
+        data.max_units = data.max_units !== undefined ? parseInt(data.max_units, 10) : newTotal;
         const HomeRepository = require('../repositories/home.repository');
         const existingHomes = await HomeRepository.findBySocietyId(id);
         const occupiedCount = existingHomes.filter(

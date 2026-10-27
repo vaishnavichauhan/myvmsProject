@@ -15,12 +15,12 @@ class VisitorService {
   /**
    * Check visitor permission for a home & retrieve resident roster
    */
-  static async checkHomePermission(homeId, targetUserId = null) {
+  static async checkHomePermission(homeId, targetUserId = null, visitType = 'VISITOR') {
     if (!homeId) {
       throw ApiError.badRequest('Home ID is required.');
     }
 
-    const check = await VisitorRepository.checkHomePermission(homeId, targetUserId);
+    const check = await VisitorRepository.checkHomePermission(homeId, targetUserId, visitType);
     if (!check) {
       throw ApiError.notFound(`Home with ID ${homeId} not found.`);
     }

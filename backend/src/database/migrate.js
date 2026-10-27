@@ -80,6 +80,16 @@ async function migrate() {
       "ALTER TABLE announcements MODIFY COLUMN status ENUM('ACTIVE', 'PUBLISHED', 'DRAFT', 'ARCHIVED') NOT NULL DEFAULT 'ACTIVE'"
     );
 
+    // Ensure special_charges columns for creator tracking (Admin vs Committee)
+    const [scCols] = await connection.query('SHOW COLUMNS FROM special_charges');
+    const scColNames = scCols.map((c) => c.Field);
+    if (!scColNames.includes('created_by_type')) {
+      await connection.query("ALTER TABLE special_charges ADD COLUMN created_by_type VARCHAR(50) NULL DEFAULT 'ADMIN' AFTER created_by_user_id");
+    }
+    if (!scColNames.includes('creator_member_name')) {
+      await connection.query("ALTER TABLE special_charges ADD COLUMN creator_member_name VARCHAR(150) NULL AFTER created_by_type");
+    }
+
     // Ensure resident_permissions is Home-wise (UNIQUE home_id, user_id NULL)
     const [permIndexes] = await connection.query("SHOW INDEX FROM resident_permissions WHERE Key_name = 'uq_home_permission'");
     if (permIndexes.length === 0) {
@@ -134,7 +144,7 @@ async function migrate() {
         \`paid_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         \`balance_amount\` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         \`due_date\` DATE NOT NULL,
-        \`status\` ENUM('PENDING', 'PARTIALLY_PAID', 'PAID', 'OVERDUE') NOT NULL DEFAULT 'PENDING',
+        \`status\` ENUM('PENDING', 'PARTIALLY_PAID', 'PENDING_APPROVAL', 'PAID', 'OVERDUE') NOT NULL DEFAULT 'PENDING',
         \`notes\` TEXT NULL,
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -143,6 +153,12 @@ async function migrate() {
         INDEX \`idx_bill_period\` (\`billing_period\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure status enum in maintenance_bills includes PENDING_APPROVAL
+    await connection.query(`
+      ALTER TABLE \`maintenance_bills\`
+      MODIFY COLUMN \`status\` ENUM('PENDING', 'PARTIALLY_PAID', 'PENDING_APPROVAL', 'PAID', 'OVERDUE') NOT NULL DEFAULT 'PENDING';
+    `).catch(() => {});
 
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`maintenance_payments\` (
@@ -154,9 +170,13 @@ async function migrate() {
         \`paid_by_user_id\` INT NULL,
         \`amount\` DECIMAL(10,2) NOT NULL,
         \`payment_method\` ENUM('CASH', 'UPI', 'NET_BANKING', 'CHEQUE', 'CARD') NOT NULL DEFAULT 'UPI',
+        \`status\` ENUM('PENDING_APPROVAL', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'APPROVED',
         \`transaction_reference\` VARCHAR(100) NULL,
         \`payment_date\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         \`collected_by_user_id\` INT NULL,
+        \`approved_by_user_id\` INT NULL,
+        \`approved_at\` TIMESTAMP NULL,
+        \`rejection_reason\` TEXT NULL,
         \`remarks\` TEXT NULL,
         \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX \`idx_pay_bill\` (\`bill_id\`),
@@ -164,6 +184,18 @@ async function migrate() {
         INDEX \`idx_pay_home\` (\`home_id\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure approval columns exist on existing maintenance_payments table
+    const [existingPayCols] = await connection.query(`SHOW COLUMNS FROM \`maintenance_payments\` LIKE 'status'`);
+    if (existingPayCols.length === 0) {
+      await connection.query(`
+        ALTER TABLE \`maintenance_payments\`
+        ADD COLUMN \`status\` ENUM('PENDING_APPROVAL', 'APPROVED', 'REJECTED') NOT NULL DEFAULT 'APPROVED' AFTER \`payment_method\`,
+        ADD COLUMN \`approved_by_user_id\` INT NULL AFTER \`collected_by_user_id\`,
+        ADD COLUMN \`approved_at\` TIMESTAMP NULL AFTER \`approved_by_user_id\`,
+        ADD COLUMN \`rejection_reason\` TEXT NULL AFTER \`approved_at\`;
+      `).catch(() => {});
+    }
 
     console.log('✓ Maintenance system tables verified.');
 
@@ -235,7 +267,40 @@ async function migrate() {
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
-    console.log('✓ Special charges system tables verified.');
+    // Verify special charge approval status and audit columns
+    await connection.query(`
+      ALTER TABLE \`special_charge_assignments\` 
+      MODIFY COLUMN \`status\` ENUM('PENDING', 'PENDING_APPROVAL', 'PAID', 'PARTIALLY_PAID', 'WAIVED') DEFAULT 'PENDING';
+    `).catch(() => {});
+
+    const [scaCols] = await connection.query("SHOW COLUMNS FROM `special_charge_assignments`");
+    const scaFields = scaCols.map((c) => c.Field);
+    if (!scaFields.includes('pending_payment_id')) {
+      await connection.query("ALTER TABLE `special_charge_assignments` ADD COLUMN `pending_payment_id` INT NULL");
+    }
+    if (!scaFields.includes('approved_by_user_id')) {
+      await connection.query("ALTER TABLE `special_charge_assignments` ADD COLUMN `approved_by_user_id` INT NULL");
+    }
+    if (!scaFields.includes('approved_at')) {
+      await connection.query("ALTER TABLE `special_charge_assignments` ADD COLUMN `approved_at` TIMESTAMP NULL");
+    }
+
+    const [scpCols] = await connection.query("SHOW COLUMNS FROM `special_charge_payments`");
+    const scpFields = scpCols.map((c) => c.Field);
+    if (!scpFields.includes('status')) {
+      await connection.query("ALTER TABLE `special_charge_payments` ADD COLUMN `status` ENUM('PENDING_APPROVAL', 'APPROVED', 'REJECTED') DEFAULT 'APPROVED'");
+    }
+    if (!scpFields.includes('approved_by_user_id')) {
+      await connection.query("ALTER TABLE `special_charge_payments` ADD COLUMN `approved_by_user_id` INT NULL");
+    }
+    if (!scpFields.includes('approved_at')) {
+      await connection.query("ALTER TABLE `special_charge_payments` ADD COLUMN `approved_at` TIMESTAMP NULL");
+    }
+    if (!scpFields.includes('admin_remarks')) {
+      await connection.query("ALTER TABLE `special_charge_payments` ADD COLUMN `admin_remarks` TEXT NULL");
+    }
+
+    console.log('✓ Special charges system tables & approval columns verified.');
 
     // 2d. Ensure Polls & Surveys Tables Exist
     console.log('[2d/3] Verifying Polls & Surveys tables...');
@@ -286,6 +351,17 @@ async function migrate() {
         INDEX \`idx_vote_user\` (\`user_id\`)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    try {
+      const [pCols] = await connection.query(`SHOW COLUMNS FROM \`polls\``);
+      const pFieldNames = pCols.map((c) => c.Field);
+      if (!pFieldNames.includes('created_by_type')) {
+        await connection.query(`ALTER TABLE \`polls\` ADD COLUMN \`created_by_type\` VARCHAR(50) NULL DEFAULT 'ADMIN' AFTER \`created_by_user_id\``);
+      }
+      if (!pFieldNames.includes('creator_member_name')) {
+        await connection.query(`ALTER TABLE \`polls\` ADD COLUMN \`creator_member_name\` VARCHAR(150) NULL AFTER \`created_by_type\``);
+      }
+    } catch (_) {}
 
     console.log('✓ Polls & Surveys system tables verified.');
 
@@ -483,6 +559,23 @@ async function migrate() {
       await connection.query('ALTER TABLE societies ADD COLUMN admin_user_id INT NULL AFTER max_gates');
     }
 
+    // Ensure workers table has aadhar_number and photo_url as MEDIUMTEXT
+    try {
+      const [workerCols] = await connection.query('SHOW COLUMNS FROM `workers`');
+      const workerColNames = workerCols.map((c) => c.Field);
+      if (!workerColNames.includes('aadhar_number')) {
+        await connection.query('ALTER TABLE `workers` ADD COLUMN `aadhar_number` VARCHAR(30) NULL AFTER `status`');
+        console.log('✓ Added aadhar_number column to workers table');
+      }
+      const photoCol = workerCols.find((c) => c.Field === 'photo_url');
+      if (photoCol && !photoCol.Type.toLowerCase().includes('text')) {
+        await connection.query('ALTER TABLE `workers` MODIFY COLUMN `photo_url` MEDIUMTEXT NULL');
+        console.log('✓ Altered workers photo_url to MEDIUMTEXT');
+      }
+    } catch (workerMigrateErr) {
+      console.warn('Note: workers table check:', workerMigrateErr.message);
+    }
+
     // 3. Create subscription system tables
     await connection.query(`
       CREATE TABLE IF NOT EXISTS \`subscription_plans\` (
@@ -656,65 +749,8 @@ async function migrate() {
     }
     console.log('✓ Registered 10 platform modules in feature registry.');
 
-    // 5. Seed Initial Subscription Plans (Essential, Professional, Enterprise)
-    console.log('✓ Seeding initial subscription plans...');
-    const initialPlans = [
-      {
-        name: 'Essential',
-        code: 'PLAN-ESSENTIAL',
-        description: 'Starter tier for small societies with core resident, worker and community polling features.',
-        price: 999.00,
-        billing_cycle: 'MONTHLY',
-        max_users: 50,
-        max_units: 30,
-        max_workers: 15,
-        trial_days: 14,
-        features: ['WORKERS', 'RESIDENTS', 'POLLS'],
-      },
-      {
-        name: 'Professional',
-        code: 'PLAN-PROFESSIONAL',
-        description: 'Mid-sized societies needing complete maintenance invoicing, special charges, workers, and resident directory.',
-        price: 2499.00,
-        billing_cycle: 'MONTHLY',
-        max_users: 150,
-        max_units: 100,
-        max_workers: 40,
-        trial_days: 14,
-        features: ['WORKERS', 'RESIDENTS', 'SOCIETY_FINANCE'],
-      },
-      {
-        name: 'Enterprise',
-        code: 'PLAN-ENTERPRISE',
-        description: 'Comprehensive luxury tier unlocking all available MYVMS facilities, amenities, security, finance, and portals.',
-        price: 4999.00,
-        billing_cycle: 'MONTHLY',
-        max_users: 500,
-        max_units: 350,
-        max_workers: 100,
-        trial_days: 30,
-        features: defaultFeatures.map((f) => f.code),
-      },
-    ];
-
-    for (const plan of initialPlans) {
-      const [res] = await connection.query(`
-        INSERT INTO subscription_plans (name, code, description, price, billing_cycle, max_users, max_units, max_workers, trial_days, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
-        ON DUPLICATE KEY UPDATE name = VALUES(name), price = VALUES(price), description = VALUES(description), max_users = VALUES(max_users), max_units = VALUES(max_units);
-      `, [plan.name, plan.code, plan.description, plan.price, plan.billing_cycle, plan.max_users, plan.max_units, plan.max_workers, plan.trial_days]);
-
-      const [pRows] = await connection.query('SELECT id FROM subscription_plans WHERE code = ?', [plan.code]);
-      const planId = pRows[0].id;
-
-      // Assign features
-      for (const featCode of plan.features) {
-        await connection.query(`
-          INSERT IGNORE INTO plan_features (plan_id, feature_code) VALUES (?, ?)
-        `, [planId, featCode]);
-      }
-    }
-    console.log('✓ Initial 3 plans (Essential, Professional, Enterprise) verified with feature mappings.');
+    // 5. Initial Subscription Plans (Dummy plans removed - Super Admin creates plans dynamically)
+    console.log('✓ Subscription plans table ready (managed dynamically by Super Admin).');
 
     // 6. Ensure default Super Admin account exists
     console.log('[3/3] Ensuring Super Admin & System Administrator accounts exist...');
@@ -730,18 +766,7 @@ async function migrate() {
       console.log('✓ Super Admin account exists [ID: ' + superRows[0].id + '].');
     }
 
-    // Ensure Society Admin account exists
-    const [adminRows] = await connection.query("SELECT id FROM users WHERE role = 'ADMIN' OR email = 'admin@myvms.com' LIMIT 1");
-    if (adminRows.length === 0) {
-      const defaultPassword = await bcrypt.hash('Password@123', 10);
-      await connection.query(`
-        INSERT INTO \`users\` (\`full_name\`, \`email\`, \`phone\`, \`password\`, \`role\`, \`flat_number\`, \`block_or_tower\`, \`status\`)
-        VALUES ('System Administrator', 'admin@myvms.com', '9800000000', ?, 'ADMIN', 'Admin Office', 'Clubhouse', 'ACTIVE')
-      `, [defaultPassword]);
-      console.log('✓ Created default Society Administrator (admin@myvms.com / 9800000000 / Password@123)');
-    } else {
-      console.log('✓ Society Administrator account exists [ID: ' + adminRows[0].id + '].');
-    }
+    // Society Admin accounts are created dynamically when Super Admin creates societies
 
     // 7. Ensure existing society has an active subscription assigned
     const [socList] = await connection.query('SELECT id, subscription_plan_id FROM societies');

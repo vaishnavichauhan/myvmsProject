@@ -11,4 +11,6 @@ export const residentApi = {
   updateResidentStatus: (id, status) => apiClient.patch(`/residents/${id}/status`, { status }),
   resetResidentPassword: (id, newPassword) => apiClient.post(`/residents/${id}/reset-password`, { newPassword }),
   deleteResident: (id) => apiClient.delete(`/residents/${id}`),
+  importBatchResidents: (data) => apiClient.post('/residents/import-batch', data),
+  getSocietyUsers: (params) => apiClient.get('/residents/society-users', { params }),
 };

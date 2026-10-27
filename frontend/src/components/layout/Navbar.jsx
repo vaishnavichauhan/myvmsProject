@@ -16,8 +16,8 @@ export default function Navbar() {
   const [passError, setPassError] = useState(null);
   const [submittingPass, setSubmittingPass] = useState(false);
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await logout();
     navigate('/login');
   };
 

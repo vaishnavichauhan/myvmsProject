@@ -35,14 +35,15 @@ class SubscriptionRepository {
     const [revenueStats] = await pool.query(`
       SELECT 
         COALESCE(SUM(CASE 
-          WHEN s.status IN ('ACTIVE', 'TRIAL') AND s.billing_cycle = 'MONTHLY' THEN s.price_snapshot
-          WHEN s.status IN ('ACTIVE', 'TRIAL') AND s.billing_cycle = 'QUARTERLY' THEN s.price_snapshot / 3
-          WHEN s.status IN ('ACTIVE', 'TRIAL') AND s.billing_cycle = 'HALF_YEARLY' THEN s.price_snapshot / 6
-          WHEN s.status IN ('ACTIVE', 'TRIAL') AND s.billing_cycle = 'YEARLY' THEN s.price_snapshot / 12
+          WHEN s.status = 'ACTIVE' AND s.billing_cycle = 'MONTHLY' THEN s.price_snapshot
+          WHEN s.status = 'ACTIVE' AND s.billing_cycle = 'QUARTERLY' THEN s.price_snapshot / 3
+          WHEN s.status = 'ACTIVE' AND s.billing_cycle = 'HALF_YEARLY' THEN s.price_snapshot / 6
+          WHEN s.status = 'ACTIVE' AND s.billing_cycle = 'YEARLY' THEN s.price_snapshot / 12
           ELSE 0 END), 0) AS mrr,
-        COALESCE((SELECT SUM(amount) FROM subscription_invoices WHERE status = 'PENDING'), 0) AS pending_payments,
-        COALESCE((SELECT SUM(amount) FROM subscription_payments WHERE payment_status = 'PAID'), 0) AS total_subscription_revenue
+        COALESCE((SELECT SUM(inv.amount) FROM subscription_invoices inv JOIN societies soc ON inv.society_id = soc.id WHERE inv.status = 'PENDING'), 0) AS pending_payments,
+        COALESCE((SELECT SUM(pay.amount) FROM subscription_payments pay JOIN societies soc ON pay.society_id = soc.id WHERE pay.payment_status = 'PAID'), 0) AS total_subscription_revenue
       FROM society_subscriptions s
+      JOIN societies soc ON s.society_id = soc.id
     `);
 
     // 4. Recent Societies
@@ -262,10 +263,10 @@ class SubscriptionRepository {
         pincode = '',
         contact_number = '',
         contact_email = '',
-        max_units = 100,
-        max_users = 200,
-        max_workers = 50,
-        max_gates = 5,
+        max_units,
+        max_users,
+        max_workers,
+        max_gates,
       } = societyData;
 
       // 1. Resolve Plan
@@ -278,28 +279,39 @@ class SubscriptionRepository {
       if (planRows.length === 0) throw new Error('Selected subscription plan not found');
       const plan = planRows[0];
 
-      // 2. Insert Society Record
-      const finalMaxUnits = Number(max_units || plan.max_units);
-      const finalMaxUsers = Number(max_users || plan.max_users);
-      const finalMaxWorkers = Number(max_workers || plan.max_workers);
-      const finalMaxGates = Number(max_gates || plan.max_gates || 5);
+      // 2. Capacity limits & incremental pricing calculation
+      const finalMaxUnits = Number(max_units !== undefined && max_units !== '' && max_units !== null ? max_units : (plan.max_units || 10));
+      const finalMaxUsers = Number(max_users !== undefined && max_users !== '' && max_users !== null ? max_users : (plan.max_users || 50));
+      const finalMaxWorkers = Number(max_workers !== undefined && max_workers !== '' && max_workers !== null ? max_workers : (plan.max_workers || 20));
+      const finalMaxGates = Number(max_gates !== undefined && max_gates !== '' && max_gates !== null ? max_gates : (plan.max_gates || 1));
 
-      // Validate capacity limits against selected plan
-      if (plan.max_units && finalMaxUnits > plan.max_units) {
+      const extraUnitPrice = parseFloat(plan.extra_unit_price) || 0;
+      const extraUserPrice = parseFloat(plan.extra_user_price) || 0;
+      const extraGatePrice = parseFloat(plan.extra_gate_price) || 0;
+
+      // Only block if incremental price is 0 and capacity exceeds plan limit
+      if (plan.max_units && finalMaxUnits > plan.max_units && extraUnitPrice <= 0) {
         throw new Error(
           `Cannot create society with ${finalMaxUnits} units. The selected ${plan.name} Plan allows a maximum of ${plan.max_units} units. Please select an upgraded plan or set units up to ${plan.max_units}.`
         );
       }
-      if (plan.max_users && finalMaxUsers > plan.max_users) {
+      if (plan.max_users && finalMaxUsers > plan.max_users && extraUserPrice <= 0) {
         throw new Error(
           `Cannot set max users to ${finalMaxUsers}. The selected ${plan.name} Plan allows a maximum of ${plan.max_users} users.`
         );
       }
-      if (plan.max_workers && finalMaxWorkers > plan.max_workers) {
+      if (plan.max_gates && finalMaxGates > plan.max_gates && extraGatePrice <= 0) {
         throw new Error(
-          `Cannot set max workers to ${finalMaxWorkers}. The selected ${plan.name} Plan allows a maximum of ${plan.max_workers} workers.`
+          `Cannot set max gates to ${finalMaxGates}. The selected ${plan.name} Plan allows a maximum of ${plan.max_gates} gates.`
         );
       }
+
+      // Calculate total price with incremental capacity costs
+      const basePlanPrice = parseFloat(plan.price) || 0;
+      const extraUnits = Math.max(0, finalMaxUnits - (plan.max_units || 0));
+      const extraUsers = Math.max(0, finalMaxUsers - (plan.max_users || 0));
+      const extraGates = Math.max(0, finalMaxGates - (plan.max_gates || 1));
+      const totalPrice = basePlanPrice + (extraUnits * extraUnitPrice) + (extraUsers * extraUserPrice) + (extraGates * extraGatePrice);
 
       const subStatus = subscriptionData.status || (plan.trial_days > 0 ? 'TRIAL' : 'ACTIVE');
 
@@ -329,6 +341,20 @@ class SubscriptionRepository {
         finalMaxGates,
       ]);
       const societyId = socResult.insertId;
+
+      // If custom overage limits were set, also persist in society_limit_overrides
+      if (extraUnits > 0 || extraUsers > 0 || extraGates > 0) {
+        await connection.query(`
+          INSERT INTO society_limit_overrides (society_id, max_units, max_users, max_workers, max_gates, reason, created_by_user_id)
+          VALUES (?, ?, ?, ?, ?, 'Custom capacity with incremental plan pricing on society creation', ?)
+          ON DUPLICATE KEY UPDATE
+            max_units = VALUES(max_units),
+            max_users = VALUES(max_users),
+            max_workers = VALUES(max_workers),
+            max_gates = VALUES(max_gates),
+            reason = VALUES(reason)
+        `, [societyId, finalMaxUnits, finalMaxUsers, finalMaxWorkers, finalMaxGates, actorUserId || 1]);
+      }
 
       // 3. Create Society Admin Account (Hashed password)
       let adminUserId = null;
@@ -391,28 +417,50 @@ class SubscriptionRepository {
         startDate,
         endDate,
         plan.billing_cycle,
-        plan.price,
+        totalPrice,
         subStatus,
         trialEndsAt,
       ]);
 
-      // 5. Generate Subscription Invoice
+      // 5. Generate Subscription Invoice starting after trial period
       const invNumber = `SUB-INV-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+      
+      let invBillingStart;
+      let invDueDate;
+      if (subStatus === 'TRIAL' && trialEndsAt) {
+        invBillingStart = trialEndsAt;
+        invDueDate = trialEndsAt;
+      } else {
+        invBillingStart = startDate;
+        invDueDate = startDate;
+      }
+
+      const invEndCalc = new Date(invBillingStart);
+      if (plan.billing_cycle === 'YEARLY') {
+        invEndCalc.setFullYear(invEndCalc.getFullYear() + 1);
+      } else if (plan.billing_cycle === 'QUARTERLY') {
+        invEndCalc.setMonth(invEndCalc.getMonth() + 3);
+      } else if (plan.billing_cycle === 'HALF_YEARLY') {
+        invEndCalc.setMonth(invEndCalc.getMonth() + 6);
+      } else {
+        invEndCalc.setMonth(invEndCalc.getMonth() + 1);
+      }
+      const invBillingEnd = invEndCalc.toISOString().split('T')[0];
+
       await connection.query(`
         INSERT INTO subscription_invoices (
           invoice_number, society_id, plan_id, subscription_id, amount,
           billing_period_start, billing_period_end, due_date, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
       `, [
         invNumber,
         societyId,
         plan.id,
         subResult.insertId,
-        plan.price,
-        startDate,
-        endDate,
-        startDate,
-        subStatus === 'TRIAL' ? 'PAID' : 'PENDING',
+        totalPrice,
+        invBillingStart,
+        invBillingEnd,
+        invDueDate,
       ]);
 
       // 6. Audit Log
@@ -594,11 +642,16 @@ class SubscriptionRepository {
     const trial_days = data.trial_days !== undefined ? Number(data.trial_days) : (data.trialDays !== undefined ? Number(data.trialDays) : 14);
     const status = data.status || 'ACTIVE';
     const features = Array.isArray(data.features) ? data.features : [];
+    // Per-unit overage pricing
+    const extra_user_price = data.extra_user_price !== undefined ? parseFloat(data.extra_user_price) : (data.extraUserPrice !== undefined ? parseFloat(data.extraUserPrice) : 0);
+    const extra_unit_price = data.extra_unit_price !== undefined ? parseFloat(data.extra_unit_price) : (data.extraUnitPrice !== undefined ? parseFloat(data.extraUnitPrice) : 0);
+    const extra_gate_price = data.extra_gate_price !== undefined ? parseFloat(data.extra_gate_price) : (data.extraGatePrice !== undefined ? parseFloat(data.extraGatePrice) : 0);
 
     const [result] = await pool.query(`
       INSERT INTO subscription_plans (
-        name, code, description, price, billing_cycle, max_users, max_units, max_workers, max_gates, trial_days, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        name, code, description, price, billing_cycle, max_users, max_units, max_workers, max_gates, trial_days, status,
+        extra_user_price, extra_unit_price, extra_gate_price
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       name.trim(),
       code.trim().toUpperCase(),
@@ -611,6 +664,9 @@ class SubscriptionRepository {
       max_gates,
       trial_days,
       status,
+      extra_user_price,
+      extra_unit_price,
+      extra_gate_price,
     ]);
 
     const planId = result.insertId;
@@ -651,8 +707,18 @@ class SubscriptionRepository {
     if (payload.trialDays !== undefined && payload.trial_days === undefined) {
       payload.trial_days = Number(payload.trialDays);
     }
+    // Per-unit overage pricing camelCase → snake_case
+    if (payload.extraUserPrice !== undefined && payload.extra_user_price === undefined) {
+      payload.extra_user_price = parseFloat(payload.extraUserPrice) || 0;
+    }
+    if (payload.extraUnitPrice !== undefined && payload.extra_unit_price === undefined) {
+      payload.extra_unit_price = parseFloat(payload.extraUnitPrice) || 0;
+    }
+    if (payload.extraGatePrice !== undefined && payload.extra_gate_price === undefined) {
+      payload.extra_gate_price = parseFloat(payload.extraGatePrice) || 0;
+    }
 
-    const allowed = ['name', 'code', 'description', 'price', 'billing_cycle', 'max_users', 'max_units', 'max_workers', 'max_gates', 'trial_days', 'status'];
+    const allowed = ['name', 'code', 'description', 'price', 'billing_cycle', 'max_users', 'max_units', 'max_workers', 'max_gates', 'trial_days', 'status', 'extra_user_price', 'extra_unit_price', 'extra_gate_price'];
     for (const key of allowed) {
       if (payload[key] !== undefined) {
         fields.push(`\`${key}\` = ?`);
@@ -834,8 +900,10 @@ class SubscriptionRepository {
   static async checkLimit(societyId, limitType, delta = 1, connection = pool) {
     const [socRows] = await connection.query(`
       SELECT s.id, s.name, s.subscription_status, s.max_units, s.max_users, s.max_workers, s.max_gates,
+             sp.name AS plan_name, sp.max_units AS plan_max_units, sp.max_users AS plan_max_users, sp.max_workers AS plan_max_workers, sp.max_gates AS plan_max_gates,
              slo.max_units AS ov_units, slo.max_users AS ov_users, slo.max_workers AS ov_workers, slo.max_gates AS ov_gates
       FROM societies s
+      LEFT JOIN subscription_plans sp ON s.subscription_plan_id = sp.id
       LEFT JOIN society_limit_overrides slo ON slo.society_id = s.id
       WHERE s.id = ?
     `, [societyId]);
@@ -851,7 +919,7 @@ class SubscriptionRepository {
     }
 
     if (limitType === 'UNITS') {
-      const max = soc.ov_units !== null ? soc.ov_units : soc.max_units;
+      const max = soc.ov_units !== null && soc.ov_units !== undefined ? soc.ov_units : (soc.plan_max_units ?? soc.max_units);
       const [uRows] = await connection.query('SELECT COUNT(*) AS count FROM homes WHERE society_id = ?', [societyId]);
       const current = Number(uRows[0].count);
       if (current + delta > max) {
@@ -866,7 +934,7 @@ class SubscriptionRepository {
     }
 
     if (limitType === 'USERS') {
-      const max = soc.ov_users !== null ? soc.ov_users : soc.max_users;
+      const max = soc.ov_users !== null && soc.ov_users !== undefined ? soc.ov_users : (soc.plan_max_users ?? soc.max_users);
       const [uRows] = await connection.query('SELECT COUNT(DISTINCT id) AS count FROM users WHERE society_id = ? AND role != "SUPER_ADMIN"', [societyId]);
       const current = Number(uRows[0].count);
       if (current + delta > max) {
@@ -881,7 +949,7 @@ class SubscriptionRepository {
     }
 
     if (limitType === 'WORKERS') {
-      const max = soc.ov_workers !== null ? soc.ov_workers : soc.max_workers;
+      const max = soc.ov_workers !== null && soc.ov_workers !== undefined ? soc.ov_workers : (soc.plan_max_workers ?? soc.max_workers);
       const [wRows] = await connection.query('SELECT COUNT(DISTINCT id) AS count FROM workers WHERE society_id = ?', [societyId]);
       const current = Number(wRows[0].count);
       if (current + delta > max) {
@@ -896,7 +964,11 @@ class SubscriptionRepository {
     }
 
     if (limitType === 'GATES') {
-      const max = soc.ov_gates ?? soc.max_gates ?? 5;
+      const max = soc.ov_gates !== null && soc.ov_gates !== undefined
+        ? Number(soc.ov_gates)
+        : (soc.plan_max_gates !== null && soc.plan_max_gates !== undefined
+            ? Number(soc.plan_max_gates)
+            : Number(soc.max_gates || 1));
       const [gRows] = await connection.query('SELECT COUNT(*) AS count FROM gates WHERE society_id = ?', [societyId]);
       const current = Number(gRows[0].count);
       if (current + delta > max) {
@@ -904,7 +976,7 @@ class SubscriptionRepository {
           allowed: false,
           current,
           max,
-          reason: `Gate creation limit reached! Your society has reached the maximum capacity of ${max} gates allowed by your subscription plan (${current}/${max} gates created). Please contact super admin or upgrade your plan to create more gates.`,
+          reason: `Cannot create gate. Your ${soc.plan_name || 'selected'} Plan allows a maximum of ${max} gate(s). Currently ${current}/${max} gate(s) exist. Please upgrade your subscription plan or request a gate limit override.`,
         };
       }
       return { allowed: true, current, max };
@@ -1094,10 +1166,25 @@ class SubscriptionRepository {
       SELECT inv.*,
              s.name AS society_name, s.code AS society_code,
              p.name AS plan_name, p.billing_cycle,
+             sp.id AS payment_id,
+             sp.payment_method,
+             sp.transaction_reference,
+             sp.payment_status,
+             sp.notes AS payment_notes,
+             sp.paid_at,
+             sp.created_at AS payment_submitted_at,
+             sp.receipt_number,
              (SELECT COUNT(*) FROM subscription_payments WHERE invoice_id = inv.id AND payment_status = 'PAID') AS is_paid
       FROM subscription_invoices inv
       JOIN societies s ON inv.society_id = s.id
       JOIN subscription_plans p ON inv.plan_id = p.id
+      LEFT JOIN (
+        SELECT p1.*
+        FROM subscription_payments p1
+        INNER JOIN (
+          SELECT MAX(id) AS max_id FROM subscription_payments GROUP BY invoice_id
+        ) p2 ON p1.id = p2.max_id
+      ) sp ON sp.invoice_id = inv.id
       WHERE 1=1
     `;
     const params = [];
@@ -1116,6 +1203,242 @@ class SubscriptionRepository {
 
     const [rows] = await pool.query(query, params);
     return rows;
+  }
+
+  static async submitSubscriptionPayment(invoiceId, societyId, paymentData, actorUserId) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [invRows] = await connection.query(
+        'SELECT * FROM subscription_invoices WHERE id = ? AND society_id = ?',
+        [invoiceId, societyId]
+      );
+      if (invRows.length === 0) throw new Error('Subscription invoice not found for this society');
+      const invoice = invRows[0];
+
+      if (invoice.status === 'PAID') {
+        throw new Error('This subscription invoice has already been paid and verified.');
+      }
+
+      const paymentMethod = (paymentData.payment_method || paymentData.paymentMethod || 'UPI').toUpperCase();
+      const transactionRef = paymentData.transaction_reference || paymentData.transactionRef || `TXN-${Date.now()}`;
+      const notes = paymentData.notes || `Submitted by Society Admin via ${paymentMethod}`;
+      const amount = Number(paymentData.amount || invoice.amount);
+      const receiptNumber = `SUB-RCP-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+
+      // Insert pending payment record awaiting Super Admin approval
+      const [insertRes] = await connection.query(`
+        INSERT INTO subscription_payments (
+          receipt_number, invoice_id, society_id, amount, payment_method,
+          transaction_reference, payment_status, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING', ?)
+      `, [
+        receiptNumber,
+        invoice.id,
+        societyId,
+        amount,
+        paymentMethod,
+        transactionRef,
+        notes,
+      ]);
+
+      // Audit Log
+      await connection.query(`
+        INSERT INTO platform_audit_logs (actor_user_id, action, entity_type, entity_id, details_json)
+        VALUES (?, 'SUBSCRIPTION_PAYMENT_SUBMITTED', 'INVOICE', ?, ?)
+      `, [
+        actorUserId || 1,
+        invoice.id,
+        JSON.stringify({ receiptNumber, amount, paymentMethod, transactionRef, status: 'PENDING' }),
+      ]);
+
+      await connection.commit();
+      return {
+        success: true,
+        paymentId: insertRes.insertId,
+        receiptNumber,
+        status: 'PENDING',
+        message: 'Payment details submitted successfully. Awaiting approval by Super Admin.',
+      };
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async approveSubscriptionPayment(invoiceId, actorUserId) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [invRows] = await connection.query('SELECT * FROM subscription_invoices WHERE id = ?', [invoiceId]);
+      if (invRows.length === 0) throw new Error('Subscription invoice not found');
+      const invoice = invRows[0];
+
+      // Check if there is a pending payment submitted
+      const [pendingPayments] = await connection.query(
+        'SELECT * FROM subscription_payments WHERE invoice_id = ? AND payment_status = ? ORDER BY id DESC LIMIT 1',
+        [invoice.id, 'PENDING']
+      );
+
+      let receiptNumber;
+      if (pendingPayments.length > 0) {
+        receiptNumber = pendingPayments[0].receipt_number;
+        await connection.query(
+          "UPDATE subscription_payments SET payment_status = 'PAID', paid_at = CURRENT_TIMESTAMP WHERE id = ?",
+          [pendingPayments[0].id]
+        );
+      } else {
+        receiptNumber = `SUB-RCP-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+        await connection.query(`
+          INSERT INTO subscription_payments (
+            receipt_number, invoice_id, society_id, amount, payment_method,
+            transaction_reference, payment_status, paid_at, notes
+          ) VALUES (?, ?, ?, ?, 'CONFIRMED_BY_SUPERADMIN', ?, 'PAID', CURRENT_TIMESTAMP, 'Directly confirmed by Super Admin')
+        `, [
+          receiptNumber,
+          invoice.id,
+          invoice.society_id,
+          invoice.amount,
+          `ADM-${Date.now().toString().slice(-6)}`,
+        ]);
+      }
+
+      // Update invoice status to PAID
+      await connection.query(
+        "UPDATE subscription_invoices SET status = 'PAID', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [invoice.id]
+      );
+
+      // Ensure society & subscription status is ACTIVE
+      await connection.query(
+        "UPDATE societies SET subscription_status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        [invoice.society_id]
+      );
+      await connection.query(
+        "UPDATE society_subscriptions SET status = 'ACTIVE', updated_at = CURRENT_TIMESTAMP WHERE society_id = ?",
+        [invoice.society_id]
+      );
+
+      // Audit Log
+      await connection.query(`
+        INSERT INTO platform_audit_logs (actor_user_id, action, entity_type, entity_id, details_json)
+        VALUES (?, 'SUBSCRIPTION_PAYMENT_APPROVED', 'INVOICE', ?, ?)
+      `, [
+        actorUserId || 1,
+        invoice.id,
+        JSON.stringify({ receiptNumber, invoiceId: invoice.id, societyId: invoice.society_id, status: 'PAID' }),
+      ]);
+
+      await connection.commit();
+      return {
+        success: true,
+        receiptNumber,
+        invoiceId: invoice.id,
+        status: 'PAID',
+        societyId: invoice.society_id,
+        message: 'Payment approved successfully. Subscription activated.',
+      };
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  }
+
+  static async autoGenerateRecurringInvoices() {
+    try {
+      const [subs] = await pool.query(`
+        SELECT ss.*, p.billing_cycle AS plan_cycle, p.price AS plan_price
+        FROM society_subscriptions ss
+        JOIN subscription_plans p ON ss.plan_id = p.id
+        WHERE ss.status IN ('ACTIVE', 'TRIAL')
+      `);
+
+      const now = new Date();
+      const generated = [];
+
+      for (const sub of subs) {
+        const [invRows] = await pool.query(`
+          SELECT * FROM subscription_invoices
+          WHERE subscription_id = ?
+          ORDER BY id DESC LIMIT 1
+        `, [sub.id]);
+
+        if (invRows.length === 0) continue;
+        const lastInv = invRows[0];
+
+        const lastEnd = new Date(lastInv.billing_period_end);
+        if (now >= lastEnd) {
+          const [exists] = await pool.query(`
+            SELECT id FROM subscription_invoices
+            WHERE subscription_id = ? AND billing_period_start >= ?
+          `, [sub.id, lastInv.billing_period_end]);
+
+          if (exists.length === 0) {
+            const cycle = sub.billing_cycle || sub.plan_cycle || 'MONTHLY';
+            const nextStart = lastInv.billing_period_end;
+            const nextEndCalc = new Date(nextStart);
+            if (cycle === 'YEARLY') nextEndCalc.setFullYear(nextEndCalc.getFullYear() + 1);
+            else if (cycle === 'QUARTERLY') nextEndCalc.setMonth(nextEndCalc.getMonth() + 3);
+            else if (cycle === 'HALF_YEARLY') nextEndCalc.setMonth(nextEndCalc.getMonth() + 6);
+            else nextEndCalc.setMonth(nextEndCalc.getMonth() + 1);
+
+            const nextEnd = nextEndCalc.toISOString().split('T')[0];
+            const invNumber = `SUB-INV-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
+
+            await pool.query(`
+              INSERT INTO subscription_invoices (
+                invoice_number, society_id, plan_id, subscription_id, amount,
+                billing_period_start, billing_period_end, due_date, status
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+            `, [
+              invNumber,
+              sub.society_id,
+              sub.plan_id,
+              sub.id,
+              sub.price_snapshot || sub.plan_price,
+              nextStart,
+              nextEnd,
+              nextStart,
+            ]);
+
+            generated.push({ invoice_number: invNumber, society_id: sub.society_id });
+          }
+        }
+      }
+      return generated;
+    } catch (err) {
+      console.error('[Recurring Billing Error]', err);
+      return [];
+    }
+  }
+
+  static async getSocietySubscriptionBilling(societyId) {
+    const [subRows] = await pool.query(`
+      SELECT ss.id, ss.plan_id, ss.start_date, ss.end_date, ss.billing_cycle, ss.price_snapshot,
+             ss.status, ss.trial_ends_at, ss.auto_renew,
+             p.name AS plan_name, p.code AS plan_code, p.description AS plan_description,
+             p.price AS plan_catalog_price, p.trial_days AS plan_trial_days,
+             s.name AS society_name, s.code AS society_code,
+             s.max_units, s.max_users, s.max_workers, s.max_gates, s.subscription_status
+      FROM societies s
+      LEFT JOIN society_subscriptions ss ON s.id = ss.society_id
+      LEFT JOIN subscription_plans p ON (ss.plan_id = p.id OR s.subscription_plan_id = p.id)
+      WHERE s.id = ?
+      ORDER BY ss.id DESC LIMIT 1
+    `, [societyId]);
+
+    const invoices = await this.getInvoices({ societyId });
+
+    return {
+      subscription: subRows[0] || null,
+      invoices,
+    };
   }
 
   static async recordSubscriptionPayment(paymentData, actorUserId) {

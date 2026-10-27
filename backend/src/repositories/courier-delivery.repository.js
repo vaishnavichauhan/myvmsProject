@@ -64,6 +64,10 @@ class CourierDeliveryRepository {
     const permissionAllowed = permValue;
     const requiresApproval = !permValue;
 
+    const primaryContact = residents.find(r => r.role === 'OWNER') ||
+                           residents.find(r => r.role === 'TENANT') ||
+                           targetResident || null;
+
     return {
       home: {
         id: home.id,
@@ -72,9 +76,18 @@ class CourierDeliveryRepository {
         society_id: home.society_id,
       },
       type: checkType,
+      primary_contact: primaryContact
+        ? {
+            user_id: primaryContact.user_id,
+            name: primaryContact.full_name,
+            phone: primaryContact.phone,
+            role: primaryContact.role,
+          }
+        : null,
       residents: residents.map((r) => ({
         user_id: r.user_id,
         name: r.full_name,
+        phone: r.phone,
         role: r.role,
         courier_permission: homeCourierPerm ? 'YES' : 'NO',
         delivery_permission: homeDeliveryPerm ? 'YES' : 'NO',
@@ -83,6 +96,7 @@ class CourierDeliveryRepository {
         ? {
             user_id: targetResident.user_id,
             name: targetResident.full_name,
+            phone: targetResident.phone,
             role: targetResident.role,
             courier_permission: homeCourierPerm ? 'YES' : 'NO',
             delivery_permission: homeDeliveryPerm ? 'YES' : 'NO',
@@ -92,7 +106,7 @@ class CourierDeliveryRepository {
       requires_approval: requiresApproval,
       rule_message: permissionAllowed
         ? `Allowed according to ${checkType.toLowerCase()} permission.`
-        : `${checkType === 'COURIER' ? 'Courier' : 'Delivery'} permission = NO. Security must contact ${targetResident ? targetResident.full_name : 'resident'}.`,
+        : `${checkType === 'COURIER' ? 'Courier' : 'Delivery'} permission = NO. Security must contact ${targetResident ? `${targetResident.full_name} (${targetResident.phone || 'No phone'})` : 'resident'}.`,
     };
   }
 

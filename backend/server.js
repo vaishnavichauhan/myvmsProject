@@ -13,10 +13,32 @@ const startServer = async () => {
   if (dbStatus.success) {
     // Run migration/seeder check
     await migrate();
+
+    // Automated Subscription Recurring Bill Generator
+    try {
+      const SubscriptionRepository = require('./src/repositories/subscription.repository');
+      const autoInvs = await SubscriptionRepository.autoGenerateRecurringInvoices();
+      if (autoInvs && autoInvs.length > 0) {
+        console.log(`✓ [Billing Engine] Generated ${autoInvs.length} recurring subscription invoice(s).`);
+      }
+    } catch (billErr) {
+      console.warn('⚠️ [Billing Engine Warning]:', billErr.message);
+    }
   } else {
     console.warn('⚠️ WARNING: Database connection failed. Backend running in degraded mode.');
     console.warn(`   Error details: ${dbStatus.message}`);
   }
+
+  // Periodic recurring billing check (every 6 hours)
+  const billingTimer = setInterval(async () => {
+    try {
+      const SubscriptionRepository = require('./src/repositories/subscription.repository');
+      await SubscriptionRepository.autoGenerateRecurringInvoices();
+    } catch (e) {
+      console.error('[Billing Engine Auto-Gen Error]:', e.message);
+    }
+  }, 6 * 60 * 60 * 1000);
+  billingTimer.unref();
 
   const server = app.listen(config.port, () => {
     console.log(`✓ Server running in [${config.nodeEnv}] mode on port ${config.port}`);

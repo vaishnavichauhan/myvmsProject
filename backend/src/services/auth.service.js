@@ -57,7 +57,7 @@ class AuthService {
     }
     if (socId) {
       const [socRows] = await pool.query(
-        'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email, subscription_plan_id, subscription_status, max_units, max_users, max_workers FROM societies WHERE id = ?',
+        'SELECT id, name, code, registration_number, society_type, property_configuration, total_homes, address, address_line1, address_line2, city, state, pincode, country, contact_number, emergency_number, contact_phone, contact_email, subscription_plan_id, subscription_status, max_units, max_users, max_workers FROM societies WHERE id = ?',
         [socId]
       );
       if (socRows.length > 0) {
@@ -202,7 +202,7 @@ class AuthService {
     }
     if (socId) {
       const [socRows] = await pool.query(
-        'SELECT id, name, code, address, address_line1, address_line2, contact_number, emergency_number, contact_phone, contact_email, subscription_plan_id, subscription_status, max_units, max_users, max_workers FROM societies WHERE id = ?',
+        'SELECT id, name, code, registration_number, society_type, property_configuration, total_homes, address, address_line1, address_line2, city, state, pincode, country, contact_number, emergency_number, contact_phone, contact_email, subscription_plan_id, subscription_status, max_units, max_users, max_workers FROM societies WHERE id = ?',
         [socId]
       );
       if (socRows.length > 0) {

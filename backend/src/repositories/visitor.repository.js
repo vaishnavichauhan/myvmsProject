@@ -13,7 +13,7 @@ class VisitorRepository {
    * Check visitor permission for a home & retrieve resident roster
    * Strict privacy: Only resident names & permissions returned, no phone leakage.
    */
-  static async checkHomePermission(homeId, targetUserId = null) {
+  static async checkHomePermission(homeId, targetUserId = null, visitType = 'VISITOR') {
     // 1. Get Home info by ID or Home Number
     const [homes] = await pool.query(
       `SELECT h.id, h.home_number, h.building_or_wing, h.society_id
@@ -23,34 +23,49 @@ class VisitorRepository {
     if (homes.length === 0) return null;
     const home = homes[0];
 
-    // 2. Get home-level permissions
+    // 2. Get home-level permissions for all gate visit types
     const [permRows] = await pool.query(
-      `SELECT COALESCE(visitor_permission, 1) AS visitor_permission
+      `SELECT COALESCE(visitor_permission, 1) AS visitor_permission,
+              COALESCE(courier_permission, 1) AS courier_permission,
+              COALESCE(delivery_permission, 1) AS delivery_permission,
+              COALESCE(worker_permission, 1) AS worker_permission
        FROM resident_permissions
        WHERE home_id = ? LIMIT 1`,
       [home.id]
     );
-    const homeVisitorPerm = permRows.length > 0 ? Boolean(permRows[0].visitor_permission) : true;
+    const perms = permRows.length > 0 ? permRows[0] : {
+      visitor_permission: 1,
+      courier_permission: 1,
+      delivery_permission: 1,
+      worker_permission: 1,
+    };
 
-    // 3. Get all residents belonging to this home
+    const normType = String(visitType || 'VISITOR').toUpperCase();
+    let permKey = 'visitor_permission';
+    if (normType.includes('COURIER')) permKey = 'courier_permission';
+    else if (normType.includes('DELIVER')) permKey = 'delivery_permission';
+    else if (normType.includes('WORKER')) permKey = 'worker_permission';
+
+    const permissionAllowed = Boolean(perms[permKey]);
+    const requiresApproval = !permissionAllowed;
+
+    // 3. Get all residents belonging to this home with their phone numbers
     const [residents] = await pool.query(
       `SELECT 
          u.id AS user_id,
          u.full_name,
-         u.role
+         u.phone,
+         u.role,
+         home_users.resident_type
        FROM (
-         SELECT r.user_id FROM residents r WHERE r.home_id = ? AND r.status = 'ACTIVE'
+         SELECT r.user_id, r.resident_type FROM residents r WHERE r.home_id = ? AND r.status = 'ACTIVE'
          UNION
-         SELECT fm.user_id FROM family_members fm WHERE fm.home_id = ? AND fm.status = 'ACTIVE' AND fm.user_id IS NOT NULL
+         SELECT fm.user_id, 'FAMILY_MEMBER' AS resident_type FROM family_members fm WHERE fm.home_id = ? AND fm.status = 'ACTIVE' AND fm.user_id IS NOT NULL
        ) home_users
        JOIN users u ON home_users.user_id = u.id
        ORDER BY FIELD(u.role, 'OWNER', 'TENANT', 'FAMILY_MEMBER') ASC, u.id ASC`,
       [home.id, home.id]
     );
-
-    // Evaluate visitor permission (Home-wise)
-    const permissionAllowed = homeVisitorPerm;
-    const requiresApproval = !homeVisitorPerm;
 
     let targetResident = null;
     if (residents.length > 0) {
@@ -61,6 +76,10 @@ class VisitorRepository {
       }
     }
 
+    const primaryContact = residents.find(r => r.role === 'OWNER' || r.resident_type === 'OWNER') ||
+                           residents.find(r => r.role === 'TENANT' || r.resident_type === 'TENANT') ||
+                           targetResident || null;
+
     return {
       home: {
         id: home.id,
@@ -68,22 +87,44 @@ class VisitorRepository {
         building_or_wing: home.building_or_wing,
         society_id: home.society_id,
       },
-      residents: residents.map((r) => ({
-        user_id: r.user_id,
-        name: r.full_name,
-        role: r.role,
-        visitor_permission: Boolean(r.visitor_permission) ? 'YES' : 'NO',
-      })),
+      visit_type: normType,
+      permission_key: permKey,
+      permission_status: permissionAllowed ? 'YES' : 'NO',
+      permission_allowed: permissionAllowed,
+      requires_approval: requiresApproval,
+      rule_message: permissionAllowed
+        ? `Permission ALLOWED for Home ${home.home_number} (${normType}). Direct entry permitted.`
+        : `Permission RESTRICTED / REQUIRED for Home ${home.home_number} (${normType}). Security must call home owner/tenant before granting entry.`,
+      primary_contact: primaryContact ? {
+        user_id: primaryContact.user_id,
+        name: primaryContact.full_name,
+        phone: primaryContact.phone,
+        role: primaryContact.role,
+        resident_type: primaryContact.resident_type,
+      } : null,
       selected_resident: targetResident
         ? {
             user_id: targetResident.user_id,
             name: targetResident.full_name,
+            phone: targetResident.phone,
             role: targetResident.role,
-            visitor_permission: Boolean(targetResident.visitor_permission) ? 'YES' : 'NO',
+            visitor_permission: Boolean(perms.visitor_permission) ? 'YES' : 'NO',
           }
         : null,
-      permission_allowed: permissionAllowed,
-      requires_approval: requiresApproval,
+      residents: residents.map((r) => ({
+        user_id: r.user_id,
+        name: r.full_name,
+        phone: r.phone,
+        role: r.role,
+        resident_type: r.resident_type,
+        visitor_permission: Boolean(perms.visitor_permission) ? 'YES' : 'NO',
+      })),
+      permissions: {
+        visitor_permission: Boolean(perms.visitor_permission),
+        courier_permission: Boolean(perms.courier_permission),
+        delivery_permission: Boolean(perms.delivery_permission),
+        worker_permission: Boolean(perms.worker_permission),
+      },
     };
   }
 

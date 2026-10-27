@@ -27,6 +27,8 @@ import PricingPage from '../pages/amenities/PricingPage';
 import DepositsRefundsPage from '../pages/amenities/DepositsRefundsPage';
 import AmenityReportsPage from '../pages/amenities/AmenityReportsPage';
 import SettingsPage from '../pages/SettingsPage';
+import SocietySubscriptionPage from '../pages/SocietySubscriptionPage';
+import AccountsPage from '../pages/AccountsPage';
 import ProfilePage from '../pages/ProfilePage';
 import AccessDeniedPage from '../pages/AccessDeniedPage';
 import NotFoundPage from '../pages/NotFoundPage';
@@ -196,6 +198,22 @@ export default function AppRoutes() {
           element={
             <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Society Settings">
               <SettingsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="accounts"
+          element={
+            <RoleRoute allowedRoles={[ROLES.ADMIN, ROLES.SUPER_ADMIN]} moduleName="Society Financial Accounts">
+              <AccountsPage />
+            </RoleRoute>
+          }
+        />
+        <Route
+          path="subscription-billing"
+          element={
+            <RoleRoute allowedRoles={[ROLES.ADMIN]} moduleName="Society Subscription & Billing">
+              <SocietySubscriptionPage />
             </RoleRoute>
           }
         />

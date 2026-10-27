@@ -41,9 +41,17 @@ class UserRepository {
    */
   static async findByPhoneOrEmail(identifier) {
     if (!identifier) return null;
-    const clean = identifier.trim();
+    const clean = String(identifier).trim();
     if (clean.includes('@')) {
       return this.findByEmail(clean);
+    }
+    if (clean.toLowerCase() === 'superadmin') {
+      const [rows] = await pool.query("SELECT * FROM users WHERE role = 'SUPER_ADMIN' OR email = 'superadmin@myvms.com' LIMIT 1");
+      if (rows[0]) return rows[0];
+    }
+    if (clean.toLowerCase() === 'admin') {
+      const [rows] = await pool.query("SELECT * FROM users WHERE role = 'ADMIN' OR email = 'admin@myvms.com' LIMIT 1");
+      if (rows[0]) return rows[0];
     }
     return this.findByPhone(clean);
   }

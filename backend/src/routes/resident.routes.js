@@ -21,6 +21,11 @@ router.get(
   ResidentController.getAll
 );
 router.get(
+  '/society-users',
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
+  ResidentController.getSocietyUsers
+);
+router.get(
   '/:id',
   roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
   ResidentController.getById
@@ -32,6 +37,12 @@ router.post(
   roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
   enforceLimit('USERS'),
   ResidentController.create
+);
+
+router.post(
+  '/import-batch',
+  roleMiddleware(ROLES.ADMIN, ROLES.SUPER_ADMIN),
+  ResidentController.importBatch
 );
 
 router.put(

@@ -21,6 +21,8 @@ export default function SuperAdminBillingPage() {
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [approvingId, setApprovingId] = useState(null);
+  const [autoGenerating, setAutoGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
 
@@ -50,6 +52,35 @@ export default function SuperAdminBillingPage() {
     fetchInvoices();
   }, []);
 
+  const handleApprovePayment = async (inv) => {
+    try {
+      setApprovingId(inv.id);
+      setErrorMessage(null);
+      await superAdminApi.approvePayment(inv.id);
+      setStatusMessage(`Payment confirmed! Invoice ${inv.invoice_number} marked PAID and ${inv.society_name} subscription is now ACTIVE.`);
+      await fetchInvoices();
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to approve payment');
+    } finally {
+      setApprovingId(null);
+    }
+  };
+
+  const handleAutoGenerateBills = async () => {
+    try {
+      setAutoGenerating(true);
+      setErrorMessage(null);
+      const res = await superAdminApi.autoGenerateInvoices();
+      const count = res?.data?.generated?.length || 0;
+      setStatusMessage(count > 0 ? `Auto-generated ${count} recurring subscription invoice(s).` : 'All society subscription invoices are up to date.');
+      await fetchInvoices();
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to auto-generate bills');
+    } finally {
+      setAutoGenerating(false);
+    }
+  };
+
   const handleRecordPayment = async (e) => {
     e.preventDefault();
     if (!selectedInvoice) return;
@@ -74,13 +105,37 @@ export default function SuperAdminBillingPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       {/* Header */}
-      <div>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
-          Subscription Billing & Invoices
-        </h1>
-        <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)', marginTop: '2px' }}>
-          Platform subscription revenue, invoices, and verified payment transactions (strictly isolated from society maintenance).
-        </p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px' }}>
+        <div>
+          <h1 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--text-main)' }}>
+            Subscription Billing & Invoices
+          </h1>
+          <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+            Platform subscription revenue, invoices, and verified payment transactions (strictly isolated from society maintenance).
+          </p>
+        </div>
+
+        <button
+          onClick={handleAutoGenerateBills}
+          disabled={autoGenerating}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '9px 18px',
+            borderRadius: 'var(--radius-md)',
+            background: 'var(--color-clay)',
+            border: 'none',
+            color: '#ffffff',
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            cursor: autoGenerating ? 'not-allowed' : 'pointer',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+          }}
+        >
+          <RefreshCw size={14} className={autoGenerating ? 'animate-spin' : ''} />
+          {autoGenerating ? 'Checking Renewals...' : 'Auto-Generate Monthly Bills'}
+        </button>
       </div>
 
       {statusMessage && (
@@ -100,6 +155,26 @@ export default function SuperAdminBillingPage() {
         >
           <span>{statusMessage}</span>
           <X size={16} cursor="pointer" onClick={() => setStatusMessage(null)} />
+        </div>
+      )}
+
+      {errorMessage && (
+        <div
+          style={{
+            padding: '12px 16px',
+            borderRadius: 'var(--radius-md)',
+            background: 'rgba(239, 68, 68, 0.12)',
+            border: '1px solid rgba(239, 68, 68, 0.25)',
+            color: '#ef4444',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            fontSize: '0.88rem',
+            fontWeight: 600,
+          }}
+        >
+          <span>{errorMessage}</span>
+          <X size={16} cursor="pointer" onClick={() => setErrorMessage(null)} />
         </div>
       )}
 
@@ -151,10 +226,10 @@ export default function SuperAdminBillingPage() {
               <tr style={{ background: 'rgba(0,0,0,0.02)', borderBottom: '1px solid var(--border-card)' }}>
                 <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Invoice #</th>
                 <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Society</th>
-                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Plan</th>
-                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Billing Cycle</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Plan & Cycle</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Billing Period & Due Date</th>
                 <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Amount</th>
-                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Status</th>
+                <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700 }}>Status & Details</th>
                 <th style={{ padding: '14px 16px', color: 'var(--text-dim)', fontWeight: 700, textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
@@ -203,10 +278,18 @@ export default function SuperAdminBillingPage() {
                       >
                         {inv.plan_name}
                       </span>
+                      <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '3px', textTransform: 'capitalize' }}>
+                        {inv.billing_cycle ? inv.billing_cycle.toLowerCase() : 'monthly'}
+                      </div>
                     </td>
 
-                    <td style={{ padding: '14px 16px', textTransform: 'capitalize' }}>
-                      {inv.billing_cycle ? inv.billing_cycle.toLowerCase() : 'monthly'}
+                    <td style={{ padding: '14px 16px', fontSize: '0.8rem' }}>
+                      <div style={{ color: 'var(--text-main)', fontWeight: 600 }}>
+                        {inv.billing_period_start} → {inv.billing_period_end}
+                      </div>
+                      <div style={{ fontSize: '0.74rem', color: '#f59e0b', marginTop: '2px' }}>
+                        Due: {inv.due_date}
+                      </div>
                     </td>
 
                     <td style={{ padding: '14px 16px', fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>
@@ -214,30 +297,105 @@ export default function SuperAdminBillingPage() {
                     </td>
 
                     <td style={{ padding: '14px 16px' }}>
-                      <span
-                        style={{
-                          fontSize: '0.72rem',
-                          fontWeight: 700,
-                          padding: '3px 8px',
-                          borderRadius: '12px',
-                          background: inv.status === 'PAID' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
-                          color: inv.status === 'PAID' ? '#10b981' : '#f59e0b',
-                        }}
-                      >
-                        {inv.status}
-                      </span>
+                      {inv.status === 'PAID' ? (
+                        <div>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#10b981',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <CheckCircle2 size={12} /> PAID
+                          </span>
+                          {inv.receipt_number && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', marginTop: '3px', fontFamily: 'monospace' }}>
+                              {inv.receipt_number}
+                            </div>
+                          )}
+                        </div>
+                      ) : inv.payment_status === 'PENDING' ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: '12px',
+                              background: 'rgba(245, 158, 11, 0.18)',
+                              color: '#d97706',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              width: 'fit-content',
+                            }}
+                          >
+                            <Clock size={12} /> Pending Approval
+                          </span>
+                          <div style={{ fontSize: '0.74rem', color: 'var(--text-main)', fontWeight: 600 }}>
+                            via {inv.payment_method || 'UPI'} • {inv.transaction_reference}
+                          </div>
+                          {inv.payment_notes && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontStyle: 'italic' }}>
+                              "{inv.payment_notes}"
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            borderRadius: '12px',
+                            background: 'rgba(239, 68, 68, 0.12)',
+                            color: '#ef4444',
+                          }}
+                        >
+                          UNPAID
+                        </span>
+                      )}
                     </td>
 
                     <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                      {inv.status === 'PENDING' ? (
+                      {inv.payment_status === 'PENDING' ? (
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <button
+                            onClick={() => handleApprovePayment(inv)}
+                            disabled={approvingId === inv.id}
+                            style={{
+                              padding: '6px 12px',
+                              borderRadius: '6px',
+                              background: '#10b981',
+                              border: 'none',
+                              color: '#ffffff',
+                              fontSize: '0.75rem',
+                              fontWeight: 700,
+                              cursor: approvingId === inv.id ? 'not-allowed' : 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <CheckCircle2 size={13} />
+                            {approvingId === inv.id ? 'Approving...' : 'Approve Payment'}
+                          </button>
+                        </div>
+                      ) : inv.status === 'PENDING' ? (
                         <button
                           onClick={() => {
                             setSelectedInvoice(inv);
                             setPaymentForm({
                               amount: inv.amount,
-                              paymentMethod: 'BANK_TRANSFER',
-                              transactionRef: `TXN-${Date.now().toString().slice(-6)}`,
-                              notes: `Verified subscription payment for ${inv.society_name}`,
+                              paymentMethod: 'CASH',
+                              transactionRef: `OFFLINE-${Date.now().toString().slice(-6)}`,
+                              notes: `Direct cash/offline payment for ${inv.society_name}`,
                             });
                             setShowPaymentModal(true);
                           }}

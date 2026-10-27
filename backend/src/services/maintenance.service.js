@@ -99,19 +99,19 @@ class MaintenanceService {
   }
 
   static async generateBatchBills(societyId, data) {
-    const { billing_period, billing_cycle = 'MONTHLY', due_date = null } = data;
+    const { billing_period, billing_cycle = 'MONTHLY', due_date = null, plan_id = null } = data;
     if (!billing_period || !billing_period.trim()) {
       throw ApiError.badRequest('Billing period is required (e.g., "2026-10" or "Q4-2026")');
     }
 
-    return await MaintenanceRepository.generateBatchBills(societyId, billing_period.trim(), billing_cycle, due_date);
+    return await MaintenanceRepository.generateBatchBills(societyId, billing_period.trim(), billing_cycle, due_date, plan_id);
   }
 
-  static async selectResidentPlan(userId, planId) {
+  static async selectResidentPlan(userId, planId, requestedPeriod = null) {
     if (!planId) {
       throw ApiError.badRequest('Plan ID is required to select a maintenance plan');
     }
-    return await MaintenanceRepository.selectResidentPlan(userId, Number(planId));
+    return await MaintenanceRepository.selectResidentPlan(userId, Number(planId), requestedPeriod);
   }
 
   // ==========================================================================
@@ -131,7 +131,27 @@ class MaintenanceService {
       throw ApiError.badRequest(`Invalid payment method. Allowed: ${validMethods.join(', ')}`);
     }
 
-    return await MaintenanceRepository.recordPayment(data, user?.id || null);
+    return await MaintenanceRepository.recordPayment(data, user);
+  }
+
+  static async approvePayment(paymentId, user, adminRemarks = null) {
+    const userRole = String(user?.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'RESIDENTIAL_ADMIN'].includes(userRole);
+    if (!isAdmin) {
+      throw ApiError.forbidden('Only Society Administrators can verify and approve payments.');
+    }
+
+    return await MaintenanceRepository.approvePayment(Number(paymentId), user, adminRemarks);
+  }
+
+  static async rejectPayment(paymentId, user, reason = 'Payment verification rejected by admin') {
+    const userRole = String(user?.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'RESIDENTIAL_ADMIN'].includes(userRole);
+    if (!isAdmin) {
+      throw ApiError.forbidden('Only Society Administrators can verify and reject payments.');
+    }
+
+    return await MaintenanceRepository.rejectPayment(Number(paymentId), user, reason);
   }
 
   static async getAllPayments(societyId, filters) {

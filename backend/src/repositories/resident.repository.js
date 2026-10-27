@@ -72,24 +72,26 @@ class ResidentRepository {
       }
 
       // 2. Insert Resident record
+      const maxFamily = residentData.max_family_members !== undefined ? parseInt(residentData.max_family_members, 10) : 4;
       const [residentResult] = await connection.query(
-        `INSERT INTO residents (user_id, home_id, resident_type, is_primary_contact, move_in_date, status)
-         VALUES (?, ?, ?, ?, COALESCE(?, CURRENT_DATE), ?)`,
+        `INSERT INTO residents (user_id, home_id, resident_type, max_family_members, is_primary_contact, move_in_date, status)
+         VALUES (?, ?, ?, ?, ?, COALESCE(?, CURRENT_DATE), ?)`,
         [
           userId,
           residentData.home_id,
           residentData.resident_type,
+          maxFamily,
           residentData.is_primary_contact !== undefined ? residentData.is_primary_contact : true,
           residentData.move_in_date || null,
           residentData.status || 'ACTIVE',
         ]
       );
 
-      // 3. Update Home occupancy status
+      // 3. Update Home occupancy status and max_family_members
       const occupancyStatus = residentData.resident_type === 'OWNER' ? 'OCCUPIED_BY_OWNER' : 'OCCUPIED_BY_TENANT';
       await connection.query(
-        'UPDATE homes SET occupancy_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [occupancyStatus, residentData.home_id]
+        'UPDATE homes SET occupancy_status = ?, max_family_members = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+        [occupancyStatus, maxFamily, residentData.home_id]
       );
 
       // 4. Default Resident Permissions
@@ -143,7 +145,7 @@ class ResidentRepository {
   static async findAll(filters = {}) {
     let query = `
       SELECT 
-        r.id, r.user_id, r.home_id, r.resident_type, r.is_primary_contact,
+        r.id, r.user_id, r.home_id, r.resident_type, r.max_family_members, r.is_primary_contact,
         r.move_in_date, r.move_out_date, r.status, r.created_at,
         u.full_name, u.email, u.phone, u.avatar_url,
         h.society_id,
@@ -362,6 +364,79 @@ class ResidentRepository {
     } finally {
       connection.release();
     }
+  }
+
+  /**
+   * Find all users in society (Owners, Tenants, Family Members, Admin)
+   */
+  static async findSocietyUsers(societyId) {
+    const query = `
+      SELECT 
+        u.id AS user_id,
+        u.full_name,
+        u.phone,
+        u.email,
+        u.role,
+        u.status,
+        u.created_at,
+        COALESCE(h.home_number, h.flat_number, u.flat_number) AS home_number,
+        COALESCE(h.building_or_wing, h.block_or_tower, u.block_or_tower) AS building_or_wing,
+        COALESCE(h.floor, h.floor_number) AS floor,
+        h.home_type,
+        r.id AS resident_id,
+        r.resident_type,
+        r.move_in_date,
+        r.max_family_members,
+        fm.id AS family_member_id,
+        fm.relationship,
+        fm.is_minor,
+        pr_u.full_name AS primary_resident_name,
+        pr.resident_type AS primary_resident_type
+      FROM users u
+      LEFT JOIN residents r ON r.user_id = u.id
+      LEFT JOIN family_members fm ON fm.user_id = u.id
+      LEFT JOIN homes h ON h.id = COALESCE(r.home_id, fm.home_id)
+      LEFT JOIN residents pr ON fm.resident_id = pr.id
+      LEFT JOIN users pr_u ON pr.user_id = pr_u.id
+      WHERE (u.society_id = ? OR h.society_id = ?)
+        AND u.role IN ('OWNER', 'TENANT', 'FAMILY_MEMBER', 'ADMIN')
+
+      UNION
+
+      SELECT 
+        NULL AS user_id,
+        fm.full_name,
+        fm.phone,
+        NULL AS email,
+        'FAMILY_MEMBER' AS role,
+        fm.status,
+        fm.created_at,
+        COALESCE(h.home_number, h.flat_number) AS home_number,
+        COALESCE(h.building_or_wing, h.block_or_tower) AS building_or_wing,
+        COALESCE(h.floor, h.floor_number) AS floor,
+        h.home_type,
+        NULL AS resident_id,
+        NULL AS resident_type,
+        NULL AS move_in_date,
+        NULL AS max_family_members,
+        fm.id AS family_member_id,
+        fm.relationship,
+        fm.is_minor,
+        pr_u.full_name AS primary_resident_name,
+        pr.resident_type AS primary_resident_type
+      FROM family_members fm
+      JOIN homes h ON fm.home_id = h.id
+      LEFT JOIN residents pr ON fm.resident_id = pr.id
+      LEFT JOIN users pr_u ON pr.user_id = pr_u.id
+      WHERE fm.user_id IS NULL AND h.society_id = ?
+
+      ORDER BY 
+        CASE WHEN role = 'ADMIN' THEN 1 WHEN role = 'OWNER' THEN 2 WHEN role = 'TENANT' THEN 3 ELSE 4 END,
+        home_number ASC,
+        full_name ASC
+    `;
+    const [rows] = await pool.query(query, [societyId, societyId, societyId]);
+    return rows;
   }
 }
 

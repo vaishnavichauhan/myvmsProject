@@ -25,6 +25,8 @@ import {
   Zap,
   Check,
   HelpCircle,
+  Plus,
+  RefreshCw,
 } from 'lucide-react';
 import { useAuthStore } from '../store/authStore';
 import { ROLES, ROLE_CONFIG } from '../constants/roles';
@@ -57,48 +59,7 @@ const FEATURE_LABELS = {
   COMMITTEES: 'Management Committee Portal',
 };
 
-const DEFAULT_PLANS = [
-  {
-    id: 1,
-    name: 'Essential',
-    code: 'PLAN-ESSENTIAL',
-    description: 'Starter tier for small societies with core resident, worker and community polling features.',
-    price: '999.00',
-    billing_cycle: 'MONTHLY',
-    max_users: 50,
-    max_units: 30,
-    max_gates: 2,
-    trial_days: 14,
-    features: ['POLLS', 'RESIDENTS', 'WORKERS'],
-  },
-  {
-    id: 2,
-    name: 'Professional',
-    code: 'PLAN-PROFESSIONAL',
-    description: 'Mid-sized societies needing complete maintenance invoicing, special charges, workers, and resident directory.',
-    price: '2499.00',
-    billing_cycle: 'MONTHLY',
-    max_users: 150,
-    max_units: 100,
-    max_gates: 5,
-    trial_days: 14,
-    isPopular: true,
-    features: ['RESIDENTS', 'SOCIETY_FINANCE', 'WORKERS', 'ANNOUNCEMENTS', 'COMMITTEES', 'COURIER_DELIVERIES'],
-  },
-  {
-    id: 3,
-    name: 'Enterprise',
-    code: 'PLAN-ENTERPRISE',
-    description: 'Comprehensive luxury tier unlocking all available MYVMS facilities, amenities, security, finance, and portals.',
-    price: '4999.00',
-    billing_cycle: 'MONTHLY',
-    max_users: 500,
-    max_units: 350,
-    max_gates: 20,
-    trial_days: 30,
-    features: ['AMENITIES', 'ANNOUNCEMENTS', 'COMMITTEES', 'COURIER_DELIVERIES', 'GATES_VISITORS', 'POLLS', 'RESIDENTS', 'SECURITY_STAFF', 'SOCIETY_FINANCE', 'WORKERS'],
-  },
-];
+
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -134,7 +95,7 @@ export default function LandingPage() {
     ? plans.filter(p => !p.code?.includes('_COPY') && p.description !== 'mcmdc')
     : [];
 
-  const displayPlans = activePlans.length > 0 ? activePlans : DEFAULT_PLANS;
+  const displayPlans = activePlans.length > 0 ? activePlans : [];
 
   const rolesList = [
     {
@@ -909,215 +870,277 @@ export default function LandingPage() {
                 alignItems: 'stretch',
               }}
             >
-              {displayPlans.map((plan, idx) => {
-                const isPopular = plan.isPopular || plan.code === 'PLAN-PROFESSIONAL' || plan.name?.toLowerCase().includes('pro');
-                const isEnterprise = plan.code === 'PLAN-ENTERPRISE' || plan.name?.toLowerCase().includes('enterprise');
-                const rawPrice = parseFloat(plan.price) || 0;
-                const monthlyPrice = billingCycle === 'ANNUAL' ? Math.round(rawPrice * 0.8) : Math.round(rawPrice);
-                const annualBilled = monthlyPrice * 12;
-
-                return (
+              {loadingPlans ? (
+                <div style={{ gridColumn: '1 / -1', padding: '60px 24px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px' }} />
+                  <p style={{ margin: 0, fontWeight: 600 }}>Loading subscription plans...</p>
+                </div>
+              ) : displayPlans.length === 0 ? (
+                <div
+                  style={{
+                    gridColumn: '1 / -1',
+                    padding: '54px 24px',
+                    textAlign: 'center',
+                    background: '#FAF6EE',
+                    borderRadius: 'var(--radius-xl)',
+                    border: '1.5px dashed var(--color-sand)',
+                    boxShadow: '0 4px 16px rgba(196, 154, 108, 0.08)',
+                  }}
+                >
                   <div
-                    key={plan.id || plan.code || idx}
-                    className="glass-panel"
                     style={{
-                      borderRadius: 'var(--radius-xl)',
-                      background: '#FFFFFF',
-                      border: isPopular ? '2px solid var(--color-clay)' : '1px solid var(--border-card)',
-                      boxShadow: isPopular
-                        ? '0 12px 35px rgba(196, 154, 108, 0.22), 0 0 0 1px rgba(196, 154, 108, 0.15)'
-                        : '0 6px 22px rgba(196, 154, 108, 0.08)',
+                      width: '64px',
+                      height: '64px',
+                      borderRadius: '50%',
+                      background: 'rgba(196, 154, 108, 0.15)',
                       display: 'flex',
-                      flexDirection: 'column',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      transform: isPopular ? 'scale(1.02)' : 'none',
-                      transition: 'transform 0.25s ease, box-shadow 0.25s ease',
-                      zIndex: isPopular ? 2 : 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: '0 auto 16px',
+                      color: 'var(--color-clay)',
                     }}
                   >
-                    {/* Popular / Best Value Ribbon */}
-                    {isPopular && (
-                      <div
-                        style={{
-                          background: 'linear-gradient(135deg, var(--color-clay) 0%, #a8794d 100%)',
-                          color: '#FFFFFF',
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          textAlign: 'center',
-                          padding: '6px 12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <Zap size={13} /> Most Popular Society Choice
-                      </div>
-                    )}
+                    <Layers size={32} />
+                  </div>
+                  <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: '0 0 8px' }}>
+                    No plan heare
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '460px', margin: '0 auto 20px', lineHeight: 1.5 }}>
+                    There are currently no active subscription plans available. Create a new plan from the Super Admin Console.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/super-admin/plans')}
+                    className="btn btn-primary"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '12px 24px',
+                      fontSize: '0.95rem',
+                      fontWeight: 700,
+                      background: 'var(--grad-primary)',
+                      color: '#FFFFFF',
+                      borderRadius: 'var(--radius-md)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 14px rgba(196, 154, 108, 0.3)',
+                    }}
+                  >
+                    <Plus size={18} />
+                    <span>Create Subscription Plan</span>
+                  </button>
+                </div>
+              ) : (
+                displayPlans.map((plan, idx) => {
+                  const isPopular = plan.isPopular || plan.code === 'PLAN-PROFESSIONAL' || plan.name?.toLowerCase().includes('pro');
+                  const isEnterprise = plan.code === 'PLAN-ENTERPRISE' || plan.name?.toLowerCase().includes('enterprise');
+                  const rawPrice = parseFloat(plan.price) || 0;
+                  const monthlyPrice = billingCycle === 'ANNUAL' ? Math.round(rawPrice * 0.8) : Math.round(rawPrice);
+                  const annualBilled = monthlyPrice * 12;
 
-                    {isEnterprise && (
-                      <div
-                        style={{
-                          background: 'linear-gradient(135deg, var(--color-dark-brown) 0%, #302621 100%)',
-                          color: 'var(--color-sand)',
-                          fontSize: '0.72rem',
-                          fontWeight: 800,
-                          letterSpacing: '0.08em',
-                          textTransform: 'uppercase',
-                          textAlign: 'center',
-                          padding: '6px 12px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <Star size={13} fill="var(--color-sand)" /> Full-Suite Enterprise Solution
-                      </div>
-                    )}
-
-                    <div style={{ padding: '28px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                      {/* Plan Header */}
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
-                        <div>
-                          <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
-                            {plan.name}
-                          </h3>
-                          <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-clay)', letterSpacing: '0.04em' }}>
-                            {plan.code}
-                          </span>
-                        </div>
-
-                        {/* Free Trial Pill */}
-                        <span
+                  return (
+                    <div
+                      key={plan.id || plan.code || idx}
+                      className="glass-panel"
+                      style={{
+                        borderRadius: 'var(--radius-xl)',
+                        background: '#FFFFFF',
+                        border: isPopular ? '2px solid var(--color-clay)' : '1px solid var(--border-card)',
+                        boxShadow: isPopular
+                          ? '0 12px 35px rgba(196, 154, 108, 0.22), 0 0 0 1px rgba(196, 154, 108, 0.15)'
+                          : '0 6px 22px rgba(196, 154, 108, 0.08)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        transform: isPopular ? 'scale(1.02)' : 'none',
+                        transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+                        zIndex: isPopular ? 2 : 1,
+                      }}
+                    >
+                      {/* Popular / Best Value Ribbon */}
+                      {isPopular && (
+                        <div
                           style={{
+                            background: 'linear-gradient(135deg, var(--color-clay) 0%, #a8794d 100%)',
+                            color: '#FFFFFF',
                             fontSize: '0.72rem',
-                            fontWeight: 700,
-                            padding: '3px 8px',
-                            borderRadius: 'var(--radius-full)',
-                            background: 'rgba(16, 185, 129, 0.12)',
-                            color: 'var(--color-fern-green)',
-                            border: '1px solid rgba(16, 185, 129, 0.3)',
+                            fontWeight: 800,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            textAlign: 'center',
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
                           }}
                         >
-                          {plan.trial_days || 14}d Free Trial
-                        </span>
-                      </div>
+                          <Zap size={13} /> Most Popular Society Choice
+                        </div>
+                      )}
 
-                      <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.5, minHeight: '40px', marginBottom: '18px' }}>
-                        {plan.description || 'Scalable features designed for smooth society management.'}
-                      </p>
+                      {isEnterprise && (
+                        <div
+                          style={{
+                            background: 'linear-gradient(135deg, var(--color-dark-brown) 0%, #302621 100%)',
+                            color: 'var(--color-sand)',
+                            fontSize: '0.72rem',
+                            fontWeight: 800,
+                            letterSpacing: '0.08em',
+                            textTransform: 'uppercase',
+                            textAlign: 'center',
+                            padding: '6px 12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <Star size={13} fill="var(--color-sand)" /> Full-Suite Enterprise Solution
+                        </div>
+                      )}
 
-                      {/* Pricing */}
-                      <div style={{ marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid var(--border-card)' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
-                          <span style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-dark-brown)', letterSpacing: '-0.03em' }}>
-                            ₹{monthlyPrice.toLocaleString('en-IN')}
+                      <div style={{ padding: '28px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        {/* Plan Header */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                          <div>
+                            <h3 style={{ fontSize: '1.35rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: 0 }}>
+                              {plan.name}
+                            </h3>
+                            <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--color-clay)', letterSpacing: '0.04em' }}>
+                              {plan.code}
+                            </span>
+                          </div>
+
+                          {/* Free Trial Pill */}
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              padding: '3px 8px',
+                              borderRadius: 'var(--radius-full)',
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              color: 'var(--color-fern-green)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                            }}
+                          >
+                            {plan.trial_days || 14}d Free Trial
                           </span>
-                          <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-                            / month
-                          </span>
                         </div>
-                        {billingCycle === 'ANNUAL' ? (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--color-fern-green)', fontWeight: 600, marginTop: '2px' }}>
-                            Billed annually (₹{annualBilled.toLocaleString('en-IN')}/yr) • Save 20%
-                          </div>
-                        ) : (
-                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                            Billed monthly per registered society
-                          </div>
-                        )}
-                      </div>
 
-                      {/* Capacity Metrics */}
-                      <div style={{ marginBottom: '22px' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '8px' }}>
-                          Society Capacity Limits
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
-                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
-                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                              {plan.max_units}
-                            </div>
-                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Flats</div>
-                          </div>
-                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
-                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                              {plan.max_users}
-                            </div>
-                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Resident Users</div>
-                          </div>
-                          <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
-                            <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                              {plan.max_gates || 5}
-                            </div>
-                            <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Gates</div>
-                          </div>
-                        </div>
-                      </div>
+                        <p style={{ fontSize: '0.86rem', color: 'var(--text-muted)', lineHeight: 1.5, minHeight: '40px', marginBottom: '18px' }}>
+                          {plan.description || 'Scalable features designed for smooth society management.'}
+                        </p>
 
-                      {/* Features Matrix Checklist */}
-                      <div style={{ flex: 1, marginBottom: '24px' }}>
-                        <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '10px' }}>
-                          Included Features & Modules
+                        {/* Pricing */}
+                        <div style={{ marginBottom: '18px', paddingBottom: '18px', borderBottom: '1px solid var(--border-card)' }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                            <span style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-dark-brown)', letterSpacing: '-0.03em' }}>
+                              ₹{monthlyPrice.toLocaleString('en-IN')}
+                            </span>
+                            <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                              / month
+                            </span>
+                          </div>
+                          {billingCycle === 'ANNUAL' ? (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--color-fern-green)', fontWeight: 600, marginTop: '2px' }}>
+                              Billed annually (₹{annualBilled.toLocaleString('en-IN')}/yr) • Save 20%
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                              Billed monthly per registered society
+                            </div>
+                          )}
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
-                          {ALL_POSSIBLE_FEATURES.map((featKey) => {
-                            const isIncluded = Array.isArray(plan.features) && plan.features.includes(featKey);
-                            return (
-                              <div
-                                key={featKey}
-                                style={{
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '9px',
-                                  fontSize: '0.84rem',
-                                  color: isIncluded ? 'var(--color-dark-brown)' : '#B8ACA2',
-                                }}
-                              >
-                                {isIncluded ? (
-                                  <CheckCircle2 size={16} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
-                                ) : (
-                                  <div style={{ width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                                    <span style={{ width: '7px', height: '2px', background: '#D6C8BC', borderRadius: '1px' }} />
-                                  </div>
-                                )}
-                                <span style={{ fontWeight: isIncluded ? 600 : 400 }}>
-                                  {FEATURE_LABELS[featKey] || featKey}
-                                </span>
+
+                        {/* Capacity Metrics */}
+                        <div style={{ marginBottom: '22px' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '8px' }}>
+                            Society Capacity Limits
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                            <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                                {plan.max_units}
                               </div>
-                            );
-                          })}
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Flats</div>
+                            </div>
+                            <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                                {plan.max_users}
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Resident Users</div>
+                            </div>
+                            <div style={{ background: '#FAF5ED', padding: '10px 8px', borderRadius: 'var(--radius-md)', textAlign: 'center', border: '1px solid var(--border-card)' }}>
+                              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                                {plan.max_gates || 5}
+                              </div>
+                              <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: 600 }}>Max Gates</div>
+                            </div>
+                          </div>
                         </div>
-                      </div>
 
-                      {/* CTA Button */}
-                      <button
-                        type="button"
-                        onClick={() => navigate('/login')}
-                        className={`btn ${isPopular ? 'btn-primary' : 'btn-outline'}`}
-                        style={{
-                          width: '100%',
-                          padding: '12px 18px',
-                          fontSize: '0.9rem',
-                          fontWeight: 700,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px',
-                          borderRadius: 'var(--radius-md)',
-                        }}
-                      >
-                        <span>Start {plan.trial_days || 14}-Day Free Trial</span>
-                        <ArrowRight size={16} />
-                      </button>
+                        {/* Features Matrix Checklist */}
+                        <div style={{ flex: 1, marginBottom: '24px' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--color-dark-brown)', marginBottom: '10px' }}>
+                            Included Features & Modules
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                            {ALL_POSSIBLE_FEATURES.map((featKey) => {
+                              const isIncluded = Array.isArray(plan.features) && plan.features.includes(featKey);
+                              return (
+                                <div
+                                  key={featKey}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '9px',
+                                    fontSize: '0.84rem',
+                                    color: isIncluded ? 'var(--color-dark-brown)' : '#B8ACA2',
+                                  }}
+                                >
+                                  {isIncluded ? (
+                                    <CheckCircle2 size={16} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
+                                  ) : (
+                                    <div style={{ width: '16px', height: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                      <span style={{ width: '7px', height: '2px', background: '#D6C8BC', borderRadius: '1px' }} />
+                                    </div>
+                                  )}
+                                  <span style={{ fontWeight: isIncluded ? 600 : 400 }}>
+                                    {FEATURE_LABELS[featKey] || featKey}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* CTA Button */}
+                        <button
+                          type="button"
+                          onClick={() => navigate('/login')}
+                          className={`btn ${isPopular ? 'btn-primary' : 'btn-outline'}`}
+                          style={{
+                            width: '100%',
+                            padding: '12px 18px',
+                            fontSize: '0.9rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px',
+                            borderRadius: 'var(--radius-md)',
+                          }}
+                        >
+                          <span>Start {plan.trial_days || 14}-Day Free Trial</span>
+                          <ArrowRight size={16} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                }))}
             </div>
 
             {/* Enterprise Support Banner */}

@@ -45,6 +45,8 @@ router.post('/societies/:id/features/override', SuperAdminController.setFeatureO
 // Subscription Billing and Invoices
 router.get('/billing/invoices', SuperAdminController.getInvoices);
 router.post('/billing/invoices/:invoiceId/payments', SuperAdminController.recordPayment);
+router.post('/billing/invoices/:invoiceId/approve', SuperAdminController.approvePayment);
+router.post('/billing/auto-generate', SuperAdminController.autoGenerateInvoices);
 
 // Platform Audit Logs
 router.get('/audit-logs', SuperAdminController.getAuditLogs);

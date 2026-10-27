@@ -32,6 +32,12 @@ export const specialChargeApi = {
   // Record / Pay Payment
   recordPayment: (data) => apiClient.post('/special-charges/payments', data),
 
+  // Admin Approve Payment
+  approvePayment: (id, data) => apiClient.post(`/special-charges/payments/${id}/approve`, data),
+
+  // Admin Reject Payment
+  rejectPayment: (id, data) => apiClient.post(`/special-charges/payments/${id}/reject`, data),
+
   // List all payments / receipts
   getAllPayments: (params) => apiClient.get('/special-charges/payments', { params }),
 };

@@ -175,7 +175,14 @@ class WorkerService {
       expected_time_out = '19:00:00',
       requested_home_id = null,
       society_id = null,
+      aadhar_number = null,
+      aadhar_card_no = null,
+      adhar_number = null,
+      adhar_card_no = null,
+      government_id_number = null,
     } = data;
+
+    const resolvedAadhar = aadhar_number || aadhar_card_no || adhar_number || adhar_card_no || government_id_number || null;
 
     const workerName = (name || full_name || '').trim();
     if (!workerName) {
@@ -206,6 +213,7 @@ class WorkerService {
           worker_type: typeUpper,
           photo_url: photo_url || worker.photo_url,
           address: address || worker.address,
+          aadhar_number: resolvedAadhar !== null ? resolvedAadhar : worker.aadhar_number,
           status: status || worker.status,
         });
       } else {
@@ -216,6 +224,7 @@ class WorkerService {
           worker_type: typeUpper,
           photo_url,
           address,
+          aadhar_number: resolvedAadhar,
           status: status || 'ACTIVE',
         });
       }
@@ -254,6 +263,7 @@ class WorkerService {
         worker_type: typeUpper,
         photo_url: photo_url || worker.photo_url,
         address: address || worker.address,
+        aadhar_number: resolvedAadhar !== null ? resolvedAadhar : worker.aadhar_number,
         status: status || worker.status,
       });
     } else {
@@ -264,6 +274,7 @@ class WorkerService {
         worker_type: typeUpper,
         photo_url,
         address,
+        aadhar_number: resolvedAadhar,
         status: status || 'ACTIVE',
       });
     }
@@ -316,14 +327,17 @@ class WorkerService {
       status: updateData.assignment_status || updateData.status,
     });
 
-    // 2. Optionally update worker profile (name, phone, address, photo)
-    if (updateData.full_name || updateData.name || updateData.phone || updateData.address || updateData.photo_url || updateData.worker_type) {
+    // 2. Optionally update worker profile (name, phone, address, photo, aadhar)
+    const resolvedAadhar = updateData.aadhar_number !== undefined ? updateData.aadhar_number : (updateData.aadhar_card_no !== undefined ? updateData.aadhar_card_no : updateData.adhar_number);
+
+    if (updateData.full_name || updateData.name || updateData.phone || updateData.address || updateData.photo_url || updateData.worker_type || resolvedAadhar !== undefined) {
       await WorkerRepository.updateWorker(assignment.worker_id, {
         full_name: updateData.full_name || updateData.name,
         phone: updateData.phone,
         worker_type: updateData.worker_type,
         address: updateData.address,
         photo_url: updateData.photo_url,
+        aadhar_number: resolvedAadhar,
       });
     }
 

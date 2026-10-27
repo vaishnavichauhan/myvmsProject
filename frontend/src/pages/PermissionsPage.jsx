@@ -18,6 +18,13 @@ import {
   Search,
   Clock,
   Building2,
+  Phone,
+  PhoneCall,
+  Copy,
+  CheckCheck,
+  AlertTriangle,
+  MessageSquare,
+  Send,
 } from 'lucide-react';
 import { permissionApi } from '../api/permissionApi';
 import { useAuthStore } from '../store/authStore';
@@ -82,6 +89,11 @@ export default function PermissionsPage() {
   const [enforcementLog, setEnforcementLog] = useState(null);
   const [testingAction, setTestingAction] = useState(null);
 
+  // Security Gate Visit Permission Check Widget State
+  const [selectedHomeIdForCheck, setSelectedHomeIdForCheck] = useState('');
+  const [selectedVisitTypeForCheck, setSelectedVisitTypeForCheck] = useState('VISITOR');
+  const [copiedPhone, setCopiedPhone] = useState(null);
+
   useEffect(() => {
     fetchPermissions();
   }, []);
@@ -91,12 +103,23 @@ export default function PermissionsPage() {
     setErrorMsg(null);
     try {
       const res = await permissionApi.getHomePermissions();
-      setHomesList(res.data?.permissions || []);
+      const perms = res.data?.permissions || [];
+      setHomesList(perms);
+      if (perms.length > 0) {
+        setSelectedHomeIdForCheck((prev) => (prev ? prev : String(perms[0].home_id)));
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load home permissions.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCopyPhone = (phone) => {
+    if (!phone) return;
+    navigator.clipboard.writeText(phone);
+    setCopiedPhone(phone);
+    setTimeout(() => setCopiedPhone(null), 2500);
   };
 
   /**
@@ -295,6 +318,443 @@ export default function PermissionsPage() {
           <span>{errorMsg}</span>
         </div>
       )}
+
+      {/* =========================================================================
+          SECURITY GATE VISIT PERMISSION & RESIDENT VERIFICATION WIDGET
+          Shows Home Owner / Tenant Phone Number when permission is required / checked
+          ========================================================================= */}
+      {homesList.length > 0 && (() => {
+        const activeCheckHome = homesList.find((h) => String(h.home_id) === String(selectedHomeIdForCheck)) || homesList[0];
+        const activeCheckCfg = PERMISSION_CONFIG.find((c) => c.type === selectedVisitTypeForCheck) || PERMISSION_CONFIG[0];
+        const isCheckAllowed = activeCheckHome
+          ? activeCheckHome[activeCheckCfg.key] !== undefined && activeCheckHome[activeCheckCfg.key] !== null
+            ? Boolean(activeCheckHome[activeCheckCfg.key])
+            : true
+          : true;
+
+        const checkPrimaryResident = activeCheckHome?.residents?.find((r) => r.role === 'OWNER' || r.resident_type === 'OWNER') ||
+          activeCheckHome?.residents?.find((r) => r.role === 'TENANT' || r.resident_type === 'TENANT') ||
+          activeCheckHome?.residents?.[0];
+
+        const alternateResidents = (activeCheckHome?.residents || []).filter(
+          (r) => r.user_id !== checkPrimaryResident?.user_id
+        );
+
+        return (
+          <div
+            id="security-gate-permission-verifier"
+            style={{
+              background: '#FFFFFF',
+              borderRadius: '24px',
+              border: isCheckAllowed ? '2px solid #E2D9CF' : '2px solid #FCA5A5',
+              padding: '26px 28px',
+              boxShadow: isCheckAllowed
+                ? '0 8px 24px rgba(64, 54, 48, 0.05)'
+                : '0 8px 24px rgba(239, 68, 68, 0.12)',
+              position: 'relative',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                <div
+                  style={{
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '14px',
+                    background: isCheckAllowed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                    border: `1.5px solid ${isCheckAllowed ? '#10b981' : '#ef4444'}`,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: isCheckAllowed ? '#059669' : '#dc2626',
+                  }}
+                >
+                  <ShieldCheck size={26} />
+                </div>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--color-dark-brown)' }}>
+                      Security Gate Permission Check & Contact Verification
+                    </h2>
+                    <span
+                      style={{
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                        padding: '3px 9px',
+                        borderRadius: '20px',
+                        background: isCheckAllowed ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                        color: isCheckAllowed ? '#059669' : '#dc2626',
+                        border: `1px solid ${isCheckAllowed ? '#10b981' : '#f87171'}`,
+                      }}
+                    >
+                      {isCheckAllowed ? 'ALLOWED (YES)' : 'PERMISSION REQUIRED (NO)'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: '0.82rem', color: '#6E5D53', margin: '4px 0 0 0' }}>
+                    Select a Home Number and Gate Visit Type. If permission is required (NO), the Home Owner / Tenant phone number is displayed immediately for security contact.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Selection Row: 1. Home Number Select, 2. Gate Visit Type Pills */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: '16px',
+                background: '#FAF6EE',
+                padding: '16px 20px',
+                borderRadius: '16px',
+                border: '1px solid #EBE3D7',
+                marginBottom: '20px',
+              }}
+            >
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-dark-brown)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Home size={14} color="var(--color-clay)" /> Select Home Number:
+                </label>
+                <select
+                  value={selectedHomeIdForCheck}
+                  onChange={(e) => setSelectedHomeIdForCheck(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    border: '1.5px solid var(--color-sand)',
+                    background: '#FFFFFF',
+                    color: 'var(--color-dark-brown)',
+                    fontWeight: 700,
+                    fontSize: '0.9rem',
+                    marginTop: '6px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {homesList.map((h) => (
+                    <option key={h.home_id} value={h.home_id}>
+                      Home {h.home_number} {h.building_or_wing ? `(${h.building_or_wing})` : ''} {h.society_name ? `— ${h.society_name}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--color-dark-brown)', textTransform: 'uppercase', letterSpacing: '0.04em', display: 'block', marginBottom: '6px' }}>
+                  Gate Visit Type:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                  {PERMISSION_CONFIG.map((cfg) => {
+                    const isSelected = selectedVisitTypeForCheck === cfg.type;
+                    const IconComp = cfg.icon;
+                    return (
+                      <button
+                        key={cfg.type}
+                        type="button"
+                        onClick={() => setSelectedVisitTypeForCheck(cfg.type)}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: '10px',
+                          border: isSelected ? `2px solid ${cfg.color}` : '1.5px solid #E2D9CF',
+                          background: isSelected ? cfg.bg : '#FFFFFF',
+                          color: isSelected ? cfg.color : '#6E5D53',
+                          fontWeight: 800,
+                          fontSize: '0.78rem',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        <IconComp size={15} />
+                        <span>{cfg.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Status & Owner/Tenant Phone Display Box */}
+            {isCheckAllowed ? (
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1.5px solid rgba(16, 185, 129, 0.35)',
+                  borderRadius: '16px',
+                  padding: '16px 20px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '12px',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <CheckCircle2 size={24} color="#10b981" />
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#065f46', fontSize: '0.95rem' }}>
+                      Direct Gate Entry Permitted for Home {activeCheckHome?.home_number}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: '#047857', marginTop: '2px' }}>
+                      {activeCheckCfg.label} permission is set to <strong>YES</strong>. No security restriction for this visit type.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  background: '#FEF2F2',
+                  border: '2px solid #F87171',
+                  borderRadius: '16px',
+                  padding: '20px 24px',
+                  boxShadow: '0 4px 16px rgba(239, 68, 68, 0.08)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                  <div
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      background: 'rgba(239, 68, 68, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#dc2626',
+                    }}
+                  >
+                    <AlertTriangle size={22} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 800, color: '#991B1B' }}>
+                      ⚠️ Permission Required: Home {activeCheckHome?.home_number} Restricted {activeCheckCfg.label} Entry
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#7F1D1D', marginTop: '2px' }}>
+                      Security Gate Protocol: Blanket entry is set to <strong>NO</strong>. Security must contact the Home Owner or Tenant below for approval before granting entry:
+                    </div>
+                  </div>
+                </div>
+
+                {checkPrimaryResident ? (
+                  <div
+                    style={{
+                      background: '#FFFFFF',
+                      borderRadius: '14px',
+                      border: '1.5px solid #FCA5A5',
+                      padding: '16px 20px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '16px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                      <div
+                        style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '1.2rem',
+                          fontWeight: 800,
+                          boxShadow: '0 4px 10px rgba(220, 38, 38, 0.25)',
+                        }}
+                      >
+                        {checkPrimaryResident.full_name?.charAt(0).toUpperCase() || 'R'}
+                      </div>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#111827' }}>
+                            {checkPrimaryResident.full_name}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              background: 'rgba(239, 68, 68, 0.12)',
+                              color: '#DC2626',
+                              padding: '2px 8px',
+                              borderRadius: '6px',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                            }}
+                          >
+                            {checkPrimaryResident.role === 'OWNER' ? 'HOME OWNER' : 'HOME TENANT'}
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
+                          <span style={{ fontSize: '0.92rem', fontWeight: 800, color: '#B91C1C', letterSpacing: '0.02em' }}>
+                            📞 Phone: {checkPrimaryResident.phone || 'Phone Not Registered'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                      {checkPrimaryResident.phone && (() => {
+                        const rawPhone = String(checkPrimaryResident.phone).replace(/\D/g, '');
+                        const waNumber = rawPhone.length === 10 ? `91${rawPhone}` : rawPhone;
+                        const visitLabel = activeCheckCfg.label || 'Visitor';
+                        const homeNum = activeCheckHome?.home_number || '';
+                        const msgText = `Hello ${checkPrimaryResident.full_name}, Security at the gate regarding entry for Home ${homeNum} (${visitLabel}). Please provide approval.`;
+
+                        return (
+                          <>
+                            <a
+                              href={`tel:${checkPrimaryResident.phone}`}
+                              className="btn"
+                              style={{
+                                background: '#DC2626',
+                                color: '#FFFFFF',
+                                padding: '10px 18px',
+                                borderRadius: '10px',
+                                fontWeight: 800,
+                                fontSize: '0.85rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textDecoration: 'none',
+                                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.3)',
+                              }}
+                            >
+                              <PhoneCall size={16} /> Call {checkPrimaryResident.role === 'OWNER' ? 'Owner' : 'Tenant'} ({checkPrimaryResident.phone})
+                            </a>
+
+                            <a
+                              href={`https://wa.me/${waNumber}?text=${encodeURIComponent(msgText)}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn"
+                              style={{
+                                background: '#25D366',
+                                color: '#FFFFFF',
+                                padding: '10px 16px',
+                                borderRadius: '10px',
+                                fontWeight: 800,
+                                fontSize: '0.85rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textDecoration: 'none',
+                                boxShadow: '0 4px 12px rgba(37, 211, 102, 0.3)',
+                              }}
+                              title={`Chat on WhatsApp with ${checkPrimaryResident.full_name}`}
+                            >
+                              <MessageSquare size={16} /> WhatsApp Chat
+                            </a>
+
+                            <a
+                              href={`sms:${checkPrimaryResident.phone}?body=${encodeURIComponent(msgText)}`}
+                              className="btn"
+                              style={{
+                                background: '#4B5563',
+                                color: '#FFFFFF',
+                                padding: '10px 16px',
+                                borderRadius: '10px',
+                                fontWeight: 800,
+                                fontSize: '0.85rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                textDecoration: 'none',
+                              }}
+                              title={`Send SMS to ${checkPrimaryResident.full_name}`}
+                            >
+                              <Send size={15} /> Send SMS
+                            </a>
+
+                            <button
+                              type="button"
+                              onClick={() => handleCopyPhone(checkPrimaryResident.phone)}
+                              className="btn btn-outline"
+                              style={{
+                                padding: '9px 14px',
+                                fontSize: '0.82rem',
+                                borderColor: '#F87171',
+                                color: '#B91C1C',
+                                background: '#FFF5F5',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                              }}
+                            >
+                              {copiedPhone === checkPrimaryResident.phone ? (
+                                <>
+                                  <CheckCheck size={14} color="#059669" /> Copied!
+                                </>
+                              ) : (
+                                <>
+                                  <Copy size={14} /> Copy Phone
+                                </>
+                              )}
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ fontSize: '0.85rem', color: '#7F1D1D', fontStyle: 'italic', padding: '10px', background: '#FFFFFF', borderRadius: '8px' }}>
+                    No registered owner or tenant found for Home {activeCheckHome?.home_number}. Please contact Society Office.
+                  </div>
+                )}
+
+                {/* Alternate residents if any */}
+                {alternateResidents.length > 0 && (
+                  <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px dashed #FCA5A5' }}>
+                    <div style={{ fontSize: '0.74rem', fontWeight: 800, color: '#7F1D1D', textTransform: 'uppercase', marginBottom: '8px' }}>
+                      Alternate Residents / Family Members for Home {activeCheckHome?.home_number}:
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      {alternateResidents.map((alt) => (
+                        <div
+                          key={alt.user_id || alt.full_name}
+                          style={{
+                            background: '#FFFFFF',
+                            border: '1px solid #FECACA',
+                            padding: '6px 12px',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            fontSize: '0.8rem',
+                          }}
+                        >
+                          <span style={{ fontWeight: 700, color: '#1F2937' }}>{alt.full_name}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#6B7280' }}>({alt.relationship || alt.role})</span>
+                          {alt.phone && (
+                            <a
+                              href={`tel:${alt.phone}`}
+                              style={{
+                                color: '#DC2626',
+                                fontWeight: 700,
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              <Phone size={12} /> {alt.phone}
+                            </a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Home-wise Permissions Cards */}
       {loading ? (
@@ -512,6 +972,29 @@ export default function PermissionsPage() {
                             >
                               {res.relationship ? `Family (${res.relationship})` : res.user_label || res.role}
                             </span>
+
+                            {res.phone && (
+                              <a
+                                href={`tel:${res.phone}`}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '4px',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 700,
+                                  color: '#0284c7',
+                                  background: 'rgba(2, 132, 199, 0.09)',
+                                  border: '1px solid rgba(2, 132, 199, 0.25)',
+                                  padding: '2px 8px',
+                                  borderRadius: '6px',
+                                  textDecoration: 'none',
+                                }}
+                                title={`Click to call ${res.full_name}`}
+                              >
+                                <Phone size={11} />
+                                <span>{res.phone}</span>
+                              </a>
+                            )}
                           </div>
                         );
                       })

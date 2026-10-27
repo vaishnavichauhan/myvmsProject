@@ -32,6 +32,19 @@ class ResidentController {
   }
 
   /**
+   * GET /api/residents/society-users (Admin / Super Admin)
+   * List all society users including Owners, Tenants, and Family Members
+   */
+  static async getSocietyUsers(req, res, next) {
+    try {
+      const users = await ResidentService.getSocietyUsers(req.query, req.user);
+      return ApiResponse.success(res, 'Society users retrieved successfully', { users });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/residents/:id
    */
   static async getById(req, res, next) {
@@ -92,6 +105,19 @@ class ResidentController {
     try {
       const result = await ResidentService.deleteResident(req.params.id, req.user);
       return ApiResponse.success(res, result.message, null);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/residents/import-batch (Admin Only)
+   * Batch import residents & homes from Excel/CSV with plan capacity enforcement
+   */
+  static async importBatch(req, res, next) {
+    try {
+      const result = await ResidentService.importBatchResidents(req.body, req.user);
+      return ApiResponse.success(res, result.message, result);
     } catch (error) {
       next(error);
     }

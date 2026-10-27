@@ -934,6 +934,11 @@ export default function CourierDeliveryPage() {
                           <div>
                             <strong style={{ color: 'var(--text-heading)' }}>{res.name}</strong>{' '}
                             <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>({res.role})</span>
+                            {res.phone && (
+                              <span style={{ marginLeft: '6px', fontSize: '0.725rem', color: '#0284c7', fontWeight: 700 }}>
+                                📞 {res.phone}
+                              </span>
+                            )}
                           </div>
                           <span
                             style={{
@@ -979,9 +984,19 @@ export default function CourierDeliveryPage() {
                         <AlertTriangle size={16} />
                       )}
                       <div style={{ flex: 1, fontWeight: 700 }}>
-                        {permissionCheck.data.permission_allowed
-                          ? `Permission is ALLOWED for Home ${selectedHome.home_number}. Direct Gate Entry Permitted.`
-                          : `Permission is RESTRICTED (NO) for Home ${selectedHome.home_number}. Resident clearance required.`}
+                        <div>
+                          {permissionCheck.data.permission_allowed
+                            ? `Permission is ALLOWED for Home ${selectedHome.home_number}. Direct Gate Entry Permitted.`
+                            : `Permission is RESTRICTED (NO) for Home ${selectedHome.home_number}. Resident clearance required.`}
+                        </div>
+                        {permissionCheck.data.primary_contact && (
+                          <div style={{ marginTop: '4px', fontSize: '0.75rem', fontWeight: 600 }}>
+                            Owner/Tenant: {permissionCheck.data.primary_contact.name} ({permissionCheck.data.primary_contact.role}) • Phone:{' '}
+                            <a href={`tel:${permissionCheck.data.primary_contact.phone}`} style={{ color: '#0284c7', fontWeight: 800 }}>
+                              📞 {permissionCheck.data.primary_contact.phone}
+                            </a>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

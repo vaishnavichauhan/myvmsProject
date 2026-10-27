@@ -118,7 +118,13 @@ class MaintenanceController {
       `SELECT r.home_id FROM residents r WHERE r.user_id = ? AND r.status = 'ACTIVE' LIMIT 1`,
       [userId]
     );
-    return userHomes[0]?.home_id || null;
+    if (userHomes.length > 0) return userHomes[0].home_id;
+
+    const [famHomes] = await pool.query(
+      `SELECT fm.home_id FROM family_members fm WHERE fm.user_id = ? AND fm.status = 'ACTIVE' LIMIT 1`,
+      [userId]
+    );
+    return famHomes[0]?.home_id || null;
   }
 
   // ==========================================================================
@@ -206,7 +212,8 @@ class MaintenanceController {
         throw ApiError.unauthorized('Authentication required');
       }
       const planId = req.body?.plan_id || req.body?.planId;
-      const bill = await MaintenanceService.selectResidentPlan(req.user.id, planId);
+      const requestedPeriod = req.body?.billing_period || req.body?.billingPeriod || null;
+      const bill = await MaintenanceService.selectResidentPlan(req.user.id, planId, requestedPeriod);
 
       return ApiResponse.success(res, 'Maintenance plan selected successfully', { bill });
     } catch (error) {
@@ -221,7 +228,43 @@ class MaintenanceController {
   static async recordPayment(req, res, next) {
     try {
       const payment = await MaintenanceService.recordPayment(req.body, req.user);
-      return ApiResponse.created(res, 'Payment recorded successfully', { payment });
+      const isPending = payment.status === 'PENDING_APPROVAL';
+      const msg = isPending
+        ? 'Payment submitted successfully! Waiting for Admin verification and approval.'
+        : 'Payment recorded and approved successfully.';
+      return ApiResponse.created(res, msg, { payment });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async approvePayment(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      if (!id || isNaN(id) || id <= 0) {
+        throw ApiError.badRequest('Invalid payment ID provided for approval');
+      }
+      const { remarks } = req.body || {};
+      const result = await MaintenanceService.approvePayment(id, req.user, remarks);
+      return ApiResponse.success(res, 'Payment verified and approved successfully by admin.', {
+        payment: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async rejectPayment(req, res, next) {
+    try {
+      const id = Number(req.params.id);
+      if (!id || isNaN(id) || id <= 0) {
+        throw ApiError.badRequest('Invalid payment ID provided for rejection');
+      }
+      const { reason } = req.body || {};
+      const result = await MaintenanceService.rejectPayment(id, req.user, reason);
+      return ApiResponse.success(res, 'Payment rejected by admin.', {
+        payment: result,
+      });
     } catch (error) {
       next(error);
     }

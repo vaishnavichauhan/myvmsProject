@@ -1,23 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Settings,
-  Building,
-  Building2,
-  Shield,
-  ShieldCheck,
-  Bell,
-  Database,
-  CheckCircle2,
-  Lock,
-  Save,
-  Server,
-  Key,
-  Sliders,
-  Mail,
   User,
+  Building2,
+  Building,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
+  Key,
+  Mail,
   Phone,
+  PhoneCall,
   MapPin,
-  BadgeCheck,
+  FileText,
+  Layers,
+  Home,
+  Hash,
   X,
   Plus,
 } from 'lucide-react';
@@ -26,7 +23,7 @@ import { useAuthStore } from '../store/authStore';
 import { societyApi } from '../api/societyApi';
 
 export default function SettingsPage() {
-  const { user, systemHealth, checkHealth, changePassword } = useAuthStore();
+  const { user, changePassword } = useAuthStore();
 
   const [societies, setSocieties] = useState([]);
   const [selectedSociety, setSelectedSociety] = useState(null);
@@ -39,21 +36,6 @@ export default function SettingsPage() {
   const [passMsg, setPassMsg] = useState(null);
   const [passError, setPassError] = useState(null);
   const [submittingPass, setSubmittingPass] = useState(false);
-
-  const [settings, setSettings] = useState({
-    societyName: '',
-    societyCode: '',
-    address: '',
-    contactPhone: '',
-    emergencyContact: '',
-    requireDeliveryApproval: true,
-    requireVisitorPhoto: true,
-    autoGateBarrier: true,
-    nightPatrolAlerts: true,
-    residentSMSNotifications: true,
-  });
-
-  const [saved, setSaved] = useState(false);
 
   const handleChangePasswordSubmit = async (e) => {
     e.preventDefault();
@@ -100,59 +82,52 @@ export default function SettingsPage() {
         if (list.length > 0) {
           const current = list.find((s) => s.id === user?.societyId) || list[0];
           setSelectedSociety(current);
-          setSettings((prev) => ({
-            ...prev,
-            societyName: current.name || user?.societyName || prev.societyName,
-            societyCode: current.code || current.society_code || prev.societyCode,
-            address: current.address || prev.address,
-            contactPhone: current.contact_number || current.contact_phone || current.phone || prev.contactPhone,
-            emergencyContact: current.emergency_number || current.emergency_contact || prev.emergencyContact,
-          }));
-        } else if (user?.societyName) {
-          setSettings((prev) => ({
-            ...prev,
-            societyName: user.societyName,
-          }));
+        } else if (user?.societyDetails) {
+          setSelectedSociety(user.societyDetails);
         }
       } catch (err) {
         console.error('Failed to load societies', err);
+        if (user?.societyDetails) {
+          setSelectedSociety(user.societyDetails);
+        }
       }
     };
     fetchSocietyData();
   }, [user]);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    try {
-      if (selectedSociety?.id) {
-        await societyApi.updateSociety(selectedSociety.id, {
-          name: settings.societyName,
-          address: settings.address,
-          contact_number: settings.contactPhone,
-          emergency_number: settings.emergencyContact,
-        });
-        setSelectedSociety((prev) => ({
-          ...prev,
-          name: settings.societyName,
-          address: settings.address,
-          contact_number: settings.contactPhone,
-          emergency_number: settings.emergencyContact,
-        }));
-      }
-    } catch (err) {
-      console.warn('Could not persist to backend directly, saving locally', err);
-    }
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
+  // Format full address
+  const formattedAddress = selectedSociety
+    ? [
+        selectedSociety.address || selectedSociety.address_line1,
+        selectedSociety.address_line2,
+        selectedSociety.city,
+        selectedSociety.state,
+        selectedSociety.pincode ? `PIN: ${selectedSociety.pincode}` : null,
+        selectedSociety.country && selectedSociety.country !== 'India' ? selectedSociety.country : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || 'Address not registered'
+    : '';
+
+  // Society structure type formatting
+  const structureType = selectedSociety
+    ? selectedSociety.society_type
+      ? String(selectedSociety.society_type).replace(/_/g, ' ')
+      : selectedSociety.property_configuration || 'Residential Gated Complex'
+    : '';
+
+  // Total Units
+  const totalUnits = selectedSociety
+    ? selectedSociety.total_homes ?? selectedSociety.max_units ?? 0
+    : 0;
 
   return (
-    <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <div style={{ maxWidth: 1040, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
       {/* Header */}
       <div
         className="glass-panel"
         style={{
-          padding: '24px 28px',
+          padding: '22px 28px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -163,8 +138,8 @@ export default function SettingsPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <div
             style={{
-              width: 52,
-              height: 52,
+              width: 50,
+              height: 50,
               borderRadius: 14,
               background: 'var(--grad-primary)',
               boxShadow: 'var(--shadow-glow)',
@@ -174,66 +149,66 @@ export default function SettingsPage() {
               flexShrink: 0,
             }}
           >
-            <User style={{ width: 26, height: 26, color: '#fff' }} />
+            <User style={{ width: 24, height: 24, color: '#fff' }} />
           </div>
           <div>
-            <h1 style={{ fontSize: '1.65rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
-              Profile
+            <h1 style={{ fontSize: '1.55rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+              Admin Profile
             </h1>
-            <p style={{ margin: '4px 0 0 0', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-              System administrator credentials, active society profile & security rules
+            <p style={{ margin: '3px 0 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+              Administrator credentials & active society profile details
             </p>
           </div>
         </div>
       </div>
 
-      {saved && (
-        <div
-          style={{
-            padding: 14,
-            borderRadius: 10,
-            background: 'rgba(16, 185, 129, 0.15)',
-            border: '1px solid rgba(16, 185, 129, 0.3)',
-            color: 'var(--color-fern-green)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle2 style={{ width: 18, height: 18 }} />
-          <span>Settings saved successfully! Security and gate rules updated.</span>
-        </div>
-      )}
-
-      {/* Society Information & Admin Profile Overview */}
+      {/* Admin Profile Overview Card */}
       <div
+        className="glass-panel"
         style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          padding: '24px 28px',
+          background: 'var(--color-white)',
+          border: '1.5px solid var(--border-card)',
+          borderRadius: '16px',
+          boxShadow: 'var(--shadow-sm)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: 20,
         }}
       >
-        {/* Admin Profile Card */}
-        <div
-          className="glass-panel"
-          style={{
-            padding: '22px 24px',
-            background: 'var(--color-white)',
-            border: '1.5px solid var(--border-card)',
-            borderRadius: '16px',
-            boxShadow: 'var(--shadow-sm)',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-            gap: 14,
-          }}
-        >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-clay)', letterSpacing: '0.05em' }}>
-                System Administrator
-              </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 280, flex: 1 }}>
+          {/* Square Avatar */}
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 16,
+              background: user?.avatarUrl ? `url(${user.avatarUrl}) center/cover` : 'var(--grad-primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              fontWeight: 800,
+              fontSize: '1.35rem',
+              boxShadow: 'var(--shadow-sm)',
+              border: '1.5px solid var(--border-card)',
+              flexShrink: 0,
+            }}
+          >
+            {!user?.avatarUrl && (
+              user?.fullName
+                ? user.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                : <User size={30} color="#fff" />
+            )}
+          </div>
+
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <h2 style={{ margin: 0, fontSize: '1.3rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                {user?.fullName || user?.name || 'Administrator'}
+              </h2>
               <span
                 style={{
                   background: 'rgba(196, 154, 108, 0.18)',
@@ -241,7 +216,7 @@ export default function SettingsPage() {
                   border: '1px solid rgba(196, 154, 108, 0.35)',
                   padding: '2px 8px',
                   borderRadius: '6px',
-                  fontSize: '0.7rem',
+                  fontSize: '0.72rem',
                   fontWeight: 800,
                   textTransform: 'uppercase',
                 }}
@@ -250,295 +225,609 @@ export default function SettingsPage() {
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              {/* Square Avatar */}
-              <div
-                style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 14,
-                  background: user?.avatarUrl ? `url(${user.avatarUrl}) center/cover` : 'var(--grad-primary)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#FFFFFF',
-                  fontWeight: 800,
-                  fontSize: '1.25rem',
-                  boxShadow: 'var(--shadow-sm)',
-                  border: '1.5px solid var(--border-card)',
-                  flexShrink: 0,
-                }}
-              >
-                {!user?.avatarUrl && (
-                  user?.fullName
-                    ? user.fullName.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-                    : <User size={28} color="#fff" />
-                )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 8, flexWrap: 'wrap', fontSize: '0.84rem', color: 'var(--text-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Mail size={14} color="var(--color-clay)" style={{ flexShrink: 0 }} />
+                <span style={{ fontWeight: 600, color: 'var(--text-main)' }}>{user?.email || 'admin@myvms.society'}</span>
               </div>
-
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                    {user?.fullName || user?.name || 'Administrator'}
-                  </h3>
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Mail size={14} color="var(--color-clay)" style={{ flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Email:</span>
-                    <span style={{ color: 'var(--text-main)' }}>{user?.email || 'admin@myvms.society'}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Phone size={14} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 45 }}>Phone:</span>
-                    <span>{user?.phone || '+91 98765 43210'}</span>
-                  </div>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Phone size={14} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
+                <span>{user?.phone || '+91 98765 43210'}</span>
               </div>
             </div>
           </div>
-
-          {/* Change Password Button inside Card */}
-          <button
-            type="button"
-            onClick={() => setShowChangePassModal(true)}
-            style={{
-              width: '100%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: '9px 14px',
-              borderRadius: '10px',
-              background: 'rgba(196, 154, 108, 0.1)',
-              border: '1px solid rgba(196, 154, 108, 0.3)',
-              color: 'var(--color-clay)',
-              fontSize: '0.82rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-              marginTop: 6,
-              transition: 'all 0.15s ease',
-            }}
-          >
-            <Key size={14} />
-            <span>Change Password</span>
-          </button>
         </div>
 
-        {/* Society Information Card */}
-        <div
-          className="glass-panel"
+        {/* Change Password Button inside Card */}
+        <button
+          type="button"
+          onClick={() => setShowChangePassModal(true)}
           style={{
-            padding: '22px 24px',
-            background: 'var(--color-white)',
-            border: '1.5px solid var(--border-card)',
-            borderRadius: '16px',
-            boxShadow: 'var(--shadow-sm)',
             display: 'flex',
-            flexDirection: 'column',
-            gap: 14,
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 8,
+            padding: '10px 18px',
+            borderRadius: '10px',
+            background: 'rgba(196, 154, 108, 0.12)',
+            border: '1px solid rgba(196, 154, 108, 0.35)',
+            color: 'var(--color-clay)',
+            fontSize: '0.85rem',
+            fontWeight: 700,
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            flexShrink: 0,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--color-clay)', letterSpacing: '0.05em' }}>
-              Active Society Information
-            </span>
+          <Key size={15} />
+          <span>Change Password</span>
+        </button>
+      </div>
+
+      {/* Active Society Information Card */}
+      <div
+        className="glass-panel"
+        style={{
+          padding: '26px 28px',
+          background: 'var(--color-white)',
+          border: '1.5px solid var(--border-card)',
+          borderRadius: '16px',
+          boxShadow: 'var(--shadow-sm)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 20,
+        }}
+      >
+        {/* Card Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: 'rgba(196, 154, 108, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'var(--color-clay)',
+              }}
+            >
+              <Building2 size={20} />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                Active Society Information
+              </h2>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                Official registration, structure type, units capacity, and communication details
+              </span>
+            </div>
           </div>
 
-          {selectedSociety ? (
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
-              {/* Square Society Icon Badge */}
-              <div
+          {selectedSociety && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span
                 style={{
-                  width: 60,
-                  height: 60,
-                  borderRadius: 14,
-                  background: 'rgba(196, 154, 108, 0.15)',
-                  border: '1.5px solid var(--border-card)',
-                  display: 'flex',
+                  background: 'rgba(107, 142, 90, 0.15)',
+                  color: 'var(--color-fern-green)',
+                  border: '1px solid rgba(107, 142, 90, 0.35)',
+                  padding: '4px 10px',
+                  borderRadius: '8px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  display: 'inline-flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: 'var(--shadow-sm)',
-                  flexShrink: 0,
+                  gap: 6,
                 }}
               >
-                <Building2 size={28} color="var(--color-clay)" />
-              </div>
-
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                    {selectedSociety.name}
-                  </h3>
-                  {selectedSociety.code && (
-                    <span
-                      style={{
-                        background: 'rgba(107, 142, 90, 0.15)',
-                        color: 'var(--color-fern-green)',
-                        border: '1px solid rgba(107, 142, 90, 0.3)',
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                      }}
-                    >
-                      Code: {selectedSociety.code}
-                    </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8, fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                    <MapPin size={14} color="var(--color-clay)" style={{ flexShrink: 0, marginTop: 2 }} />
-                    <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 55 }}>Address:</span>
-                    <span style={{ color: 'var(--text-main)' }}>
-                      {selectedSociety.address || 'Address not registered'}
-                    </span>
-                  </div>
-                  {selectedSociety.contact_number && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Phone size={14} color="var(--color-clay)" style={{ flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 55 }}>Office:</span>
-                      <span>{selectedSociety.contact_number}</span>
-                    </div>
-                  )}
-                  {selectedSociety.emergency_number && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Phone size={14} color="var(--color-fern-green)" style={{ flexShrink: 0 }} />
-                      <span style={{ fontWeight: 600, color: 'var(--text-main)', minWidth: 55 }}>Helpline:</span>
-                      <span>{selectedSociety.emergency_number}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--color-fern-green)' }} />
+                {selectedSociety.status || 'ACTIVE'}
+              </span>
             </div>
-          ) : (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, padding: '6px 0' }}>
+          )}
+        </div>
+
+        {selectedSociety ? (
+          <>
+            {/* Society Top Banner */}
+            <div
+              style={{
+                padding: '16px 20px',
+                borderRadius: 14,
+                background: 'var(--color-sand-well)',
+                border: '1px solid var(--border-card)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 16,
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div
                   style={{
-                    width: 50,
-                    height: 50,
+                    width: 52,
+                    height: 52,
                     borderRadius: 12,
-                    background: 'rgba(196, 154, 108, 0.1)',
+                    background: 'rgba(196, 154, 108, 0.2)',
                     border: '1px solid var(--border-card)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--color-clay)',
+                    flexShrink: 0,
                   }}
                 >
-                  <Building2 size={24} />
+                  <Building size={26} color="var(--color-clay)" />
                 </div>
                 <div>
-                  <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
-                    No Society Registered
-                  </h4>
-                  <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Currently no society is created in the database.
-                  </p>
+                  <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                    {selectedSociety.name}
+                  </h3>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                    {selectedSociety.code && (
+                      <span
+                        style={{
+                          background: 'rgba(196, 154, 108, 0.15)',
+                          color: 'var(--color-clay)',
+                          border: '1px solid rgba(196, 154, 108, 0.3)',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                        }}
+                      >
+                        Code: {selectedSociety.code}
+                      </span>
+                    )}
+                    {structureType && (
+                      <span
+                        style={{
+                          background: 'rgba(107, 142, 90, 0.12)',
+                          color: 'var(--color-fern-green)',
+                          border: '1px solid rgba(107, 142, 90, 0.25)',
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {structureType}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
-              <Link
-                to="/dashboard/societies"
-                className="btn btn-primary"
-                style={{ padding: '8px 16px', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                <Plus size={14} />
-                <span>Register Society</span>
-              </Link>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                    Total Units Capacity
+                  </div>
+                  <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                    {totalUnits} Units
+                  </div>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        {/* Society Profile Configuration */}
-        <div className="glass-panel" style={{ padding: 24, background: 'var(--color-white)', border: '1px solid var(--border-card)', borderRadius: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
-            <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: 8, color: 'var(--color-dark-brown)' }}>
-              <Building style={{ width: 18, height: 18, color: 'var(--color-clay)' }} />
-              <span>Society Profile Configuration</span>
-            </h2>
-
-            <button
-              type="submit"
-              className="btn btn-primary"
+            {/* Information Tiles Grid */}
+            <div
               style={{
-                padding: '9px 20px',
-                fontSize: '0.875rem',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                borderRadius: '10px',
-                fontWeight: 600,
-                boxShadow: 'var(--shadow-sm)',
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+                gap: 14,
               }}
             >
-              <Save style={{ width: 16, height: 16 }} />
-              <span>Save Changes</span>
-            </button>
+              {/* 1. Society Name */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Building2 size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Society Name
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2, wordBreak: 'break-word' }}>
+                    {selectedSociety.name || 'N/A'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Society Code */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Hash size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Society Code
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2 }}>
+                    <span
+                      style={{
+                        background: 'rgba(196, 154, 108, 0.15)',
+                        color: 'var(--color-clay)',
+                        padding: '2px 8px',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(196, 154, 108, 0.3)',
+                        display: 'inline-block',
+                      }}
+                    >
+                      {selectedSociety.code || 'N/A'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Registration Number */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <FileText size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Registration Number
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2 }}>
+                    {selectedSociety.registration_number || 'REG-PENDING'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 4. Society Structure Type */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Layers size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Society Structure Type
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2, textTransform: 'capitalize' }}>
+                    {structureType}
+                  </div>
+                </div>
+              </div>
+
+              {/* 5. Our Society Total Units */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Home size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Our Society Total Units
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2 }}>
+                    {totalUnits} Units
+                    {selectedSociety.actual_homes_count != null && (
+                      <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)', fontWeight: 500, marginLeft: 6 }}>
+                        ({selectedSociety.actual_homes_count} Homes Configured)
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 6. Email */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Mail size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Email
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2, wordBreak: 'break-all' }}>
+                    {selectedSociety.contact_email ? (
+                      <a href={`mailto:${selectedSociety.contact_email}`} style={{ color: 'var(--color-clay)', textDecoration: 'none' }}>
+                        {selectedSociety.contact_email}
+                      </a>
+                    ) : (
+                      'Not Provided'
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 7. Phone Number */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Phone size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Phone Number
+                  </div>
+                  <div style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--color-dark-brown)', marginTop: 2 }}>
+                    {selectedSociety.contact_number || selectedSociety.contact_phone ? (
+                      <a href={`tel:${selectedSociety.contact_number || selectedSociety.contact_phone}`} style={{ color: 'var(--color-clay)', textDecoration: 'none' }}>
+                        {selectedSociety.contact_number || selectedSociety.contact_phone}
+                      </a>
+                    ) : (
+                      'Not Provided'
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 8. Emergency Number */}
+              <div
+                style={{
+                  padding: '14px 16px',
+                  borderRadius: 12,
+                  background: 'rgba(239, 68, 68, 0.04)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-error)',
+                    flexShrink: 0,
+                  }}
+                >
+                  <PhoneCall size={18} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--color-error)', letterSpacing: '0.04em' }}>
+                    Emergency Number
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--color-error)', marginTop: 2 }}>
+                    {selectedSociety.emergency_number ? (
+                      <a href={`tel:${selectedSociety.emergency_number}`} style={{ color: 'var(--color-error)', textDecoration: 'none' }}>
+                        {selectedSociety.emergency_number}
+                      </a>
+                    ) : (
+                      '112 / Not Provided'
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* 9. Society Address (Full Span) */}
+              <div
+                style={{
+                  gridColumn: '1 / -1',
+                  padding: '16px 18px',
+                  borderRadius: 12,
+                  background: 'var(--color-sand-well)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 14,
+                }}
+              >
+                <div
+                  style={{
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    background: 'rgba(196, 154, 108, 0.12)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--color-clay)',
+                    flexShrink: 0,
+                    marginTop: 2,
+                  }}
+                >
+                  <MapPin size={20} />
+                </div>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>
+                    Society Address
+                  </div>
+                  <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-dark-brown)', marginTop: 4, lineHeight: 1.5 }}>
+                    {formattedAddress}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, padding: '12px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div
+                style={{
+                  width: 50,
+                  height: 50,
+                  borderRadius: 12,
+                  background: 'rgba(196, 154, 108, 0.1)',
+                  border: '1px solid var(--border-card)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'var(--color-clay)',
+                }}
+              >
+                <Building2 size={24} />
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--color-dark-brown)' }}>
+                  No Society Registered
+                </h4>
+                <p style={{ margin: '3px 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Currently no active society profile is linked to this account.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/dashboard/societies"
+              className="btn btn-primary"
+              style={{ padding: '8px 16px', fontSize: '0.82rem', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={14} />
+              <span>Register Society</span>
+            </Link>
           </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-            <div className="input-group">
-              <label className="input-label">Society Name</label>
-              <input
-                type="text"
-                className="input-field"
-                value={settings.societyName}
-                onChange={(e) => setSettings({ ...settings, societyName: e.target.value })}
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Society Code</label>
-              <input
-                type="text"
-                className="input-field"
-                value={settings.societyCode}
-                disabled
-                style={{ opacity: 0.7 }}
-              />
-            </div>
-
-            <div className="input-group" style={{ gridColumn: '1 / -1' }}>
-              <label className="input-label">Address</label>
-              <textarea
-                rows={2}
-                className="input-field"
-                placeholder="Full society street address, campus area, city, pincode"
-                value={settings.address}
-                onChange={(e) => setSettings({ ...settings, address: e.target.value })}
-                style={{ resize: 'vertical', minHeight: '60px' }}
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Primary Office Phone</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="+91 98765 43210"
-                value={settings.contactPhone}
-                onChange={(e) => setSettings({ ...settings, contactPhone: e.target.value })}
-              />
-            </div>
-
-            <div className="input-group">
-              <label className="input-label">Emergency Helpline Number</label>
-              <input
-                type="text"
-                className="input-field"
-                placeholder="+91 91234 56789 / 112"
-                value={settings.emergencyContact}
-                onChange={(e) => setSettings({ ...settings, emergencyContact: e.target.value })}
-              />
-            </div>
-          </div>
-        </div>
-
-
-      </form>
+        )}
+      </div>
 
       {/* Change Password Modal */}
       {showChangePassModal && (

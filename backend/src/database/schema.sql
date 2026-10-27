@@ -93,6 +93,7 @@ CREATE TABLE `homes` (
   `floor` INT NULL COMMENT 'Floor number if applicable',
   `floor_number` INT NULL,
   `home_type` ENUM('1BHK', '2BHK', '3BHK', '4BHK', 'VILLA', 'BUNGALOW', 'PENTHOUSE', 'STUDIO', 'OTHER') NOT NULL DEFAULT '2BHK',
+  `max_family_members` INT NOT NULL DEFAULT 4 COMMENT 'Max family accounts allowed to be created for this home',
   `area_sqft` DECIMAL(10,2) NULL,
   `occupancy_status` ENUM('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT', 'VACANT') NOT NULL DEFAULT 'VACANT',
   `intercom_number` VARCHAR(20) NULL,
@@ -115,6 +116,7 @@ CREATE TABLE `residents` (
   `user_id` INT NOT NULL,
   `home_id` INT NOT NULL,
   `resident_type` ENUM('OWNER', 'TENANT') NOT NULL,
+  `max_family_members` INT NOT NULL DEFAULT 4 COMMENT 'Max family member accounts this resident can create',
   `is_primary_contact` BOOLEAN NOT NULL DEFAULT FALSE,
   `move_in_date` DATE NOT NULL,
   `move_out_date` DATE NULL,
@@ -1023,12 +1025,17 @@ CREATE TABLE `subscription_plans` (
   `max_users` INT NOT NULL DEFAULT 50,
   `max_units` INT NOT NULL DEFAULT 100,
   `max_workers` INT NOT NULL DEFAULT 20,
+  `max_gates` INT NOT NULL DEFAULT 5,
   `trial_days` INT NOT NULL DEFAULT 14,
+  `extra_user_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Extra price per user beyond max_users',
+  `extra_unit_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Extra price per unit beyond max_units',
+  `extra_gate_price` DECIMAL(10,2) NOT NULL DEFAULT 0.00 COMMENT 'Extra price per gate beyond max_gates',
   `status` ENUM('ACTIVE', 'INACTIVE') NOT NULL DEFAULT 'ACTIVE',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX `idx_plan_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ----------------------------------------------------------------------------
 -- 39. PLATFORM FEATURES

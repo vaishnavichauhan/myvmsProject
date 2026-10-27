@@ -28,5 +28,7 @@ router.get('/bills/:id', MaintenanceController.getBillById);
 // Payment Collections & Receipts
 router.get('/payments', MaintenanceController.getAllPayments);
 router.post('/payments', MaintenanceController.recordPayment);
+router.post('/payments/:id/approve', MaintenanceController.approvePayment);
+router.post('/payments/:id/reject', MaintenanceController.rejectPayment);
 
 module.exports = router;

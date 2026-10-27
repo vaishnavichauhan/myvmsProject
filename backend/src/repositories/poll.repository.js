@@ -11,6 +11,8 @@ class PollRepository {
       committee_id = null,
       committee_name = null,
       created_by_user_id,
+      created_by_type = 'ADMIN',
+      creator_member_name = null,
       title,
       description = null,
       category = 'GENERAL',
@@ -28,14 +30,17 @@ class PollRepository {
       const [insertPollResult] = await connection.query(
         `INSERT INTO polls (
           society_id, committee_id, committee_name, created_by_user_id,
+          created_by_type, creator_member_name,
           title, description, category, status, end_date,
           allow_multiple, is_anonymous
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?)`,
         [
           society_id,
           committee_id,
           committee_name,
           created_by_user_id,
+          created_by_type || 'ADMIN',
+          creator_member_name || null,
           title,
           description,
           category,
@@ -81,13 +86,14 @@ class PollRepository {
       `SELECT p.*,
               s.name AS society_name,
               u.full_name AS created_by_name,
+              u.role AS created_by_role,
               CASE
                 WHEN p.status = 'ACTIVE' AND p.end_date < NOW() THEN 'EXPIRED'
                 ELSE p.status
               END AS effective_status
        FROM polls p
-       JOIN societies s ON p.society_id = s.id
-       JOIN users u ON p.created_by_user_id = u.id
+       LEFT JOIN societies s ON p.society_id = s.id
+       LEFT JOIN users u ON p.created_by_user_id = u.id
        WHERE p.id = ?`,
       [pollId]
     );
@@ -148,13 +154,14 @@ class PollRepository {
       SELECT p.*,
              s.name AS society_name,
              u.full_name AS created_by_name,
+             u.role AS created_by_role,
              CASE
                WHEN p.status = 'ACTIVE' AND p.end_date < NOW() THEN 'EXPIRED'
                ELSE p.status
              END AS effective_status
       FROM polls p
-      JOIN societies s ON p.society_id = s.id
-      JOIN users u ON p.created_by_user_id = u.id
+      LEFT JOIN societies s ON p.society_id = s.id
+      LEFT JOIN users u ON p.created_by_user_id = u.id
       WHERE 1=1
     `;
     const params = [];

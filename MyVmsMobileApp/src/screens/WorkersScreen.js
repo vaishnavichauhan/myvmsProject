@@ -204,6 +204,7 @@ export const WorkersScreen = ({ navigation }) => {
     worker_type: 'GARDENER',
     society_id: null,
     address: '',
+    aadhar_number: '',
     expected_time_in: '08:00',
     expected_time_out: '19:00',
     police_verified: true,
@@ -540,6 +541,7 @@ export const WorkersScreen = ({ navigation }) => {
         phone: registerForm.phone.trim(),
         worker_type: registerForm.worker_type || 'GARDENER',
         address: registerForm.address ? registerForm.address.trim() : '',
+        aadhar_number: registerForm.aadhar_number ? registerForm.aadhar_number.trim() : null,
         society_id: targetSocId,
         expected_time_in: registerForm.expected_time_in || '08:00',
         expected_time_out: registerForm.expected_time_out || '19:00',
@@ -1252,6 +1254,19 @@ export const WorkersScreen = ({ navigation }) => {
                       maxLength={10}
                       value={registerForm.phone}
                       onChangeText={(val) => setRegisterForm((p) => ({ ...p, phone: val }))}
+                    />
+                  </View>
+
+                  {/* AdharCard No (Optional) */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>ADHARCARD NO (OPTIONAL)</Text>
+                    <TextInput
+                      style={styles.textInput}
+                      placeholder="e.g. 1234 5678 9012"
+                      placeholderTextColor={THEME.colors.textDim}
+                      maxLength={16}
+                      value={registerForm.aadhar_number}
+                      onChangeText={(val) => setRegisterForm((p) => ({ ...p, aadhar_number: val }))}
                     />
                   </View>
 

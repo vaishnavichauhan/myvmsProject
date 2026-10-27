@@ -22,9 +22,11 @@ import {
   Mail,
   FileText,
   Lock,
+  Download,
 } from 'lucide-react';
 import { societyApi } from '../api/societyApi';
 import { useAuthStore } from '../store/authStore';
+import { exportResidentsExcelTemplate } from '../utils/excelImportExport';
 
 export const CONFIG_OPTIONS = ['1BHK', '2BHK', '3BHK', '4BHK', 'PENTHOUSE'];
 
@@ -488,6 +490,7 @@ export default function SocietiesPage() {
   const [loadingHomes, setLoadingHomes] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
+  const [exportUnitsMap, setExportUnitsMap] = useState({});
 
   useEffect(() => {
     fetchSocieties();
@@ -624,115 +627,20 @@ export default function SocietiesPage() {
     }
   };
 
-  const handleOpenEdit = async (soc) => {
+  const handleOpenEdit = (soc) => {
     setSelectedSociety(soc);
     setSocietyForm({
       name: soc.name || '',
       code: soc.code || '',
-      address: soc.address || '',
       registration_number: soc.registration_number || '',
       contact_email: soc.contact_email || '',
+      address: soc.address || '',
       society_type: soc.society_type || 'BUNGALOW',
-      property_configuration: soc.property_configuration || '2BHK',
-      total_homes: soc.total_homes || 10,
+      max_units: soc.max_units || soc.total_homes || 10,
+      status: soc.status || 'ACTIVE',
       contact_number: soc.contact_number || '',
       emergency_number: soc.emergency_number || '',
-      status: soc.status || 'ACTIVE',
     });
-
-    try {
-      const res = await societyApi.getHomesBySociety(soc.id);
-      const homes = res.data?.homes || [];
-      if (soc.society_type === 'FLAT') {
-        if (homes.length > 0) {
-          const towerMap = new Map();
-          homes.forEach((h) => {
-            const rawWing = (h.building_or_wing || '').replace(/^Tower\s*/i, '').trim() || 'A';
-            if (!towerMap.has(rawWing)) {
-              towerMap.set(rawWing, []);
-            }
-            towerMap.get(rawWing).push(h);
-          });
-          const loadedTowers = Array.from(towerMap.entries()).map(([tName, tHomes], idx) => {
-            const floor = tHomes[0]?.floor || '1';
-            const nums = tHomes
-              .map((h) => {
-                const match = String(h.home_number).match(/(\d+)$/);
-                return match ? parseInt(match[1], 10) : null;
-              })
-              .filter((n) => n !== null)
-              .sort((a, b) => a - b);
-
-            const startNo = nums.length > 0 ? String(nums[0]) : '1';
-            const endNo = nums.length > 0 ? String(nums[nums.length - 1]) : String(tHomes.length);
-            return {
-              id: Date.now() + idx,
-              name: tName,
-              floor: String(floor),
-              startNo: startNo,
-              endNo: endNo,
-              count: tHomes.length,
-            };
-          });
-          setFlatTowers(
-            loadedTowers.length > 0
-              ? loadedTowers
-              : [
-                  {
-                    id: Date.now(),
-                    name: 'A',
-                    floor: '1',
-                    startNo: '1',
-                    endNo: String(soc.total_homes || 10),
-                    count: soc.total_homes || 10,
-                  },
-                ]
-          );
-        } else {
-          setFlatTowers([
-            {
-              id: Date.now(),
-              name: 'A',
-              floor: '1',
-              startNo: '1',
-              endNo: String(soc.total_homes || 10),
-              count: soc.total_homes || 10,
-            },
-          ]);
-        }
-      } else {
-        if (homes.length > 0) {
-          const nums = homes
-            .map((h) => {
-              const match = String(h.home_number).match(/(\d+)$/);
-              return match ? parseInt(match[1], 10) : null;
-            })
-            .filter((n) => n !== null)
-            .sort((a, b) => a - b);
-          const s = nums.length > 0 ? nums[0] : 1;
-          const count = parseInt(soc.total_homes, 10) || 10;
-          setBungalowStartNo(String(s));
-          setBungalowEndNo(String(s + count - 1));
-        } else {
-          setBungalowStartNo('1');
-          setBungalowEndNo(String(soc.total_homes || 10));
-        }
-      }
-    } catch {
-      setBungalowStartNo('1');
-      setBungalowEndNo(String(soc.total_homes || 10));
-      setFlatTowers([
-        {
-          id: Date.now(),
-          name: 'A',
-          floor: '1',
-          startNo: '1',
-          endNo: String(soc.total_homes || 10),
-          count: soc.total_homes || 10,
-        },
-      ]);
-    }
-
     setShowEditModal(true);
   };
 
@@ -740,29 +648,20 @@ export default function SocietiesPage() {
     e.preventDefault();
     setErrorMsg(null);
     try {
-      const specifiedTotal = parseInt(societyForm.total_homes, 10);
-      const sumFlatUnits = flatTowers.length > 0
-        ? flatTowers.reduce((acc, t) => acc + (parseInt(t.count, 10) || 0), 0)
-        : 0;
-
-      const finalTotalHomes = !isNaN(specifiedTotal) && specifiedTotal > 0
-        ? specifiedTotal
-        : (sumFlatUnits > 0 ? sumFlatUnits : 10);
-
+      const unitsVal = parseInt(societyForm.max_units || societyForm.total_homes, 10) || 1;
       const payload = {
-        ...societyForm,
-        total_homes: finalTotalHomes,
-        max_units: finalTotalHomes,
-        towers: flatTowers,
-        bungalow_start_no: bungalowStartNo,
+        name: selectedSociety.name,
+        code: selectedSociety.code,
+        registration_number: societyForm.registration_number,
+        contact_email: societyForm.contact_email,
+        address: societyForm.address,
+        society_type: selectedSociety.society_type,
+        max_units: unitsVal,
+        total_homes: unitsVal,
+        status: selectedSociety.status,
+        contact_number: societyForm.contact_number,
+        emergency_number: societyForm.emergency_number,
       };
-
-      // Society Name, Unique Society Code, and Society Structure Type are superAdmin created, so Admin cannot modify them
-      if (!isSuperAdmin) {
-        delete payload.name;
-        delete payload.code;
-        delete payload.society_type;
-      }
 
       await societyApi.updateSociety(selectedSociety.id, payload);
       setSuccessMsg('Society updated successfully!');
@@ -1066,186 +965,264 @@ export default function SocietiesPage() {
                           fontWeight: 800,
                           color: 'var(--color-dark-brown)',
                           lineHeight: 1.25,
-                          margin: '0 0 12px 0',
+                          margin: '0 0 8px 0',
                           textTransform: 'capitalize',
                         }}
                       >
                         {soc.name}
                       </h2>
 
+                      {/* Code & Status Badges */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(196, 154, 108, 0.18)',
+                            color: 'var(--color-clay)',
+                            letterSpacing: '0.5px',
+                            fontFamily: 'monospace',
+                          }}
+                        >
+                          Code: {soc.code || 'N/A'}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: '6px',
+                            background: soc.status === 'ACTIVE' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            color: soc.status === 'ACTIVE' ? '#059669' : '#dc2626',
+                          }}
+                        >
+                          {soc.status || 'ACTIVE'}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '3px 10px',
+                            borderRadius: '6px',
+                            background: 'rgba(99, 102, 241, 0.12)',
+                            color: '#4f46e5',
+                          }}
+                        >
+                          {soc.society_type || 'FLAT'}
+                        </span>
+                      </div>
+
                       {/* Accent Divider */}
                       <div style={{ width: '40px', height: '3px', background: 'var(--color-clay)', borderRadius: '2px', marginBottom: '18px' }} />
 
-                      {/* Basic Info Rows */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '20px' }}>
-                        {/* Address */}
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '8px',
-                              background: 'rgba(196, 154, 108, 0.14)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                              marginTop: '2px',
-                            }}
-                          >
-                            <MapPin size={17} color="var(--color-clay)" />
+                      {/* 10 Basic Info Rows in Grid */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '14px', marginBottom: '20px' }}>
+                        {/* 1. Society Name */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(196, 154, 108, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Building2 size={16} color="var(--color-clay)" />
                           </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Address
-                            </div>
-                            <div style={{ fontSize: '0.9rem', color: 'var(--color-dark-brown)', lineHeight: 1.45, fontWeight: 500 }}>
-                              {soc.address || 'Address not configured'}
-                            </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Society Name *</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>{soc.name}</div>
                           </div>
                         </div>
 
-                        {/* Registration Number */}
-                        {soc.registration_number && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '8px',
-                                background: 'rgba(99, 102, 241, 0.12)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <FileText size={17} color="#4f46e5" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Registration Number
-                              </div>
-                              <div style={{ fontSize: '0.92rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>
-                                {soc.registration_number}
-                              </div>
-                            </div>
+                        {/* 2. Unique Society Code */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(99, 102, 241, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Key size={16} color="#4f46e5" />
                           </div>
-                        )}
-
-                        {/* Contact Email */}
-                        {soc.contact_email && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '8px',
-                                background: 'rgba(217, 119, 6, 0.12)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <Mail size={17} color="var(--accent-amber)" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Contact Email
-                              </div>
-                              <div style={{ fontSize: '0.92rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>
-                                {soc.contact_email}
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Contact Number */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div
-                            style={{
-                              width: '32px',
-                              height: '32px',
-                              borderRadius: '8px',
-                              background: 'rgba(107, 142, 90, 0.14)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              flexShrink: 0,
-                            }}
-                          >
-                            <Phone size={17} color="var(--color-fern-green)" />
-                          </div>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                              Contact Number
-                            </div>
-                            <div style={{ fontSize: '0.92rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>
-                              {soc.contact_number ? soc.contact_number : <span style={{ color: 'var(--text-dim)', fontWeight: 400 }}>Not provided</span>}
-                            </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Unique Society Code</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 700, fontFamily: 'monospace' }}>{soc.code || 'N/A'}</div>
                           </div>
                         </div>
 
-                        {/* Emergency Contact */}
-                        {soc.emergency_number && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                width: '32px',
-                                height: '32px',
-                                borderRadius: '8px',
-                                background: 'rgba(220, 38, 38, 0.12)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                flexShrink: 0,
-                              }}
-                            >
-                              <PhoneCall size={17} color="var(--accent-rose)" />
-                            </div>
-                            <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: '0.72rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Emergency Helpline
-                              </div>
-                              <div style={{ fontSize: '0.92rem', color: 'var(--accent-rose)', fontWeight: 700 }}>
-                                {soc.emergency_number}
-                              </div>
-                            </div>
+                        {/* 3. Registration Number */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(107, 142, 90, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <FileText size={16} color="var(--color-fern-green)" />
                           </div>
-                        )}
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Registration Number</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>{soc.registration_number || 'N/A'}</div>
+                          </div>
+                        </div>
+
+                        {/* 4. Contact Email */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(217, 119, 6, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Mail size={16} color="var(--accent-amber)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Contact Email</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>{soc.contact_email || 'N/A'}</div>
+                          </div>
+                        </div>
+
+                        {/* 5. Society Address */}
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', gridColumn: '1 / -1' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(196, 154, 108, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: '2px' }}>
+                            <MapPin size={16} color="var(--color-clay)" />
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Society Address *</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 500, lineHeight: 1.4 }}>{soc.address || 'Address not configured'}</div>
+                          </div>
+                        </div>
+
+                        {/* 6. Society Structure Type */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(99, 102, 241, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Layers size={16} color="#4f46e5" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Society Structure Type</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>{soc.society_type || 'FLAT'}</div>
+                          </div>
+                        </div>
+
+                        {/* 7. max Units */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Building2 size={16} color="#059669" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>max Units</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 800 }}>{soc.max_units || soc.total_homes || totalUnits}</div>
+                          </div>
+                        </div>
+
+                        {/* 8. Status */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(107, 142, 90, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <CheckCircle2 size={16} color="var(--color-fern-green)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Status</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 700 }}>{soc.status || 'ACTIVE'}</div>
+                          </div>
+                        </div>
+
+                        {/* 9. Contact Number */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(107, 142, 90, 0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Phone size={16} color="var(--color-fern-green)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Contact Number</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--color-dark-brown)', fontWeight: 600 }}>{soc.contact_number || 'Not provided'}</div>
+                          </div>
+                        </div>
+
+                        {/* 10. Emergency Number */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{ width: '30px', height: '30px', borderRadius: '7px', background: 'rgba(220, 38, 38, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <PhoneCall size={16} color="var(--accent-rose)" />
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-dim)', fontWeight: 700, textTransform: 'uppercase' }}>Emergency Number</div>
+                            <div style={{ fontSize: '0.88rem', color: 'var(--accent-rose)', fontWeight: 700 }}>{soc.emergency_number || 'Not provided'}</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Actions Row */}
+                    {/* Units Export & Actions Row */}
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        gap: '10px',
+                        justifyContent: 'space-between',
+                        gap: '16px',
                         paddingTop: '16px',
                         borderTop: '1px solid var(--border-subtle)',
                         flexWrap: 'wrap',
                       }}
                     >
-                      <button
-                        id={`btn-manage-homes-${soc.id}`}
-                        onClick={() => handleOpenHomes(soc)}
-                        className="btn btn-secondary"
-                        style={{ padding: '8px 16px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-                      >
-                        <Home size={15} color="var(--color-fern-green)" />
-                        <span>Manage Homes ({totalUnits})</span>
-                      </button>
+                      {/* Left: Our Society Total Units Input & Export Excel Button */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <label
+                            htmlFor={`input-export-units-${soc.id}`}
+                            style={{
+                              fontSize: '0.84rem',
+                              fontWeight: 700,
+                              color: 'var(--color-dark-brown)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                            }}
+                          >
+                            <Building2 size={16} color="var(--color-clay)" />
+                            Our Society Total Units:
+                          </label>
+                          <input
+                            id={`input-export-units-${soc.id}`}
+                            type="number"
+                            min="1"
+                            max={soc.max_units || soc.total_homes || 100}
+                            value={exportUnitsMap[soc.id] ?? (soc.total_homes || soc.max_units || 1)}
+                            onChange={(e) => {
+                              const maxAllowed = parseInt(soc.max_units || soc.total_homes || 100, 10);
+                              const rawVal = parseInt(e.target.value, 10);
+                              if (!isNaN(rawVal)) {
+                                const clamped = Math.max(1, Math.min(rawVal, maxAllowed));
+                                setExportUnitsMap((prev) => ({ ...prev, [soc.id]: clamped }));
+                              } else {
+                                setExportUnitsMap((prev) => ({ ...prev, [soc.id]: '' }));
+                              }
+                            }}
+                            onBlur={() => {
+                              const maxAllowed = parseInt(soc.max_units || soc.total_homes || 100, 10);
+                              const currentVal = parseInt(exportUnitsMap[soc.id], 10);
+                              if (isNaN(currentVal) || currentVal < 1) {
+                                setExportUnitsMap((prev) => ({ ...prev, [soc.id]: Math.min(soc.total_homes || 1, maxAllowed) }));
+                              }
+                            }}
+                            className="input-field"
+                            style={{
+                              width: '74px',
+                              padding: '6px 10px',
+                              fontSize: '0.88rem',
+                              fontWeight: 700,
+                              textAlign: 'center',
+                              borderRadius: 'var(--radius-sm)',
+                            }}
+                            title={`Select units to export (equal or less than max units: ${soc.max_units || soc.total_homes || 100})`}
+                          />
+                          <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                            (Max: {soc.max_units || soc.total_homes || 100})
+                          </span>
+                        </div>
 
+                        <button
+                          id={`btn-export-excel-${soc.id}`}
+                          onClick={() => {
+                            const count = exportUnitsMap[soc.id] ?? (soc.total_homes || soc.max_units || 1);
+                            exportResidentsExcelTemplate(soc, count);
+                          }}
+                          className="btn btn-secondary"
+                          style={{ padding: '8px 16px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '8px' }}
+                          title="Export Excel Sheet with Pre-filled Units"
+                        >
+                          <Download size={15} color="var(--color-fern-green)" />
+                          <span>Export Excel Sheet</span>
+                        </button>
+                      </div>
+
+                      {/* Right: Admin Actions */}
                       {isAdmin && (
-                        <>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <button
                             id={`btn-edit-soc-${soc.id}`}
                             onClick={() => handleOpenEdit(soc)}
                             className="btn btn-outline"
                             style={{ padding: '8px 14px', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                            title="Edit Society"
+                            title="Edit Details"
                           >
                             <Edit2 size={14} />
                             <span>Edit Details</span>
@@ -1260,7 +1237,7 @@ export default function SocietiesPage() {
                           >
                             <Trash2 size={14} />
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1864,66 +1841,8 @@ export default function SocietiesPage() {
             {/* Scrollable Form Body */}
             <div style={{ padding: '20px 24px', overflowY: 'auto', flex: '1 1 auto', minHeight: 0 }}>
               <form id="form-edit-society" onSubmit={handleEditSociety}>
-                {/* Super Admin Provisioned Fields (Locked for Admin) */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-                  <div className="input-group">
-                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Society Name *</span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <Lock size={10} /> SuperAdmin Created
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      className="input-field"
-                      style={{
-                        backgroundColor: 'var(--bg-main, #f8fafc)',
-                        cursor: 'not-allowed',
-                        opacity: 0.85,
-                        borderColor: 'var(--border-subtle)',
-                        fontWeight: 600,
-                      }}
-                      value={societyForm.name}
-                      title="Society Name was created by SuperAdmin and cannot be modified."
-                    />
-                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
-                      Locked: Set by Super Admin.
-                    </small>
-                  </div>
-
-                  <div className="input-group">
-                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Unique Society Code *</span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <Lock size={10} /> SuperAdmin Created
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      className="input-field"
-                      style={{
-                        backgroundColor: 'var(--bg-main, #f8fafc)',
-                        cursor: 'not-allowed',
-                        opacity: 0.85,
-                        borderColor: 'var(--border-subtle)',
-                        fontFamily: 'monospace',
-                        fontWeight: 700,
-                        letterSpacing: '0.5px',
-                      }}
-                      value={selectedSociety?.code || societyForm.code || 'N/A'}
-                      title="Unique Society Code was created by SuperAdmin and cannot be modified."
-                    />
-                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
-                      Locked: Set by Super Admin.
-                    </small>
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {/* 1. Registration Number & 2. Contact Email */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
                   <div className="input-group">
                     <label className="input-label">Registration Number</label>
                     <input
@@ -1947,156 +1866,34 @@ export default function SocietiesPage() {
                   </div>
                 </div>
 
-                <div className="input-group">
+                {/* 3. Society Address * */}
+                <div className="input-group" style={{ marginBottom: '14px' }}>
                   <label className="input-label">Society Address *</label>
                   <textarea
                     required
                     rows={2}
                     className="input-field"
+                    placeholder="Enter complete society address..."
                     value={societyForm.address}
                     onChange={(e) => setSocietyForm({ ...societyForm, address: e.target.value })}
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group">
-                    <label className="input-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span>Society Structure Type *</span>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--color-clay)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
-                        <Lock size={10} /> SuperAdmin Created
-                      </span>
-                    </label>
-                    <input
-                      type="text"
-                      disabled
-                      readOnly
-                      id="select-edit-society-type"
-                      className="input-field"
-                      style={{
-                        backgroundColor: 'var(--bg-main, #f8fafc)',
-                        cursor: 'not-allowed',
-                        opacity: 0.85,
-                        borderColor: 'var(--border-subtle)',
-                        fontWeight: 600,
-                      }}
-                      value={
-                        societyForm.society_type === 'FLAT'
-                          ? 'Flat / Apartment Complex'
-                          : societyForm.society_type === 'BUNGALOW'
-                          ? 'Bungalow / Row House'
-                          : societyForm.society_type === 'GATED_COMMUNITY'
-                          ? 'Gated Community / Mixed'
-                          : societyForm.society_type === 'COMMERCIAL'
-                          ? 'Commercial Complex'
-                          : (societyForm.society_type || 'Flat')
-                      }
-                      title="Society Structure Type was created by SuperAdmin and cannot be modified."
-                    />
-                    <small style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px', display: 'block' }}>
-                      Locked: Structure is fixed by Super Admin.
-                    </small>
-                  </div>
-
-                  <div className="input-group">
-                    <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span>Property Configuration *</span>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--color-clay)', fontWeight: 700 }}>
-                        {parseSocietyConfigs(societyForm.property_configuration).length} selected
-                      </span>
-                    </label>
-                    <input type="hidden" id="select-edit-property-config" value={societyForm.property_configuration} />
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '6px' }}>
-                      {CONFIG_OPTIONS.map((cfg) => {
-                        const isSelected = parseSocietyConfigs(societyForm.property_configuration).includes(cfg);
-                        return (
-                          <button
-                            key={cfg}
-                            type="button"
-                            id={`btn-edit-cfg-${cfg.toLowerCase()}`}
-                            onClick={() => togglePropertyConfig(cfg)}
-                            style={{
-                              padding: '6px 12px',
-                              borderRadius: '6px',
-                              fontSize: '0.8rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              transition: 'all 0.15s ease',
-                              border: isSelected ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
-                              backgroundColor: isSelected ? 'var(--color-clay)' : '#FFFFFF',
-                              color: isSelected ? '#FFFFFF' : 'var(--color-dark-brown)',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: '5px',
-                              boxShadow: isSelected ? '0 2px 6px rgba(196, 154, 108, 0.35)' : 'none',
-                            }}
-                          >
-                            <span>{isSelected ? '✓' : '+'}</span>
-                            <span>{cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                {/* 4. max Units * */}
+                <div className="input-group" style={{ marginBottom: '14px' }}>
+                  <label className="input-label">max Units *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    className="input-field"
+                    value={societyForm.max_units || societyForm.total_homes}
+                    onChange={(e) => setSocietyForm({ ...societyForm, max_units: e.target.value, total_homes: e.target.value })}
+                  />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                  <div className="input-group">
-                    <label className="input-label">Total Units *</label>
-                    <input
-                      type="number"
-                      min="1"
-                      required
-                      className="input-field"
-                      value={societyForm.total_homes}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSocietyForm({ ...societyForm, total_homes: val });
-                        const c = parseInt(val, 10);
-                        if (!isNaN(c) && c > 0) {
-                          if (societyForm.society_type === 'BUNGALOW') {
-                            const s = parseInt(bungalowStartNo, 10) || 1;
-                            setBungalowEndNo(String(s + c - 1));
-                          } else if (societyForm.society_type === 'FLAT') {
-                            setFlatTowers((prev) => {
-                              if (prev.length === 1) {
-                                const s = parseInt(prev[0].startNo, 10) || 1;
-                                return [
-                                  {
-                                    ...prev[0],
-                                    count: c,
-                                    endNo: String(s + c - 1),
-                                  },
-                                ];
-                              }
-                              return prev;
-                            });
-                          }
-                        }
-                      }}
-                    />
-                    <small style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '4px', display: 'block', lineHeight: 1.3 }}>
-                      Note: Changing Total Units updates total & vacant capacity. Occupied Units is strictly determined by registered residents assigned in the Residents section.
-                    </small>
-                  </div>
-
-                  <div className="input-group">
-                    <label className="input-label">Status</label>
-                    <select
-                      className="input-field"
-                      value={societyForm.status}
-                      onChange={(e) => setSocietyForm({ ...societyForm, status: e.target.value })}
-                    >
-                      <option value="ACTIVE">ACTIVE</option>
-                      <option value="INACTIVE">INACTIVE</option>
-                      <option value="SUSPENDED">SUSPENDED</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Unit Numbering & Allocation Preview */}
-                {renderUnitAllocationPreview()}
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {/* 5. Contact Number & 6. Emergency Number */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: 0 }}>
                   <div className="input-group" style={{ marginBottom: 0 }}>
                     <label className="input-label">Contact Number</label>
                     <input

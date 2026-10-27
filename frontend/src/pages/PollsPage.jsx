@@ -27,6 +27,7 @@ import {
   User,
   Check,
   ShieldCheck,
+  Shield,
   BarChart3,
   PieChart,
   HelpCircle,
@@ -82,8 +83,6 @@ const CATEGORY_MAP = {
 export default function PollsPage() {
   const { user } = useAuthStore();
   const isAdmin = user?.role === ROLES.ADMIN;
-  const isCommitteeMember = user?.role === ROLES.COMMITTEE_MEMBER;
-  const canCreate = isAdmin || isCommitteeMember;
 
   // Active Society State
   const [societies, setSocieties] = useState([]);
@@ -92,6 +91,10 @@ export default function PollsPage() {
   // Committees
   const [committees, setCommittees] = useState([]);
   const [userCommittees, setUserCommittees] = useState([]);
+
+  // Committee Member and Creation Permissions (checks role and active committee membership)
+  const isCommitteeMember = user?.role === ROLES.COMMITTEE_MEMBER || userCommittees.length > 0;
+  const canCreate = isAdmin || isCommitteeMember;
 
   // Filter State
   const [activeTab, setActiveTab] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'MY_VOTES' | 'CLOSED'
@@ -141,7 +144,7 @@ export default function PollsPage() {
     if (selectedSocietyId) {
       loadPolls();
     }
-  }, [selectedSocietyId]);
+  }, [selectedSocietyId, canCreate]);
 
   const fetchInitialMeta = async () => {
     try {
@@ -162,21 +165,27 @@ export default function PollsPage() {
       const commList = Array.isArray(rawComm) ? rawComm : (Array.isArray(rawComm?.committees) ? rawComm.committees : []);
       setCommittees(commList);
 
-      // User's committee
-      if (isCommitteeMember) {
-        try {
-          const permRes = await committeeApi.checkMyPermissions();
-          const permData = permRes?.data || permRes;
-          if (permData?.committee_id) {
-            setUserCommittees([
-              {
-                id: permData.committee_id,
-                name: permData.committee_name || 'Managing Committee',
-              },
-            ]);
-          }
-        } catch (_) {}
-      }
+      // Check committee membership / permissions for current user
+      try {
+        const permRes = await committeeApi.checkMyPermissions();
+        const permData = permRes?.data || permRes;
+        const uComms = permData?.userCommittees || [];
+        if (Array.isArray(uComms) && uComms.length > 0) {
+          setUserCommittees(
+            uComms.map((c) => ({
+              id: c.committee_id || c.id,
+              name: c.committee_name || c.name || 'Managing Committee',
+            }))
+          );
+        } else if (permData?.committee_id) {
+          setUserCommittees([
+            {
+              id: permData.committee_id,
+              name: permData.committee_name || 'Managing Committee',
+            },
+          ]);
+        }
+      } catch (_) {}
     } catch (e) {
       console.error('Failed to load initial metadata', e);
     }
@@ -275,10 +284,21 @@ export default function PollsPage() {
 
     setActionLoading(true);
     try {
+      const activeCommitteeId = isCommitteeMember && userCommittees.length > 0
+        ? userCommittees[0].id
+        : (createFormData.committee_id || null);
+      const activeCommitteeName = isCommitteeMember && userCommittees.length > 0
+        ? userCommittees[0].name
+        : (createFormData.committee_name || null);
+
       const payload = {
-        ...createFormData,
+        title: createFormData.title.trim(),
+        description: createFormData.description ? createFormData.description.trim() : null,
+        category: createFormData.category || 'GENERAL',
+        end_date: createFormData.end_date,
         society_id: Number(createFormData.society_id || selectedSocietyId || 1),
-        committee_id: createFormData.committee_id ? Number(createFormData.committee_id) : null,
+        committee_id: activeCommitteeId ? Number(activeCommitteeId) : null,
+        committee_name: activeCommitteeName || null,
         options: cleanOptions,
       };
 
@@ -941,22 +961,45 @@ export default function PollsPage() {
                       <span>{catConf.label}</span>
                     </span>
 
-                    {poll.committee_name && (
+                    {/* Creator Badge */}
+                    {poll.created_by_type === 'COMMITTEE' || poll.committee_name ? (
                       <span
                         style={{
-                          fontSize: '0.7rem',
-                          fontWeight: 600,
-                          padding: '3px 8px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '3px 9px',
                           borderRadius: '6px',
-                          background: 'rgba(196, 154, 108, 0.12)',
+                          background: 'rgba(196, 154, 108, 0.15)',
                           color: 'var(--color-clay)',
-                          display: 'flex',
+                          display: 'inline-flex',
                           alignItems: 'center',
-                          gap: '4px',
+                          gap: '5px',
+                          border: '1px solid rgba(196, 154, 108, 0.35)',
                         }}
                       >
                         <Award size={12} />
-                        <span>{poll.committee_name}</span>
+                        <span>
+                          Created by: {poll.committee_name || 'Committee'}
+                          {poll.creator_member_name ? ` — ${poll.creator_member_name}` : ''}
+                        </span>
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          padding: '3px 9px',
+                          borderRadius: '6px',
+                          background: 'rgba(107, 142, 90, 0.14)',
+                          color: 'var(--color-fern-green)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                          border: '1px solid rgba(107, 142, 90, 0.35)',
+                        }}
+                      >
+                        <Shield size={12} />
+                        <span>Created by Admin</span>
                       </span>
                     )}
                   </div>
@@ -1175,6 +1218,18 @@ export default function PollsPage() {
                           : `Closed on ${new Date(poll.end_date).toLocaleDateString('en-GB')}`}
                       </span>
                     </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)' }}>
+                      {poll.created_by_type === 'COMMITTEE' || poll.committee_name ? (
+                        <span>
+                          Created by: <strong>{poll.committee_name || 'Committee'}</strong>
+                          {poll.creator_member_name ? ` (${poll.creator_member_name})` : ''}
+                        </span>
+                      ) : (
+                        <span>
+                          Created by: <strong>Admin</strong>
+                        </span>
+                      )}
+                    </span>
                   </div>
 
                   {/* Creator / Admin Controls */}
@@ -1375,8 +1430,39 @@ export default function PollsPage() {
                 />
               </div>
 
-              {/* Category & Committee */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              {/* Creator Authority Banner */}
+              <div
+                style={{
+                  background: isCommitteeMember ? 'rgba(196, 154, 108, 0.12)' : 'rgba(107, 142, 90, 0.12)',
+                  border: isCommitteeMember ? '1px solid rgba(196, 154, 108, 0.3)' : '1px solid rgba(107, 142, 90, 0.3)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                {isCommitteeMember ? (
+                  <Award size={20} color="var(--color-clay)" />
+                ) : (
+                  <Shield size={20} color="var(--color-fern-green)" />
+                )}
+                <div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: isCommitteeMember ? 'var(--color-clay)' : 'var(--color-fern-green)' }}>
+                    {isCommitteeMember
+                      ? `Creating as Committee: ${userCommittees[0]?.name || 'Managing Committee'} — ${user?.fullName || user?.name || 'Member'}`
+                      : 'Creating as: Society Admin'}
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: 'var(--text-dim)', marginTop: '2px' }}>
+                    {isCommitteeMember
+                      ? `This poll will display "Created by: ${userCommittees[0]?.name || 'Managing Committee'} — ${user?.fullName || user?.name || 'Member'}" across all resident views.`
+                      : 'This poll will display "Created by Admin" across all resident views.'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Category & Expiration Date */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
                     Category *
@@ -1404,18 +1490,13 @@ export default function PollsPage() {
 
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                    Committee Attribution
+                    Poll Expiration Date & Time *
                   </label>
-                  <select
-                    value={createFormData.committee_id}
-                    onChange={(e) => {
-                      const selected = committees.find((c) => String(c.id) === e.target.value);
-                      setCreateFormData({
-                        ...createFormData,
-                        committee_id: e.target.value,
-                        committee_name: selected?.name || '',
-                      });
-                    }}
+                  <input
+                    type="datetime-local"
+                    value={createFormData.end_date}
+                    onChange={(e) => setCreateFormData({ ...createFormData, end_date: e.target.value })}
+                    required
                     style={{
                       width: '100%',
                       padding: '9px 12px',
@@ -1425,37 +1506,8 @@ export default function PollsPage() {
                       color: 'var(--text-main)',
                       fontSize: '0.86rem',
                     }}
-                  >
-                    <option value="">General Management Committee</option>
-                    {committees.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
-              </div>
-
-              {/* End Date (Deadline) */}
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Poll Expiration Date & Time *
-                </label>
-                <input
-                  type="datetime-local"
-                  value={createFormData.end_date}
-                  onChange={(e) => setCreateFormData({ ...createFormData, end_date: e.target.value })}
-                  required
-                  style={{
-                    width: '100%',
-                    padding: '9px 12px',
-                    borderRadius: 'var(--radius-md)',
-                    border: '1px solid var(--border-subtle)',
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-main)',
-                    fontSize: '0.86rem',
-                  }}
-                />
               </div>
 
               {/* Dynamic Options List */}

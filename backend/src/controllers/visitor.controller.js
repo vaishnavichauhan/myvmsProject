@@ -13,7 +13,8 @@ class VisitorController {
     try {
       const check = await VisitorService.checkHomePermission(
         req.params.homeId,
-        req.query.resident_user_id
+        req.query.resident_user_id,
+        req.query.visit_type || req.query.type || 'VISITOR'
       );
       return ApiResponse.success(res, 'Home permission check completed', check);
     } catch (err) {

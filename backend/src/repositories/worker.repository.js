@@ -12,7 +12,7 @@ class WorkerRepository {
     let query = `
       SELECT 
         w.id, w.society_id, w.full_name, w.phone, w.worker_type, 
-        w.photo_url, w.address, w.pass_code, w.police_verified, w.status,
+        w.photo_url, w.address, w.pass_code, w.police_verified, w.status, w.aadhar_number,
         w.created_at, w.updated_at,
         s.name AS society_name,
         COUNT(DISTINCT CASE WHEN wh.status = 'ACTIVE' THEN wh.home_id END) AS active_homes_count,
@@ -36,9 +36,9 @@ class WorkerRepository {
     }
 
     if (search) {
-      query += ' AND (w.full_name LIKE ? OR w.phone LIKE ? OR w.pass_code LIKE ?)';
+      query += ' AND (w.full_name LIKE ? OR w.phone LIKE ? OR w.pass_code LIKE ? OR w.aadhar_number LIKE ?)';
       const term = `%${search.trim()}%`;
-      params.push(term, term, term);
+      params.push(term, term, term, term);
     }
 
     query += ' GROUP BY w.id ORDER BY w.full_name ASC';
@@ -65,6 +65,7 @@ class WorkerRepository {
         w.police_verified,
         w.status AS worker_status,
         w.status,
+        w.aadhar_number,
         w.created_at,
         w.updated_at,
         s.name AS society_name,
@@ -90,9 +91,9 @@ class WorkerRepository {
     }
 
     if (search) {
-      query += ' AND (w.full_name LIKE ? OR w.phone LIKE ? OR w.pass_code LIKE ?)';
+      query += ' AND (w.full_name LIKE ? OR w.phone LIKE ? OR w.pass_code LIKE ? OR w.aadhar_number LIKE ?)';
       const term = `%${search.trim()}%`;
-      params.push(term, term, term);
+      params.push(term, term, term, term);
     }
 
     query += ' GROUP BY w.id ORDER BY w.created_at DESC';
@@ -107,7 +108,7 @@ class WorkerRepository {
   static async findByPhoneAndSociety(phone, societyId) {
     const cleanPhone = phone.trim();
     const query = `
-      SELECT id, society_id, full_name, phone, worker_type, photo_url, address, pass_code, police_verified, status
+      SELECT id, society_id, full_name, phone, worker_type, photo_url, address, pass_code, police_verified, status, aadhar_number
       FROM workers
       WHERE society_id = ? AND (phone = ? OR REPLACE(phone, ' ', '') = REPLACE(?, ' ', ''))
       LIMIT 1
@@ -123,7 +124,7 @@ class WorkerRepository {
     const query = `
       SELECT 
         w.id, w.society_id, w.full_name, w.phone, w.worker_type, 
-        w.photo_url, w.address, w.pass_code, w.police_verified, w.status,
+        w.photo_url, w.address, w.pass_code, w.police_verified, w.status, w.aadhar_number,
         w.created_at, w.updated_at,
         COUNT(DISTINCT CASE WHEN wh.status = 'ACTIVE' THEN wh.home_id END) AS active_homes_count,
         GROUP_CONCAT(DISTINCT CASE WHEN wh.status = 'ACTIVE' THEN h.home_number END ORDER BY h.home_number SEPARATOR ', ') AS active_home_numbers
@@ -162,6 +163,7 @@ class WorkerRepository {
         w.pass_code,
         w.police_verified,
         w.status AS worker_status,
+        w.aadhar_number,
         (
           SELECT GROUP_CONCAT(DISTINCT h2.home_number ORDER BY h2.home_number SEPARATOR ', ')
           FROM worker_home wh2
@@ -198,7 +200,7 @@ class WorkerRepository {
     const query = `
       SELECT wh.id, wh.worker_id, wh.home_id, wh.assigned_by_resident_id, 
              wh.start_date, wh.expected_time_in, wh.expected_time_out, wh.status,
-             w.full_name, w.phone, w.worker_type, w.photo_url, w.address,
+             w.full_name, w.phone, w.worker_type, w.photo_url, w.address, w.aadhar_number,
              h.home_number
       FROM worker_home wh
       JOIN workers w ON wh.worker_id = w.id
@@ -214,10 +216,11 @@ class WorkerRepository {
    * Insert a new worker record into master workers table
    */
   static async createWorker(data) {
+    const aadharNum = data.aadhar_number ? data.aadhar_number.trim() : (data.government_id_number ? data.government_id_number.trim() : null);
     const query = `
       INSERT INTO workers (
-        society_id, full_name, phone, worker_type, photo_url, address, pass_code, police_verified, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        society_id, full_name, phone, worker_type, photo_url, address, pass_code, police_verified, status, aadhar_number, government_id_type, government_id_number
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const passCode = data.pass_code || `PASS-${data.worker_type?.substring(0, 3)}-${Date.now().toString().slice(-5)}`;
     const [result] = await pool.query(query, [
@@ -230,6 +233,9 @@ class WorkerRepository {
       passCode,
       data.police_verified !== undefined ? Boolean(data.police_verified) : true,
       data.status || 'ACTIVE',
+      aadharNum,
+      aadharNum ? 'AADHAAR' : (data.government_id_type || null),
+      aadharNum || null,
     ]);
 
     return this.findById(result.insertId);
@@ -261,6 +267,11 @@ class WorkerRepository {
     if (data.address !== undefined) {
       updates.push('address = ?');
       params.push(data.address ? data.address.trim() : null);
+    }
+    if (data.aadhar_number !== undefined || data.government_id_number !== undefined) {
+      const aadharNum = data.aadhar_number !== undefined ? (data.aadhar_number ? data.aadhar_number.trim() : null) : (data.government_id_number ? data.government_id_number.trim() : null);
+      updates.push('aadhar_number = ?', 'government_id_number = ?', 'government_id_type = ?');
+      params.push(aadharNum, aadharNum, aadharNum ? 'AADHAAR' : null);
     }
     if (data.status) {
       updates.push('status = ?');

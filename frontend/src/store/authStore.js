@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authService } from '../services/authService';
+import { gateApi } from '../api/gateApi';
 
 /**
  * Global Authentication Store with Zustand
@@ -61,9 +62,17 @@ export const useAuthStore = create((set, get) => {
     },
 
     /**
-     * Sign out current user
+     * Sign out current user. If security, auto exit gate and record checkout time.
      */
     logout: async () => {
+      const { user } = get();
+      if (user?.role === 'SECURITY') {
+        try {
+          await gateApi.selfCheckOut();
+        } catch (e) {
+          console.warn('Auto gate checkout failed:', e?.message);
+        }
+      }
       await authService.logout();
       set({ user: null, token: null, isAuthenticated: false, error: null });
     },

@@ -23,6 +23,7 @@ const specialChargeRoutes = require('./routes/special-charge.routes');
 const pollRoutes = require('./routes/poll.routes');
 const amenityRoutes = require('./routes/amenity.routes');
 const superAdminRoutes = require('./routes/superadmin.routes');
+const planRoutes = require('./routes/plan.routes');
 const { errorHandler, notFoundHandler } = require('./middlewares/error.middleware');
 
 const app = express();
@@ -35,8 +36,8 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request logging in development
 if (config.nodeEnv !== 'test') {
@@ -82,6 +83,7 @@ app.use('/api/special-charges', specialChargeRoutes);
 app.use('/api/polls', pollRoutes);
 app.use('/api/amenities', amenityRoutes);
 app.use('/api/super-admin', superAdminRoutes);
+app.use('/api/plans', planRoutes);
 
 // Versioned /api/v1 routes
 app.use('/api/v1', apiV1Router);

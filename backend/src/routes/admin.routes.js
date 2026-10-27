@@ -14,4 +14,19 @@ router.get(
   AdminController.getDashboard
 );
 
+// Subscription & Billing for Society Admin
+router.get(
+  '/subscription',
+  authMiddleware,
+  roleMiddleware(ROLES.ADMIN),
+  AdminController.getSubscriptionBilling
+);
+
+router.post(
+  '/subscription/invoices/:invoiceId/pay',
+  authMiddleware,
+  roleMiddleware(ROLES.ADMIN),
+  AdminController.submitSubscriptionPayment
+);
+
 module.exports = router;

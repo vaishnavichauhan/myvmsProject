@@ -5,35 +5,36 @@ class SpecialChargeService {
   static async createCharge(data, user) {
     let societyId = data.society_id || user.societyId || null;
 
-    // Resolve committee details
-    let committeeName = data.committee_name || null;
-    let committeeId = data.committee_id || null;
+    // Check if creator is a committee member in the database
+    const [cmRows] = await pool.query(
+      `SELECT cm.society_id, cm.committee_id, COALESCE(c.name, cm.committee_name) AS committee_name, cm.name AS member_name, cm.designation
+       FROM committee_members cm
+       LEFT JOIN committees c ON cm.committee_id = c.id
+       WHERE cm.user_id = ? AND cm.status = 'ACTIVE' LIMIT 1`,
+      [user.id]
+    );
 
-    // If a committee member is creating the charge, resolve their committee and society
-    if (user.role === 'COMMITTEE_MEMBER') {
-      const [cmRows] = await pool.query(
-        `SELECT cm.society_id, cm.committee_id, COALESCE(c.name, cm.committee_name) AS committee_name
-         FROM committee_members cm
-         LEFT JOIN committees c ON cm.committee_id = c.id
-         WHERE cm.user_id = ? AND cm.status = 'ACTIVE' LIMIT 1`,
-        [user.id]
-      );
+    let createdByType = 'ADMIN';
+    let creatorMemberName = null;
+    let committeeId = null;
+    let committeeName = null;
+
+    if (user.role === 'COMMITTEE_MEMBER' || cmRows.length > 0) {
+      createdByType = 'COMMITTEE';
       if (cmRows.length > 0) {
         societyId = societyId || cmRows[0].society_id;
-        committeeId = committeeId || cmRows[0].committee_id;
-        committeeName = committeeName || cmRows[0].committee_name || 'Managing Committee';
+        committeeId = cmRows[0].committee_id;
+        committeeName = cmRows[0].committee_name || 'Managing Committee';
+        creatorMemberName = cmRows[0].member_name || user.fullName;
+      } else {
+        committeeName = data.committee_name || 'Managing Committee';
+        creatorMemberName = user.fullName || 'Committee Member';
       }
-    }
-
-    // If an Admin specified committee_id but not committee_name, look up committee name
-    if (committeeId && !committeeName) {
-      const [cRows] = await pool.query(
-        `SELECT name FROM committees WHERE id = ? LIMIT 1`,
-        [committeeId]
-      );
-      if (cRows.length > 0) {
-        committeeName = cRows[0].name;
-      }
+    } else {
+      createdByType = 'ADMIN';
+      creatorMemberName = user.fullName || 'Admin';
+      committeeId = null;
+      committeeName = null;
     }
 
     if (!societyId) {
@@ -53,9 +54,12 @@ class SpecialChargeService {
 
     const payload = {
       ...data,
+      category: data.category || 'SPECIAL_CHARGE',
       society_id: societyId,
-      committee_id: committeeId || null,
-      committee_name: committeeName || null,
+      committee_id: committeeId,
+      committee_name: committeeName,
+      created_by_type: createdByType,
+      creator_member_name: creatorMemberName,
     };
 
     return await SpecialChargeRepository.createCharge(payload, user.id);
@@ -80,7 +84,25 @@ class SpecialChargeService {
   }
 
   static async recordPayment(data, user) {
-    return await SpecialChargeRepository.recordPayment(data, user?.id || null);
+    return await SpecialChargeRepository.recordPayment(data, user);
+  }
+
+  static async approvePayment(paymentId, user, adminRemarks = null) {
+    const userRole = String(user?.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
+    if (!isAdmin) {
+      throw new Error('Only society administrators can approve special charge payments');
+    }
+    return await SpecialChargeRepository.approvePayment(paymentId, user, adminRemarks);
+  }
+
+  static async rejectPayment(paymentId, user, rejectReason = 'Payment verification failed') {
+    const userRole = String(user?.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(userRole);
+    if (!isAdmin) {
+      throw new Error('Only society administrators can reject special charge payments');
+    }
+    return await SpecialChargeRepository.rejectPayment(paymentId, user, rejectReason);
   }
 
   static async getAllPayments(societyId, filters = {}) {

@@ -29,6 +29,7 @@ import {
   Sliders,
   CreditCard,
   Crown,
+  Wallet,
 } from 'lucide-react';
 import { ROLES } from './roles';
 
@@ -64,6 +65,7 @@ export const ROLE_NAVIGATION = {
       path: '/dashboard/maintenance',
       feature: 'SOCIETY_FINANCE',
       children: [
+        { title: 'Account Overview', path: '/dashboard/accounts', icon: Wallet },
         { title: 'Maintenance', path: '/dashboard/maintenance', icon: Receipt },
         { title: 'Special Charges', path: '/dashboard/special-charges', icon: Coins, badge: 'One-time' },
       ],
@@ -89,6 +91,7 @@ export const ROLE_NAVIGATION = {
     { title: 'Announcements', path: '/dashboard/announcements', icon: Megaphone, feature: 'ANNOUNCEMENTS' },
     { title: 'Polls & Surveys', path: '/dashboard/polls', icon: Vote, feature: 'POLLS' },
     { title: 'Gate Entry', path: '/dashboard/visitors', icon: DoorOpen, feature: 'GATES_VISITORS' },
+    { title: 'Subscription & Billing', path: '/dashboard/subscription-billing', icon: CreditCard },
     { title: 'Profile', path: '/dashboard/settings', icon: User },
   ],
 

@@ -24,6 +24,8 @@ export const maintenanceApi = {
   // Payments & Receipts
   recordPayment: (data) => apiClient.post('/maintenance/payments', data),
   getPayments: (params) => apiClient.get('/maintenance/payments', { params }),
+  approvePayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/approve`, data),
+  rejectPayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/reject`, data),
 };
 
 export default maintenanceApi;

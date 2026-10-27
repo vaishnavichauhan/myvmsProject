@@ -284,7 +284,16 @@ class MaintenanceRepository {
              u.full_name AS resident_name,
              u.phone AS resident_phone,
              u.email AS resident_email,
-             r.resident_type
+             r.resident_type,
+             (SELECT COUNT(*) FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'PENDING_APPROVAL') AS pending_payments_count,
+             (SELECT COUNT(*) FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'APPROVED') AS approved_payments_count,
+             (SELECT mp.receipt_number FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'APPROVED' ORDER BY mp.id DESC LIMIT 1) AS latest_receipt_number,
+             (SELECT au.full_name FROM maintenance_payments mp LEFT JOIN users au ON mp.approved_by_user_id = au.id WHERE mp.bill_id = b.id AND mp.status = 'APPROVED' ORDER BY mp.id DESC LIMIT 1) AS approved_by_name,
+             (SELECT mp.approved_at FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'APPROVED' ORDER BY mp.id DESC LIMIT 1) AS approved_at,
+             (SELECT mp.id FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'PENDING_APPROVAL' ORDER BY mp.id DESC LIMIT 1) AS pending_payment_id,
+             (SELECT mp.amount FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'PENDING_APPROVAL' ORDER BY mp.id DESC LIMIT 1) AS pending_payment_amount,
+             (SELECT mp.payment_method FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'PENDING_APPROVAL' ORDER BY mp.id DESC LIMIT 1) AS pending_payment_method,
+             (SELECT mp.transaction_reference FROM maintenance_payments mp WHERE mp.bill_id = b.id AND mp.status = 'PENDING_APPROVAL' ORDER BY mp.id DESC LIMIT 1) AS pending_payment_ref
       FROM maintenance_bills b
       JOIN homes h ON b.home_id = h.id
       JOIN societies s ON b.society_id = s.id
@@ -376,15 +385,24 @@ class MaintenanceRepository {
 
     // Fetch payments made against this bill
     const [payments] = await pool.query(
-      `SELECT pay.*, cu.full_name AS collected_by_name
+      `SELECT pay.*,
+              cu.full_name AS collected_by_name,
+              au.full_name AS approved_by_name,
+              u.full_name AS paid_by_name
        FROM maintenance_payments pay
        LEFT JOIN users cu ON pay.collected_by_user_id = cu.id
+       LEFT JOIN users au ON pay.approved_by_user_id = au.id
+       LEFT JOIN users u ON pay.paid_by_user_id = u.id
        WHERE pay.bill_id = ?
        ORDER BY pay.payment_date DESC`,
       [id]
     );
 
     bill.payments = payments;
+    const latestApprovedPayment = payments.find((p) => p.status === 'APPROVED' && p.approved_by_name);
+    bill.approved_by_name = latestApprovedPayment
+      ? latestApprovedPayment.approved_by_name
+      : (payments.find((p) => p.approved_by_name)?.approved_by_name || null);
     return bill;
   }
 
@@ -439,7 +457,7 @@ class MaintenanceRepository {
    * Allows an Owner or Resident to choose their payment plan (e.g. Monthly vs Quarterly).
    * Generates or retrieves the active bill for that period under the selected plan.
    */
-  static async selectResidentPlan(userId, planId) {
+  static async selectResidentPlan(userId, planId, requestedPeriod = null) {
     const [residentRows] = await pool.query(
       `SELECT r.*, h.society_id, h.home_number, h.home_type
        FROM residents r
@@ -461,30 +479,123 @@ class MaintenanceRepository {
     }
     const plan = planRows[0];
 
+    // Fetch existing bills for this home to determine what's already paid
+    const [homeBills] = await pool.query(
+      `SELECT id, billing_period, billing_cycle, status, paid_amount FROM maintenance_bills WHERE home_id = ?`,
+      [resident.home_id]
+    );
+
     const today = new Date();
     const yyyy = today.getFullYear();
     const mm = String(today.getMonth() + 1).padStart(2, '0');
-    let billing_period = `${yyyy}-${mm}`;
-    if (plan.billing_cycle === 'QUARTERLY') {
-      const q = Math.ceil((today.getMonth() + 1) / 3);
-      billing_period = `Q${q}-${yyyy}`;
-    } else if (plan.billing_cycle === 'HALF_YEARLY') {
-      const h = (today.getMonth() + 1) <= 6 ? 1 : 2;
-      billing_period = `H${h}-${yyyy}`;
-    } else if (plan.billing_cycle === 'YEARLY') {
-      billing_period = `FY-${yyyy}`;
+
+    let billing_period = requestedPeriod ? requestedPeriod.trim() : null;
+
+    // Helper to check if a month (e.g. "2026-10") is already paid for this home
+    const isMonthPaid = (mStr) => {
+      return homeBills.some((b) => {
+        if (b.status !== 'PAID') return false;
+        if (b.billing_period === mStr) return true;
+        const cov = MaintenanceRepository.getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
+        return cov.includes(mStr);
+      });
+    };
+
+    // Helper to check if a quarter (e.g. "Q4-2026") has any month already paid for this home
+    const isQuarterPaid = (qStr) => {
+      const qMonths = MaintenanceRepository.getCoveredMonthsForPeriod(qStr, 'QUARTERLY');
+      return homeBills.some((b) => {
+        if (b.status !== 'PAID') return false;
+        if (b.billing_period === qStr) return true;
+        const bMonths = MaintenanceRepository.getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
+        return qMonths.some((qm) => bMonths.includes(qm));
+      });
+    };
+
+    if (!billing_period) {
+      if (plan.billing_cycle === 'QUARTERLY') {
+        const curQ = Math.ceil((today.getMonth() + 1) / 3);
+        let qYear = yyyy;
+        let qNum = curQ;
+        // Find first unpaid quarter starting from current
+        while (true) {
+          const testPeriod = `Q${qNum}-${qYear}`;
+          if (!isQuarterPaid(testPeriod)) {
+            billing_period = testPeriod;
+            break;
+          }
+          qNum++;
+          if (qNum > 4) {
+            qNum = 1;
+            qYear++;
+          }
+        }
+      } else if (plan.billing_cycle === 'MONTHLY') {
+        let mYear = yyyy;
+        let mMonth = today.getMonth() + 1;
+        // Find first unpaid month starting from current
+        while (true) {
+          const testPeriod = `${mYear}-${String(mMonth).padStart(2, '0')}`;
+          if (!isMonthPaid(testPeriod)) {
+            billing_period = testPeriod;
+            break;
+          }
+          mMonth++;
+          if (mMonth > 12) {
+            mMonth = 1;
+            mYear++;
+          }
+        }
+      } else {
+        billing_period = `${yyyy}-${mm}`;
+      }
     }
 
+    // Check if bill already exists for this home and billing_period
     const [existing] = await pool.query(
-      `SELECT id FROM maintenance_bills WHERE home_id = ? AND billing_period = ? LIMIT 1`,
+      `SELECT id, status, paid_amount, total_amount FROM maintenance_bills WHERE home_id = ? AND billing_period = ? LIMIT 1`,
       [resident.home_id, billing_period]
     );
+
     if (existing.length > 0) {
-      return this.findBillById(existing[0].id);
+      const existingBill = existing[0];
+      if (existingBill.status === 'PAID') {
+        // If this period was already paid, scan forward to next unpaid period!
+        if (plan.billing_cycle === 'MONTHLY') {
+          let [pY, pM] = billing_period.split('-').map(Number);
+          pM++;
+          if (pM > 12) {
+            pM = 1;
+            pY++;
+          }
+          const nextPeriod = `${pY}-${String(pM).padStart(2, '0')}`;
+          return this.selectResidentPlan(userId, planId, nextPeriod);
+        }
+        return this.findBillById(existingBill.id);
+      }
+
+      // If pending, ensure plan_id and amounts are up to date
+      await pool.query(
+        `UPDATE maintenance_bills 
+         SET plan_id = ?, billing_cycle = ?, base_amount = ?, total_amount = ?, balance_amount = ? 
+         WHERE id = ?`,
+        [plan.id, plan.billing_cycle, Number(plan.amount), Number(plan.amount), Number(plan.amount) - Number(existingBill.paid_amount || 0), existingBill.id]
+      );
+      return this.findBillById(existingBill.id);
     }
 
+    // Determine due date from plan and billing_period
     const dueDay = Math.min(Math.max(plan.due_day || 5, 1), 28);
-    const dueDateStr = `${yyyy}-${mm}-${String(dueDay).padStart(2, '0')}`;
+    let dueYear = yyyy;
+    let dueMonth = mm;
+    if (billing_period.startsWith('20')) {
+      const parts = billing_period.split('-');
+      if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+        dueYear = Number(parts[0]);
+        dueMonth = parts[1];
+      }
+    }
+    const dueDateStr = `${dueYear}-${dueMonth}-${String(dueDay).padStart(2, '0')}`;
     const billNumber = `INV-${billing_period.replace(/[^a-zA-Z0-9]/g, '')}-${resident.home_number.replace(/\s+/g, '')}-${Math.floor(10 + Math.random() * 90)}`;
     const title = `Maintenance - ${billing_period} (${plan.name})`;
 
@@ -507,7 +618,7 @@ class MaintenanceRepository {
         Number(plan.amount),
         Number(plan.amount),
         dueDateStr,
-        `Resident selected plan "${plan.name}"`,
+        `Resident selected plan "${plan.name}" for period ${billing_period}`,
       ]
     );
 
@@ -543,7 +654,7 @@ class MaintenanceRepository {
   /**
    * Batch generates maintenance invoices for all active homes in a society for a given period.
    */
-  static async generateBatchBills(society_id, billing_period, billing_cycle = 'MONTHLY', customDueDate = null) {
+  static async generateBatchBills(society_id, billing_period, billing_cycle = 'MONTHLY', customDueDate = null, planId = null) {
     // 1. Fetch all active homes for the society
     const [homes] = await pool.query(
       `SELECT h.id, h.home_number, h.home_type, h.building_or_wing,
@@ -569,6 +680,8 @@ class MaintenanceRepository {
     if (plans.length === 0) {
       throw new Error('No active maintenance plan configured for this society. Please create at least one plan first.');
     }
+
+    const explicitPlan = planId && planId !== 'AUTO' ? plans.find((p) => p.id === Number(planId)) : null;
 
     // 3. Check existing bills for this period to avoid duplicate invoicing
     const [existingBills] = await pool.query(
@@ -608,20 +721,25 @@ class MaintenanceRepository {
 
       const resType = home.resident_type || 'OWNER';
 
-      // Match best plan:
+      // Match best plan (or use explicit plan selected by admin)
+      let matchedPlan = explicitPlan;
+
       // A. Specific home_type, matching resident_type (or BOTH), and matching billing_cycle
-      let matchedPlan = plans.find(
-        (p) => p.applicable_type === home.home_type && (p.resident_type === 'BOTH' || p.resident_type === resType) && p.billing_cycle === billing_cycle
-      );
+      const homeTypeUpper = String(home.home_type || '').toUpperCase();
+      if (!matchedPlan) {
+        matchedPlan = plans.find(
+          (p) => String(p.applicable_type || '').toUpperCase() === homeTypeUpper && (p.resident_type === 'BOTH' || p.resident_type === resType) && p.billing_cycle === billing_cycle
+        );
+      }
       // B. Specific home_type and matching resident_type (or BOTH)
       if (!matchedPlan) {
         matchedPlan = plans.find(
-          (p) => p.applicable_type === home.home_type && (p.resident_type === 'BOTH' || p.resident_type === resType)
+          (p) => String(p.applicable_type || '').toUpperCase() === homeTypeUpper && (p.resident_type === 'BOTH' || p.resident_type === resType)
         );
       }
       // C. Specific home_type any cycle
       if (!matchedPlan) {
-        matchedPlan = plans.find((p) => p.applicable_type === home.home_type);
+        matchedPlan = plans.find((p) => String(p.applicable_type || '').toUpperCase() === homeTypeUpper);
       }
       // D. Fallback to 'ALL' applicable_type, matching resident_type (or BOTH), matching cycle
       if (!matchedPlan) {
@@ -695,7 +813,7 @@ class MaintenanceRepository {
   // 4. PAYMENTS & RECEIPTS
   // ==========================================================================
 
-  static async recordPayment(data, collectedByUserId = null) {
+  static async recordPayment(data, callerUser = null) {
     const {
       bill_id,
       amount,
@@ -703,6 +821,9 @@ class MaintenanceRepository {
       transaction_reference = null,
       remarks = null,
     } = data;
+
+    const callerRole = String(callerUser?.role || '').toUpperCase();
+    const isAdmin = ['ADMIN', 'SUPER_ADMIN', 'RESIDENTIAL_ADMIN'].includes(callerRole);
 
     const connection = await pool.getConnection();
     try {
@@ -725,28 +846,176 @@ class MaintenanceRepository {
 
       const receiptNumber = `RCP-${Date.now().toString().slice(-6)}-${Math.floor(100 + Math.random() * 900)}`;
 
-      // 2. Insert payment record
-      const [payResult] = await connection.query(
-        `INSERT INTO maintenance_payments (
-          receipt_number, bill_id, society_id, home_id, paid_by_user_id,
-          amount, payment_method, transaction_reference, collected_by_user_id, remarks
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
+      if (isAdmin) {
+        // ADMIN recording payment directly -> instantly APPROVED
+        const [payResult] = await connection.query(
+          `INSERT INTO maintenance_payments (
+            receipt_number, bill_id, society_id, home_id, paid_by_user_id,
+            amount, payment_method, status, transaction_reference,
+            collected_by_user_id, approved_by_user_id, approved_at, remarks
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'APPROVED', ?, ?, ?, CURRENT_TIMESTAMP, ?)`,
+          [
+            receiptNumber,
+            bill.id,
+            bill.society_id,
+            bill.home_id,
+            bill.resident_id || callerUser?.id,
+            payAmount,
+            payment_method,
+            transaction_reference,
+            callerUser?.id || null,
+            callerUser?.id || null,
+            remarks,
+          ]
+        );
+
+        const newPaidAmount = Number(bill.paid_amount) + payAmount;
+        const newBalanceAmount = Math.max(0, Number(bill.total_amount) - newPaidAmount);
+        const newStatus = newBalanceAmount === 0 ? 'PAID' : 'PARTIALLY_PAID';
+
+        await connection.query(
+          `UPDATE maintenance_bills
+           SET paid_amount = ?,
+               balance_amount = ?,
+               status = ?,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [newPaidAmount, newBalanceAmount, newStatus, bill.id]
+        );
+
+        if (newStatus === 'PAID' && ['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(bill.billing_cycle)) {
+          const coveredMonths = MaintenanceRepository.getCoveredMonthsForPeriod(bill.billing_period, bill.billing_cycle);
+          if (coveredMonths.length > 0) {
+            await connection.query(
+              `DELETE FROM maintenance_bills 
+               WHERE home_id = ? 
+                 AND billing_cycle = 'MONTHLY' 
+                 AND billing_period IN (?) 
+                 AND paid_amount = 0`,
+              [bill.home_id, coveredMonths]
+            );
+          }
+        }
+
+        await connection.commit();
+
+        return {
+          paymentId: payResult.insertId,
           receiptNumber,
-          bill.id,
-          bill.society_id,
-          bill.home_id,
-          bill.resident_id,
-          payAmount,
-          payment_method,
-          transaction_reference,
-          collectedByUserId,
-          remarks,
-        ]
+          billId: bill.id,
+          amount: payAmount,
+          paymentMethod: payment_method,
+          transactionReference: transaction_reference,
+          status: 'APPROVED',
+          newStatus,
+          newBalanceAmount,
+        };
+      } else {
+        // RESIDENT (Owner / Tenant / Family Member) paying dues -> PENDING_APPROVAL
+        const [payResult] = await connection.query(
+          `INSERT INTO maintenance_payments (
+            receipt_number, bill_id, society_id, home_id, paid_by_user_id,
+            amount, payment_method, status, transaction_reference,
+            collected_by_user_id, approved_by_user_id, approved_at, remarks
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_APPROVAL', ?, NULL, NULL, NULL, ?)`,
+          [
+            receiptNumber,
+            bill.id,
+            bill.society_id,
+            bill.home_id,
+            callerUser?.id || bill.resident_id,
+            payAmount,
+            payment_method,
+            transaction_reference,
+            remarks,
+          ]
+        );
+
+        // Update bill status to PENDING_APPROVAL
+        await connection.query(
+          `UPDATE maintenance_bills
+           SET status = 'PENDING_APPROVAL',
+               updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?`,
+          [bill.id]
+        );
+
+        await connection.commit();
+
+        return {
+          paymentId: payResult.insertId,
+          receiptNumber,
+          billId: bill.id,
+          amount: payAmount,
+          paymentMethod: payment_method,
+          transactionReference: transaction_reference,
+          status: 'PENDING_APPROVAL',
+          newStatus: 'PENDING_APPROVAL',
+          newBalanceAmount: Number(bill.balance_amount),
+        };
+      }
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Approves and confirms a resident payment by Admin.
+   * Updates payment status to APPROVED and marks bill as PAID / PARTIALLY_PAID.
+   */
+  static async approvePayment(paymentId, adminUser, adminRemarks = null) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [payments] = await connection.query(
+        `SELECT * FROM maintenance_payments WHERE id = ? FOR UPDATE`,
+        [paymentId]
+      );
+      if (payments.length === 0) {
+        throw new Error('Payment record not found');
+      }
+      const payment = payments[0];
+      if (payment.status === 'APPROVED') {
+        throw new Error('This payment has already been approved and confirmed');
+      }
+
+      const [bills] = await connection.query(
+        `SELECT * FROM maintenance_bills WHERE id = ? FOR UPDATE`,
+        [payment.bill_id]
+      );
+      if (bills.length === 0) {
+        throw new Error('Associated maintenance bill not found');
+      }
+      const bill = bills[0];
+
+      // Update payment record to APPROVED
+      const combinedRemarks = adminRemarks
+        ? (payment.remarks ? `${payment.remarks} | Admin: ${adminRemarks}` : `Admin: ${adminRemarks}`)
+        : payment.remarks;
+
+      await connection.query(
+        `UPDATE maintenance_payments
+         SET status = 'APPROVED',
+             collected_by_user_id = ?,
+             approved_by_user_id = ?,
+             approved_at = CURRENT_TIMESTAMP,
+             remarks = ?
+         WHERE id = ?`,
+        [adminUser.id, adminUser.id, combinedRemarks, paymentId]
       );
 
-      // 3. Update bill totals and status
-      const newPaidAmount = Number(bill.paid_amount) + payAmount;
+      // Recalculate bill amounts from all approved payments
+      const [approvedSums] = await connection.query(
+        `SELECT COALESCE(SUM(amount), 0) AS total_approved
+         FROM maintenance_payments
+         WHERE bill_id = ? AND status = 'APPROVED'`,
+        [bill.id]
+      );
+      const newPaidAmount = Number(approvedSums[0]?.total_approved || 0);
       const newBalanceAmount = Math.max(0, Number(bill.total_amount) - newPaidAmount);
       const newStatus = newBalanceAmount === 0 ? 'PAID' : 'PARTIALLY_PAID';
 
@@ -760,9 +1029,8 @@ class MaintenanceRepository {
         [newPaidAmount, newBalanceAmount, newStatus, bill.id]
       );
 
-      // 4. If a quarterly / half-yearly / yearly bill is paid, clean up any overlapping unpaid monthly bills for this home
       if (newStatus === 'PAID' && ['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(bill.billing_cycle)) {
-        const coveredMonths = MaintenanceRepository.getCoveredMonthsForPeriod(bill.billing_period, bill.billing_cycle);
+        const coveredMonths = this.getCoveredMonthsForPeriod(bill.billing_period, bill.billing_cycle);
         if (coveredMonths.length > 0) {
           await connection.query(
             `DELETE FROM maintenance_bills 
@@ -778,14 +1046,85 @@ class MaintenanceRepository {
       await connection.commit();
 
       return {
-        paymentId: payResult.insertId,
-        receiptNumber,
+        paymentId,
         billId: bill.id,
-        amount: payAmount,
-        paymentMethod: payment_method,
-        transactionReference: transaction_reference,
-        newStatus,
-        newBalanceAmount,
+        receiptNumber: payment.receipt_number,
+        amount: Number(payment.amount),
+        status: 'APPROVED',
+        billStatus: newStatus,
+        balanceAmount: newBalanceAmount,
+      };
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Rejects an unverified payment submission by Admin.
+   */
+  static async rejectPayment(paymentId, adminUser, reason = 'Payment verification rejected by admin') {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const [payments] = await connection.query(
+        `SELECT * FROM maintenance_payments WHERE id = ? FOR UPDATE`,
+        [paymentId]
+      );
+      if (payments.length === 0) {
+        throw new Error('Payment record not found');
+      }
+      const payment = payments[0];
+
+      await connection.query(
+        `UPDATE maintenance_payments
+         SET status = 'REJECTED',
+             approved_by_user_id = ?,
+             approved_at = CURRENT_TIMESTAMP,
+             rejection_reason = ?
+         WHERE id = ?`,
+        [adminUser.id, reason, paymentId]
+      );
+
+      const [bills] = await connection.query(
+        `SELECT * FROM maintenance_bills WHERE id = ? FOR UPDATE`,
+        [payment.bill_id]
+      );
+      if (bills.length > 0) {
+        const bill = bills[0];
+
+        // Check if there are other pending payments for this bill
+        const [pendingRows] = await connection.query(
+          `SELECT COUNT(*) AS count FROM maintenance_payments WHERE bill_id = ? AND status = 'PENDING_APPROVAL'`,
+          [bill.id]
+        );
+
+        if (pendingRows[0].count === 0) {
+          // Revert bill status based on current paid_amount and due_date
+          let restoredStatus = 'PENDING';
+          if (Number(bill.paid_amount) >= Number(bill.total_amount)) {
+            restoredStatus = 'PAID';
+          } else if (Number(bill.paid_amount) > 0) {
+            restoredStatus = 'PARTIALLY_PAID';
+          } else if (new Date(bill.due_date) < new Date()) {
+            restoredStatus = 'OVERDUE';
+          }
+          await connection.query(
+            `UPDATE maintenance_bills SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [restoredStatus, bill.id]
+          );
+        }
+      }
+
+      await connection.commit();
+
+      return {
+        paymentId,
+        status: 'REJECTED',
+        rejection_reason: reason,
       };
     } catch (err) {
       await connection.rollback();
@@ -801,17 +1140,26 @@ class MaintenanceRepository {
              b.bill_number,
              b.title AS bill_title,
              b.billing_period,
+             b.billing_cycle,
+             b.total_amount AS bill_total_amount,
+             b.balance_amount AS bill_balance_amount,
+             b.status AS bill_status,
              h.home_number,
              h.building_or_wing,
+             h.home_type,
              s.name AS society_name,
              u.full_name AS resident_name,
-             cu.full_name AS collected_by_name
+             u.phone AS resident_phone,
+             u.role AS resident_role,
+             cu.full_name AS collected_by_name,
+             au.full_name AS approved_by_name
       FROM maintenance_payments p
       JOIN maintenance_bills b ON p.bill_id = b.id
       JOIN homes h ON p.home_id = h.id
       JOIN societies s ON p.society_id = s.id
       LEFT JOIN users u ON p.paid_by_user_id = u.id
       LEFT JOIN users cu ON p.collected_by_user_id = cu.id
+      LEFT JOIN users au ON p.approved_by_user_id = au.id
       WHERE 1=1
     `;
     const params = [];
@@ -831,9 +1179,31 @@ class MaintenanceRepository {
       params.push(filters.bill_id);
     }
 
+    if (filters.paid_by_user_id) {
+      query += ` AND p.paid_by_user_id = ?`;
+      params.push(filters.paid_by_user_id);
+    }
+
+    if (filters.status && filters.status !== 'ALL') {
+      query += ` AND p.status = ?`;
+      params.push(filters.status);
+    }
+
     if (filters.payment_method && filters.payment_method !== 'ALL') {
       query += ` AND p.payment_method = ?`;
       params.push(filters.payment_method);
+    }
+
+    if (filters.search) {
+      query += ` AND (
+        p.receipt_number LIKE ? OR
+        b.bill_number LIKE ? OR
+        h.home_number LIKE ? OR
+        u.full_name LIKE ? OR
+        p.transaction_reference LIKE ?
+      )`;
+      const s = `%${filters.search}%`;
+      params.push(s, s, s, s, s);
     }
 
     query += ` ORDER BY p.payment_date DESC, p.id DESC`;
@@ -869,6 +1239,7 @@ class MaintenanceRepository {
          COALESCE(SUM(penalty_amount), 0) AS total_penalties,
          SUM(CASE WHEN status = 'PAID' THEN 1 ELSE 0 END) AS count_paid,
          SUM(CASE WHEN status = 'PENDING' THEN 1 ELSE 0 END) AS count_pending,
+         SUM(CASE WHEN status = 'PENDING_APPROVAL' THEN 1 ELSE 0 END) AS count_pending_approval,
          SUM(CASE WHEN status = 'OVERDUE' THEN 1 ELSE 0 END) AS count_overdue,
          SUM(CASE WHEN status = 'PARTIALLY_PAID' THEN 1 ELSE 0 END) AS count_partially_paid
        FROM maintenance_bills

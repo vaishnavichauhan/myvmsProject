@@ -161,11 +161,11 @@ export const gateApi = {
   },
   getGateById: (id) => apiClient.get(`/gates/${id}`),
   getMyAssignedGate: () => apiClient.get('/gates/assigned/me'),
+  selfCheckIn: (data) => apiClient.post('/gates/self-checkin', data),
+  selfCheckOut: () => apiClient.post('/gates/self-checkout'),
   createGate: (data) => apiClient.post('/gates', data),
   updateGate: (id, data) => apiClient.put(`/gates/${id}`, data),
   deleteGate: (id) => apiClient.delete(`/gates/${id}`),
-  assignSecurityStaff: (data) => apiClient.post('/gates/assign', data),
-  unassignSecurityStaff: (assignmentId) => apiClient.delete(`/gates/assignments/${assignmentId}`),
 };
 
 /**

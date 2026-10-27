@@ -57,14 +57,18 @@ class SocietyRepository {
     const query = `
       SELECT 
         s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
-        s.max_units, s.subscription_plan_id, s.subscription_status,
+        s.max_units, s.max_users, s.max_workers, s.max_gates, s.subscription_plan_id, s.subscription_status,
+        sp.name AS plan_name, sp.max_users AS plan_max_users, sp.max_units AS plan_max_units, sp.max_gates AS plan_max_gates,
         COALESCE(s.address, s.address_line1) AS address,
+        s.city, s.state, s.pincode, s.country,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
+        s.contact_phone,
         s.emergency_number, s.status, s.created_at, s.updated_at,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id) AS actual_homes_count,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT')) AS occupied_homes_count,
         GREATEST(0, s.total_homes - (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT'))) AS vacant_homes_count
       FROM societies s
+      LEFT JOIN subscription_plans sp ON s.subscription_plan_id = sp.id
       WHERE s.id = ?
       LIMIT 1
     `;
@@ -88,14 +92,18 @@ class SocietyRepository {
     let query = `
       SELECT 
         s.id, s.name, s.code, s.registration_number, s.contact_email, s.society_type, s.property_configuration, s.total_homes,
-        s.max_units, s.subscription_plan_id, s.subscription_status,
+        s.max_units, s.max_users, s.max_workers, s.max_gates, s.subscription_plan_id, s.subscription_status,
+        sp.name AS plan_name, sp.max_users AS plan_max_users, sp.max_units AS plan_max_units, sp.max_gates AS plan_max_gates,
         COALESCE(s.address, s.address_line1) AS address,
+        s.city, s.state, s.pincode, s.country,
         COALESCE(s.contact_number, s.contact_phone) AS contact_number,
+        s.contact_phone,
         s.emergency_number, s.status, s.created_at, s.updated_at,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id) AS actual_homes_count,
         (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT')) AS occupied_homes_count,
         GREATEST(0, s.total_homes - (SELECT COUNT(*) FROM homes h WHERE h.society_id = s.id AND h.occupancy_status IN ('OCCUPIED_BY_OWNER', 'OCCUPIED_BY_TENANT'))) AS vacant_homes_count
       FROM societies s
+      LEFT JOIN subscription_plans sp ON s.subscription_plan_id = sp.id
       WHERE 1=1
     `;
     const params = [];
@@ -138,6 +146,10 @@ class SocietyRepository {
     if (data.name !== undefined) {
       fields.push('name = ?');
       params.push(data.name.trim());
+    }
+    if (data.code !== undefined) {
+      fields.push('code = ?');
+      params.push(String(data.code).trim().toUpperCase());
     }
     if (data.registration_number !== undefined) {
       fields.push('registration_number = ?');

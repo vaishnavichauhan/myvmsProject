@@ -5,12 +5,11 @@ const SubscriptionRepository = require('../repositories/subscription.repository'
 const ApiError = require('../utils/apiError');
 
 /**
- * Gate Management & Security Assignment Service
+ * Gate Management & Security Self Check-In Service
  */
 class GateService {
   /**
    * Create new gate (Admin only)
-   * Fields: Gate Name, Gate Number, Location, Status, Gate Type, Is Automated Barrier
    */
   static async createGate(data) {
     const {
@@ -49,7 +48,8 @@ class GateService {
 
   /**
    * Get all gates with role-scoped output
-   * - Admin: Complete gate management details & security staff assignment details.
+   * - Admin: Complete gate management details.
+   * - Security: All society gates (so they can pick which one to check into).
    * - Residents: Gate Name, Gate Number, Location, Status, Assigned Security Name, Shift & Call action.
    */
   static async getAllGates(user, filters = {}) {
@@ -69,6 +69,7 @@ class GateService {
       return GateRepository.getGatesForResidents(societyId);
     }
 
+    // Security and Admin both get the full gate list (Security needs it to self-select)
     return GateRepository.findAll(societyId, filters);
   }
 
@@ -91,7 +92,6 @@ class GateService {
     if (!existing) {
       throw ApiError.notFound(`Gate with ID ${id} not found.`);
     }
-
     return GateRepository.update(id, data);
   }
 
@@ -103,23 +103,25 @@ class GateService {
     if (!existing) {
       throw ApiError.notFound(`Gate with ID ${id} not found.`);
     }
-
     await GateRepository.delete(id);
     return { message: `Gate "${existing.name}" deleted successfully.` };
   }
 
   /**
-   * Assign security staff to gate (Admin only)
-   * Example: Rakesh, Gate: Main Gate, Shift: Morning
+   * Security Self Check-In:
+   * Security guard picks their gate when they start their duty shift.
+   * The check-in time is recorded as NOW.
+   * This replaces the admin-assign flow.
+   *
+   * Steps:
+   * 1. Validate gate_id exists
+   * 2. Look up security_staff record for this user
+   * 3. Close any existing active assignment for this guard
+   * 4. Insert a new ON_DUTY record with check_in_time = NOW
    */
-  static async assignSecurityStaff(data) {
-    const { security_staff_id, gate_id, shift = 'MORNING', assigned_date } = data;
-
-    if (!security_staff_id) {
-      throw ApiError.badRequest('Security Staff ID is required for assignment.');
-    }
+  static async securitySelfCheckIn(user, gate_id) {
     if (!gate_id) {
-      throw ApiError.badRequest('Gate ID is required for assignment.');
+      throw ApiError.badRequest('Please select a gate to check in.');
     }
 
     // Verify gate exists
@@ -127,62 +129,67 @@ class GateService {
     if (!gate) {
       throw ApiError.notFound(`Gate with ID ${gate_id} not found.`);
     }
+    if (gate.status === 'CLOSED') {
+      throw ApiError.badRequest(`Gate "${gate.name}" is currently closed. Please select a different gate.`);
+    }
 
-    // Verify security staff exists
-    const staff = await SecurityRepository.findById(security_staff_id);
+    // Find security_staff record for this user (auto-create if missing)
+    let staff = await SecurityRepository.findByUserId(user.id);
     if (!staff) {
-      throw ApiError.notFound(`Security staff with ID ${security_staff_id} not found.`);
+      staff = await SecurityRepository.ensureStaffRecord(user);
     }
 
-    const validShifts = ['MORNING', 'EVENING', 'NIGHT', 'ROTATIONAL'];
-    if (!validShifts.includes(shift.toUpperCase())) {
-      throw ApiError.badRequest(`Shift must be one of: ${validShifts.join(', ')}`);
-    }
-
-    await GateRepository.assignSecurityStaff({
-      security_staff_id,
-      gate_id,
-      shift: shift.toUpperCase(),
-      assigned_date: assigned_date || null,
-      status: 'ON_DUTY',
+    // Perform self check-in via repository
+    const result = await GateRepository.securitySelfCheckIn({
+      security_staff_id: staff.id,
+      gate_id: Number(gate_id),
     });
 
     return {
-      message: `Assigned guard ${staff.full_name} to ${gate.name} (${shift} shift) successfully.`,
-      staff: {
-        id: staff.id,
-        name: staff.full_name,
-        badge: staff.badge_number || staff.employee_id,
-      },
+      message: `Checked in at "${gate.name}" successfully. Your duty has started.`,
+      assignment_id: result.assignment_id,
       gate: {
         id: gate.id,
         name: gate.name,
+        gate_number: gate.gate_number,
+        location: gate.location,
+        allows_entry_registration: gate.allows_entry_registration,
       },
-      shift: shift.toUpperCase(),
+      check_in_time: result.check_in_time,
     };
   }
 
   /**
-   * Unassign security staff from gate
+   * Security Self Check-Out:
+   * Security guard exits their active gate assignment.
+   * Records check_out_time = NOW and sets status = COMPLETED.
+   * Called when security clicks "Exit Gate" or logs out.
    */
-  static async unassignSecurityStaff(assignmentId) {
-    const success = await GateRepository.unassignSecurityStaff(assignmentId);
-    if (!success) {
-      throw ApiError.notFound(`Assignment record with ID ${assignmentId} not found.`);
+  static async securitySelfCheckOut(user) {
+    // Find security_staff record for this user
+    const staff = await SecurityRepository.findByUserId(user.id);
+    if (!staff) {
+      // No staff record - silently succeed (they may not have checked in)
+      return { message: 'No active gate duty to check out from.' };
     }
-    return { message: 'Security assignment closed.' };
+
+    const closed = await GateRepository.securitySelfCheckOut(staff.id);
+    if (!closed) {
+      return { message: 'No active gate duty found.' };
+    }
+
+    return { message: 'Checked out from gate successfully. Duty ended.' };
   }
 
   /**
-   * Security guard view: Retrieve assigned gate for the logged-in guard
-   * "Security should see their assigned gate."
+   * Security guard view: Retrieve active gate check-in for the logged-in guard
    */
   static async getMyAssignedGate(user) {
     const assignedGate = await GateRepository.findAssignedGateForSecurity(user.id);
     if (!assignedGate) {
       return {
         has_assignment: false,
-        message: 'No active gate assignment found for today. Contact Admin.',
+        message: 'You are not currently checked into any gate. Please select a gate to start your duty.',
       };
     }
 
@@ -198,6 +205,7 @@ class GateService {
         shift: assignedGate.shift,
         assignment_status: assignedGate.assignment_status,
         check_in_time: assignedGate.check_in_time,
+        assignment_id: assignedGate.assignment_id,
       },
     };
   }

@@ -244,9 +244,76 @@ class GateRepository {
   }
 
   /**
-   * Assign security staff to gate (Admin only)
-   * Multiple guards can be assigned to the same gate.
-   * Example: Rakesh, Gate: Main Gate, Shift: Morning
+   * Security Self Check-In:
+   * Guard chooses a gate to check in.
+   * Records check_in_time as CURRENT_TIMESTAMP, status = 'ON_DUTY'.
+   * This is the guard's IN time at that gate.
+   */
+  static async securitySelfCheckIn({ security_staff_id, gate_id }) {
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // Complete any previous active assignment for this specific guard
+      await connection.query(
+        `UPDATE security_gate 
+         SET status = 'COMPLETED', check_out_time = CURRENT_TIMESTAMP
+         WHERE security_staff_id = ? AND status IN ('ON_DUTY', 'ASSIGNED')`,
+        [security_staff_id]
+      );
+
+      // Determine shift based on current hour
+      const hour = new Date().getHours();
+      let shift = 'MORNING';
+      if (hour >= 14 && hour < 22) {
+        shift = 'EVENING';
+      } else if (hour >= 22 || hour < 6) {
+        shift = 'NIGHT';
+      }
+
+      // Insert new duty assignment with check_in_time = CURRENT_TIMESTAMP
+      const [res] = await connection.query(
+        `INSERT INTO security_gate (
+          security_staff_id, gate_id, assigned_date, shift, check_in_time, status
+        ) VALUES (?, ?, CURRENT_DATE, ?, CURRENT_TIMESTAMP, 'ON_DUTY')`,
+        [security_staff_id, gate_id, shift]
+      );
+
+      await connection.commit();
+      return {
+        assignment_id: res.insertId,
+        security_staff_id,
+        gate_id,
+        shift,
+        check_in_time: new Date(),
+        status: 'ON_DUTY',
+      };
+    } catch (err) {
+      await connection.rollback();
+      throw err;
+    } finally {
+      connection.release();
+    }
+  }
+
+  /**
+   * Security Self Check-Out:
+   * Guard exits gate (or logs out of the app).
+   * Records check_out_time as CURRENT_TIMESTAMP, status = 'COMPLETED'.
+   * This is the guard's EXIT gate / out time.
+   */
+  static async securitySelfCheckOut(securityStaffId) {
+    const [result] = await pool.query(
+      `UPDATE security_gate 
+       SET status = 'COMPLETED', check_out_time = CURRENT_TIMESTAMP
+       WHERE security_staff_id = ? AND status IN ('ON_DUTY', 'ASSIGNED')`,
+      [securityStaffId]
+    );
+    return result.affectedRows > 0;
+  }
+
+  /**
+   * Assign security staff to gate (Legacy helper)
    */
   static async assignSecurityStaff(data) {
     const {

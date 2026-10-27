@@ -50,6 +50,7 @@ export default function GatesPage() {
   const isResident = ['OWNER', 'TENANT', 'FAMILY_MEMBER'].includes(user?.role);
 
   const [gates, setGates] = useState([]);
+  const [maxGates, setMaxGates] = useState(1);
   const [securityStaffList, setSecurityStaffList] = useState([]);
   const [myAssignedGate, setMyAssignedGate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +63,6 @@ export default function GatesPage() {
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedGate, setSelectedGate] = useState(null);
 
   // Forms
@@ -84,12 +84,6 @@ export default function GatesPage() {
     gate_type: 'MAIN_ENTRY',
     is_automated_barrier: false,
     allows_entry_registration: true,
-  });
-
-  const [assignForm, setAssignForm] = useState({
-    gate_id: '',
-    security_staff_id: '',
-    shift: 'MORNING',
   });
 
   const [errorMsg, setErrorMsg] = useState(null);
@@ -133,6 +127,9 @@ export default function GatesPage() {
       const [gatesRes, staffRes, assignedRes] = await Promise.all(promises);
 
       setGates(gatesRes.data?.gates || []);
+      if (gatesRes.data?.max_gates !== undefined) {
+        setMaxGates(Number(gatesRes.data.max_gates));
+      }
       setSecurityStaffList(staffRes.data?.staffList || []);
       if (assignedRes.data?.has_assignment && assignedRes.data?.gate) {
         setMyAssignedGate(assignedRes.data.gate);
@@ -163,6 +160,10 @@ export default function GatesPage() {
   const handleCreateGate = async (e) => {
     e.preventDefault();
     setErrorMsg(null);
+    if (gates.length >= maxGates) {
+      setErrorMsg(`Cannot create gate. Your society's plan allows a maximum of ${maxGates} gate(s) (${gates.length}/${maxGates} created). Please upgrade your subscription plan.`);
+      return;
+    }
     try {
       await gateApi.createGate(createForm);
       setSuccessMsg(`Gate "${createForm.name}" created successfully!`);
@@ -226,59 +227,36 @@ export default function GatesPage() {
     }
   };
 
-  const handleOpenAssign = (gate = null) => {
-    setSelectedGate(gate);
-    const chosenGateId = gate ? (gate.id || gate.gate_id) : (gates[0]?.id || gates[0]?.gate_id || '');
-    const chosenStaffId = securityStaffList[0]?.id || '';
-    setAssignForm({
-      gate_id: chosenGateId,
-      security_staff_id: chosenStaffId,
-      shift: 'MORNING',
-    });
-    setShowAssignModal(true);
-  };
-
-  // Quick auto-fill for example: "Rakesh, Gate: Main Gate, Shift: Morning"
-  const applyQuickExampleAssign = () => {
-    const mainGate = gates.find((g) => (g.name || g.gate_name || '').toLowerCase().includes('main'));
-    const rakesh = securityStaffList.find((s) => (s.full_name || '').toLowerCase().includes('rakesh'));
-
-    if (mainGate && rakesh) {
-      setAssignForm({
-        gate_id: mainGate.id || mainGate.gate_id,
-        security_staff_id: rakesh.id,
-        shift: 'MORNING',
-      });
-    } else if (mainGate && securityStaffList.length > 0) {
-      setAssignForm({
-        gate_id: mainGate.id || mainGate.gate_id,
-        security_staff_id: securityStaffList[0].id,
-        shift: 'MORNING',
-      });
-    }
-  };
-
-  const handleAssignStaff = async (e) => {
-    e.preventDefault();
+  // Security Guard Self Check-In handler (Records IN TIME)
+  const handleSecurityCheckIn = async (gate) => {
+    const gateId = gate.id || gate.gate_id;
+    const gateName = gate.name || gate.gate_name;
     setErrorMsg(null);
     try {
-      const res = await gateApi.assignSecurityStaff(assignForm);
-      setSuccessMsg(res.message || 'Assigned security staff successfully!');
-      setShowAssignModal(false);
-      fetchInitialData();
+      setLoading(true);
+      const res = await gateApi.selfCheckIn({ gate_id: gateId });
+      setSuccessMsg(res.message || `Checked in at "${gateName}" successfully! Your duty has started.`);
+      await fetchInitialData();
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to assign security staff.');
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to check in to gate.');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleUnassignStaff = async (assignmentId, gateName) => {
-    if (!window.confirm(`Remove guard assignment from ${gateName}?`)) return;
+  // Security Guard Self Check-Out handler (Records EXIT GATE / OUT TIME)
+  const handleSecurityCheckOut = async () => {
+    setErrorMsg(null);
     try {
-      await gateApi.unassignSecurityStaff(assignmentId);
-      setSuccessMsg(`Guard assignment on ${gateName} closed.`);
-      fetchInitialData();
+      setLoading(true);
+      const res = await gateApi.selfCheckOut();
+      setSuccessMsg(res.message || 'Checked out from gate successfully. Duty ended.');
+      setMyAssignedGate(null);
+      await fetchInitialData();
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to unassign staff.');
+      setErrorMsg(err.response?.data?.message || err.message || 'Failed to exit gate.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -386,51 +364,81 @@ export default function GatesPage() {
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          {isAdmin && (
-            <>
-              <button
-                onClick={() => handleOpenAssign(null)}
-                className="btn btn-secondary"
+          {isSecurity && myAssignedGate && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+              <div
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '8px',
-                  padding: '10px 16px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  background: 'var(--color-white)',
-                  border: '1.5px solid var(--color-sand)',
-                  color: 'var(--color-clay)',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  color: '#065f46',
+                  padding: '7px 12px',
                   borderRadius: 'var(--radius-md)',
-                  cursor: 'pointer',
-                  boxShadow: 'var(--shadow-sm)',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
                 }}
               >
-                <UserPlus size={16} />
-                <span>Assign Staff to Gate</span>
+                <CheckCircle2 size={15} color="#10b981" />
+                <span>Stationed at: {myAssignedGate.name}</span>
+              </div>
+              <button
+                onClick={handleSecurityCheckOut}
+                className="btn"
+                style={{
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  color: '#dc2626',
+                  padding: '8px 14px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-md)',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <DoorOpen size={15} />
+                <span>Exit Gate</span>
               </button>
+            </div>
+          )}
 
-              <button
-                onClick={() => setShowCreateModal(true)}
-                className="btn btn-primary"
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  padding: '10px 18px',
-                  fontSize: '0.85rem',
-                  fontWeight: 700,
-                  background: 'var(--grad-primary)',
-                  color: '#FFFFFF',
-                  borderRadius: 'var(--radius-md)',
-                  cursor: 'pointer',
-                  boxShadow: 'var(--shadow-sm)',
-                }}
-              >
-                <Plus size={16} />
-                <span>Add New Gate</span>
-              </button>
-            </>
+          {isAdmin && (
+            <button
+              id="btn-add-new-gate"
+              onClick={() => {
+                if (gates.length >= maxGates) {
+                  setErrorMsg(`Cannot create gate. Your society's plan allows a maximum of ${maxGates} gate(s) (${gates.length}/${maxGates} created). Please upgrade your subscription plan to add more gates.`);
+                  return;
+                }
+                setShowCreateModal(true);
+              }}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 18px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                background: gates.length >= maxGates ? 'var(--text-muted)' : 'var(--grad-primary)',
+                color: '#FFFFFF',
+                borderRadius: 'var(--radius-md)',
+                cursor: gates.length >= maxGates ? 'not-allowed' : 'pointer',
+                boxShadow: 'var(--shadow-sm)',
+                opacity: gates.length >= maxGates ? 0.8 : 1,
+              }}
+              title={gates.length >= maxGates ? `Plan limit reached (${gates.length}/${maxGates} gates). Upgrade plan to add more.` : 'Add New Gate'}
+            >
+              <Plus size={16} />
+              <span>Add New Gate</span>
+              <span style={{ fontSize: '0.72rem', background: 'rgba(0,0,0,0.22)', padding: '2px 7px', borderRadius: '4px', fontWeight: 700 }}>
+                {gates.length}/{maxGates}
+              </span>
+            </button>
           )}
 
         </div>
@@ -515,11 +523,17 @@ export default function GatesPage() {
               <DoorOpen size={20} color="var(--color-clay)" />
             </div>
           </div>
-          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-main)' }}>
-            {totalGates}
+          <div style={{ fontSize: '1.8rem', fontWeight: 800, marginTop: '8px', color: 'var(--text-main)', display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
+            <span>{totalGates}</span>
+            <span style={{ fontSize: '1.05rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ {maxGates}</span>
+            {totalGates >= maxGates && (
+              <span style={{ fontSize: '0.72rem', color: 'var(--accent-amber)', background: 'rgba(217, 119, 6, 0.12)', padding: '2px 8px', borderRadius: '12px', fontWeight: 700 }}>
+                Plan Limit Reached
+              </span>
+            )}
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginTop: '4px' }}>
-            Registered gates for {societyName}
+            Plan limit: {maxGates} gate(s) allowed for {societyName}
           </div>
         </div>
 
@@ -927,22 +941,45 @@ export default function GatesPage() {
                         <span>{hasGuards ? `Security on Gate (${assignedGuards.length} On Duty)` : 'Security on Gate'}</span>
                       </div>
 
-                      {isAdmin && (
-                        <button
-                          onClick={() => handleOpenAssign(g)}
-                          style={{
-                            background: 'rgba(196, 154, 108, 0.12)',
-                            border: '1px solid var(--color-sand)',
-                            color: 'var(--color-clay)',
-                            padding: '3px 10px',
-                            borderRadius: '6px',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          + Assign Guard
-                        </button>
+                      {isSecurity && (
+                        myAssignedGate && (myAssignedGate.id === (g.id || g.gate_id)) ? (
+                          <span
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#065f46',
+                              padding: '3px 8px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <CheckCircle2 size={12} color="#10b981" />
+                            Your Active Duty Station
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleSecurityCheckIn(g)}
+                            style={{
+                              background: 'var(--color-fern-green)',
+                              border: 'none',
+                              color: '#FFFFFF',
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.72rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Clock size={12} />
+                            Check In Here (IN TIME)
+                          </button>
+                        )
                       )}
                     </div>
 
@@ -1067,10 +1104,10 @@ export default function GatesPage() {
                                 <span>Message</span>
                               </button>
 
-                              {isAdmin && guard.assignment_id && (
+                              {isSecurity && guard.security_user_id === user?.id && (
                                 <button
-                                  onClick={() => handleUnassignStaff(guard.assignment_id, gateName)}
-                                  title="End Shift"
+                                  onClick={handleSecurityCheckOut}
+                                  title="Exit Gate (Check Out)"
                                   style={{
                                     background: 'rgba(239, 68, 68, 0.1)',
                                     border: '1px solid rgba(239, 68, 68, 0.25)',
@@ -1080,9 +1117,13 @@ export default function GatesPage() {
                                     padding: '6px 10px',
                                     borderRadius: '8px',
                                     fontWeight: 700,
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
                                   }}
                                 >
-                                  End Shift
+                                  <DoorOpen size={13} />
+                                  <span>Exit Gate</span>
                                 </button>
                               )}
                             </div>
@@ -1104,39 +1145,24 @@ export default function GatesPage() {
                         }}
                       >
                         <DoorOpen size={16} />
-                        <span>Automated barrier checkpoint • No security officer stationed currently</span>
+                        <span>Checkpoint station • Currently unmanned</span>
                       </div>
                     )}
                   </div>
 
-                  {/* Admin Management Toolbar */}
+                  {/* Admin Management Toolbar (Edit & Delete Gate Only) */}
                   {isAdmin && (
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'space-between',
+                        justifyContent: 'flex-end',
                         paddingTop: '10px',
                         borderTop: '1px solid #F0E8DC',
                         flexWrap: 'wrap',
                         gap: '8px',
                       }}
                     >
-                      <button
-                        onClick={() => handleOpenAssign(g)}
-                        className="btn btn-secondary"
-                        style={{
-                          padding: '5px 12px',
-                          fontSize: '0.78rem',
-                          fontWeight: 600,
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                        }}
-                      >
-                        <UserPlus size={13} /> {guardName ? 'Change Guard' : 'Assign Guard'}
-                      </button>
-
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
                           onClick={() => handleOpenEdit(g)}
@@ -1496,7 +1522,15 @@ export default function GatesPage() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={gates.length >= maxGates}
+                  style={{
+                    opacity: gates.length >= maxGates ? 0.6 : 1,
+                    cursor: gates.length >= maxGates ? 'not-allowed' : 'pointer',
+                  }}
+                >
                   Save Gate
                 </button>
               </div>
@@ -1734,205 +1768,6 @@ export default function GatesPage() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ASSIGN SECURITY STAFF MODAL (Admin Only) */}
-      {showAssignModal && (
-        <div
-          style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            background: 'rgba(0, 0, 0, 0.7)',
-            backdropFilter: 'blur(8px)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px',
-          }}
-        >
-          <div
-            className="glass-panel"
-            style={{
-              width: '100%',
-              maxWidth: '520px',
-              padding: '28px',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: '16px',
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800 }}>Assign Security Staff to Gate</h3>
-                <p style={{ margin: 0, fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-                  Assign security guard to an active post (Example: Rakesh → Main Gate → Morning shift).
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Quick 1-Click Example Button */}
-            <div style={{ marginBottom: '16px' }}>
-              <button
-                type="button"
-                onClick={applyQuickExampleAssign}
-                className="btn"
-                style={{
-                  background: 'rgba(16, 185, 129, 0.15)',
-                  border: '1px solid rgba(16, 185, 129, 0.35)',
-                  color: '#6ee7b7',
-                  fontSize: '0.78rem',
-                  fontWeight: 700,
-                  padding: '8px 14px',
-                  borderRadius: '6px',
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                  cursor: 'pointer',
-                }}
-              >
-
-                Quick Example: Assign Rakesh → Main Gate (Morning Shift)
-              </button>
-            </div>
-
-            <form onSubmit={handleAssignStaff} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: 'var(--text-main)',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Select Gate *
-                </label>
-                <select
-                  required
-                  value={assignForm.gate_id}
-                  onChange={(e) => setAssignForm({ ...assignForm, gate_id: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: '#FFFFFF',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-main)',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="">-- Choose Gate --</option>
-                  {gates.map((g) => {
-                    const id = g.id || g.gate_id;
-                    const name = g.name || g.gate_name;
-                    const num = g.gate_number || id;
-                    return (
-                      <option key={id} value={id}>
-                        {name} (Gate #{num})
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: 'var(--text-main)',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Select Security Staff Guard *
-                </label>
-                <select
-                  required
-                  value={assignForm.security_staff_id}
-                  onChange={(e) => setAssignForm({ ...assignForm, security_staff_id: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: '#FFFFFF',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-main)',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="">-- Choose Security Guard --</option>
-                  {securityStaffList.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.full_name} ({s.employee_id || s.badge_number || 'Badge'}) - {s.shift} Shift
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  style={{
-                    display: 'block',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    color: 'var(--text-main)',
-                    marginBottom: '6px',
-                  }}
-                >
-                  Duty Shift *
-                </label>
-                <select
-                  value={assignForm.shift}
-                  onChange={(e) => setAssignForm({ ...assignForm, shift: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: '#FFFFFF',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-main)',
-                    outline: 'none',
-                  }}
-                >
-                  <option value="MORNING">Morning Shift (06:00 - 14:00)</option>
-                  <option value="EVENING">Evening Shift (14:00 - 22:00)</option>
-                  <option value="NIGHT">Night Shift (22:00 - 06:00)</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
-                <button
-                  type="button"
-                  onClick={() => setShowAssignModal(false)}
-                  className="btn btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary">
-                  Confirm Assignment
                 </button>
               </div>
             </form>

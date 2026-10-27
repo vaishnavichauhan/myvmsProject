@@ -37,6 +37,9 @@ export default function SuperAdminPlansPage() {
     trialDays: 14,
     features: [],
     status: 'ACTIVE',
+    extraUserPrice: 0,
+    extraUnitPrice: 0,
+    extraGatePrice: 0,
   });
 
   const fetchData = async () => {
@@ -71,14 +74,17 @@ export default function SuperAdminPlansPage() {
       name: '',
       code: '',
       description: '',
-      price: 2999,
+      price: '',
       billingCycle: 'MONTHLY',
-      maxUsers: 50,
-      maxUnits: 100,
-      maxGates: 5,
+      maxUsers: '',
+      maxUnits: '',
+      maxGates: '',
       trialDays: 14,
       features: ['RESIDENTS', 'WORKERS', 'POLLS', 'GATES_VISITORS'],
       status: 'ACTIVE',
+      extraUserPrice: 0,
+      extraUnitPrice: 0,
+      extraGatePrice: 0,
     });
     setErrorMessage(null);
     setShowModal(true);
@@ -103,6 +109,9 @@ export default function SuperAdminPlansPage() {
       trialDays: plan.trial_days || 0,
       features: getPlanFeatureCodes(plan.features),
       status: plan.status || 'ACTIVE',
+      extraUserPrice: parseFloat(plan.extra_user_price) || 0,
+      extraUnitPrice: parseFloat(plan.extra_unit_price) || 0,
+      extraGatePrice: parseFloat(plan.extra_gate_price) || 0,
     });
     setErrorMessage(null);
     setShowModal(true);
@@ -122,9 +131,26 @@ export default function SuperAdminPlansPage() {
       trialDays: plan.trial_days || 0,
       features: getPlanFeatureCodes(plan.features),
       status: 'ACTIVE',
+      extraUserPrice: parseFloat(plan.extra_user_price) || 0,
+      extraUnitPrice: parseFloat(plan.extra_unit_price) || 0,
+      extraGatePrice: parseFloat(plan.extra_gate_price) || 0,
     });
     setErrorMessage(null);
     setShowModal(true);
+  };
+
+  const handleDeletePlan = async (plan) => {
+    if (!window.confirm(`Are you sure you want to delete the plan "${plan.name}" (${plan.code})?`)) {
+      return;
+    }
+    try {
+      setErrorMessage(null);
+      await superAdminApi.deletePlan(plan.id);
+      setStatusMessage(`Plan "${plan.name}" deleted successfully.`);
+      fetchData();
+    } catch (err) {
+      setErrorMessage(err.message || 'Failed to delete plan');
+    }
   };
 
   const toggleFeature = (code) => {
@@ -154,21 +180,58 @@ export default function SuperAdminPlansPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      setSubmitting(true);
       setErrorMessage(null);
+
+      // Validate mandatory fields
+      if (!formData.name?.trim()) {
+        setErrorMessage('Plan Name is mandatory.');
+        return;
+      }
+      if (!formData.code?.trim()) {
+        setErrorMessage('Unique Plan Code is mandatory.');
+        return;
+      }
+      if (formData.price === '' || formData.price === null || formData.price === undefined || isNaN(formData.price) || Number(formData.price) < 0) {
+        setErrorMessage('Price (INR) is mandatory and must be a valid amount.');
+        return;
+      }
+      if (!formData.billingCycle) {
+        setErrorMessage('Billing Cycle is mandatory.');
+        return;
+      }
+      if (formData.maxUnits === '' || formData.maxUnits === null || formData.maxUnits === undefined || isNaN(formData.maxUnits) || Number(formData.maxUnits) <= 0) {
+        setErrorMessage('Max Units Allowed is mandatory and must be greater than 0.');
+        return;
+      }
+      if (formData.maxUsers === '' || formData.maxUsers === null || formData.maxUsers === undefined || isNaN(formData.maxUsers) || Number(formData.maxUsers) <= 0) {
+        setErrorMessage('Max Users Allowed is mandatory and must be greater than 0.');
+        return;
+      }
+      if (formData.maxGates === '' || formData.maxGates === null || formData.maxGates === undefined || isNaN(formData.maxGates) || Number(formData.maxGates) <= 0) {
+        setErrorMessage('Max Gates Allowed is mandatory and must be greater than 0.');
+        return;
+      }
+
+      setSubmitting(true);
 
       const payload = {
         ...formData,
         price: parseFloat(formData.price) || 0,
-        maxUnits: parseInt(formData.maxUnits, 10) || 0,
-        maxUsers: parseInt(formData.maxUsers, 10) || 0,
-        maxGates: parseInt(formData.maxGates, 10) || 5,
+        maxUnits: parseInt(formData.maxUnits, 10),
+        maxUsers: parseInt(formData.maxUsers, 10),
+        maxGates: parseInt(formData.maxGates, 10),
         trialDays: parseInt(formData.trialDays, 10) || 0,
-        max_units: parseInt(formData.maxUnits, 10) || 0,
-        max_users: parseInt(formData.maxUsers, 10) || 0,
-        max_gates: parseInt(formData.maxGates, 10) || 5,
+        max_units: parseInt(formData.maxUnits, 10),
+        max_users: parseInt(formData.maxUsers, 10),
+        max_gates: parseInt(formData.maxGates, 10),
         trial_days: parseInt(formData.trialDays, 10) || 0,
         billing_cycle: formData.billingCycle,
+        extraUserPrice: parseFloat(formData.extraUserPrice) || 0,
+        extraUnitPrice: parseFloat(formData.extraUnitPrice) || 0,
+        extraGatePrice: parseFloat(formData.extraGatePrice) || 0,
+        extra_user_price: parseFloat(formData.extraUserPrice) || 0,
+        extra_unit_price: parseFloat(formData.extraUnitPrice) || 0,
+        extra_gate_price: parseFloat(formData.extraGatePrice) || 0,
       };
 
       if (editingPlan) {
@@ -217,7 +280,7 @@ export default function SuperAdminPlansPage() {
             boxShadow: '0 2px 8px rgba(196, 154, 108, 0.35)',
           }}
         >
-          <Plus size={16} /> Create Plan
+          <Plus size={16} /> Create Subscription Plan
         </button>
       </div>
 
@@ -253,6 +316,62 @@ export default function SuperAdminPlansPage() {
           <div style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', color: 'var(--text-dim)' }}>
             <RefreshCw size={28} className="animate-spin" style={{ margin: '0 auto 12px' }} />
             Loading subscription plans...
+          </div>
+        ) : plans.length === 0 ? (
+          <div
+            style={{
+              gridColumn: '1 / -1',
+              padding: '60px 24px',
+              textAlign: 'center',
+              background: '#FFFFFF',
+              borderRadius: 'var(--radius-xl)',
+              border: '1.5px dashed var(--color-sand)',
+              boxShadow: '0 4px 16px rgba(196, 154, 108, 0.08)',
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(196, 154, 108, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px',
+                color: 'var(--color-clay)',
+              }}
+            >
+              <Layers size={32} />
+            </div>
+            <h3 style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--color-dark-brown)', margin: '0 0 8px' }}>
+              No plan heare
+            </h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', maxWidth: '480px', margin: '0 auto 22px', lineHeight: 1.5 }}>
+              No subscription plans have been created yet. Set up subscription tiers with custom unit limits, gate limits, and extra unit pricing.
+            </p>
+            <button
+              type="button"
+              onClick={openCreateModal}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '12px 24px',
+                fontSize: '0.95rem',
+                fontWeight: 700,
+                background: 'var(--grad-primary)',
+                color: '#FFFFFF',
+                borderRadius: 'var(--radius-md)',
+                border: 'none',
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(196, 154, 108, 0.3)',
+              }}
+            >
+              <Plus size={18} />
+              <span>Create Subscription Plan</span>
+            </button>
           </div>
         ) : (
           plans.map((plan) => {
@@ -345,14 +464,23 @@ export default function SuperAdminPlansPage() {
                   <div>
                     <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>Max Units</div>
                     <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{plan.max_units}</div>
+                    {Number(plan.extra_unit_price) > 0 && (
+                      <div style={{ color: 'var(--color-clay)', fontSize: '0.68rem', marginTop: '1px' }}>+₹{Number(plan.extra_unit_price)}/extra</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>Max Users</div>
                     <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{plan.max_users}</div>
+                    {Number(plan.extra_user_price) > 0 && (
+                      <div style={{ color: 'var(--color-clay)', fontSize: '0.68rem', marginTop: '1px' }}>+₹{Number(plan.extra_user_price)}/extra</div>
+                    )}
                   </div>
                   <div>
                     <div style={{ color: 'var(--text-dim)', fontSize: '0.7rem' }}>Max Gates</div>
                     <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{plan.max_gates || 5}</div>
+                    {Number(plan.extra_gate_price) > 0 && (
+                      <div style={{ color: 'var(--color-clay)', fontSize: '0.68rem', marginTop: '1px' }}>+₹{Number(plan.extra_gate_price)}/extra</div>
+                    )}
                   </div>
                 </div>
 
@@ -445,6 +573,20 @@ export default function SuperAdminPlansPage() {
                   >
                     <Copy size={13} />
                   </button>
+                  <button
+                    onClick={() => handleDeletePlan(plan)}
+                    title="Delete plan"
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.25)',
+                      color: '#ef4444',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
               </div>
             );
@@ -482,7 +624,7 @@ export default function SuperAdminPlansPage() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
               <div>
                 <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                  {editingPlan ? 'Edit Subscription Plan' : 'Create New Plan'}
+                  {editingPlan ? 'Edit Subscription Plan' : 'Create Subscription Plan'}
                 </h2>
                 <p style={{ fontSize: '0.8rem', color: 'var(--text-dim)' }}>
                   Define pricing, cycle, resource capacities, and select included platform modules.
@@ -501,7 +643,7 @@ export default function SuperAdminPlansPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Plan Name *
+                    Plan Name <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -522,7 +664,7 @@ export default function SuperAdminPlansPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Unique Plan Code *
+                    Unique Plan Code <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -569,12 +711,16 @@ export default function SuperAdminPlansPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Price (INR)
+                    Price (INR) <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="number"
+                    required
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 2999"
                     value={formData.price}
-                    onChange={(e) => setFormData({ ...formData, price: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
                     style={{
                       width: '100%',
                       padding: '8px 12px',
@@ -588,9 +734,10 @@ export default function SuperAdminPlansPage() {
                 </div>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Billing Cycle
+                    Billing Cycle <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <select
+                    required
                     value={formData.billingCycle}
                     onChange={(e) => setFormData({ ...formData, billingCycle: e.target.value })}
                     style={{
@@ -615,6 +762,8 @@ export default function SuperAdminPlansPage() {
                   </label>
                   <input
                     type="number"
+                    min="0"
+                    placeholder="e.g. 14"
                     value={formData.trialDays}
                     onChange={(e) => setFormData({ ...formData, trialDays: e.target.value === '' ? '' : parseInt(e.target.value, 10) })}
                     style={{
@@ -633,51 +782,15 @@ export default function SuperAdminPlansPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
                 <div>
                   <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Max Units Allowed
+                    Max Units Allowed <span style={{ color: '#ef4444' }}>*</span>
                   </label>
                   <input
                     type="number"
-                    value={formData.maxUnits}
-                    onChange={(e) => setFormData({ ...formData, maxUnits: e.target.value === '' ? '' : parseInt(e.target.value, 10) })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-main)',
-                      border: '1px solid var(--border-card)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.85rem',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Max Users Allowed
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.maxUsers}
-                    onChange={(e) => setFormData({ ...formData, maxUsers: e.target.value === '' ? '' : parseInt(e.target.value, 10) })}
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: 'var(--bg-main)',
-                      border: '1px solid var(--border-card)',
-                      color: 'var(--text-main)',
-                      fontSize: '0.85rem',
-                    }}
-                  />
-                </div>
-                <div>
-                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
-                    Max Gates Allowed
-                  </label>
-                  <input
-                    type="number"
+                    required
                     min="1"
-                    value={formData.maxGates}
-                    onChange={(e) => setFormData({ ...formData, maxGates: e.target.value === '' ? '' : parseInt(e.target.value, 10) })}
+                    placeholder="e.g. 100"
+                    value={formData.maxUnits}
+                    onChange={(e) => setFormData({ ...formData, maxUnits: e.target.value === '' ? '' : e.target.value })}
                     style={{
                       width: '100%',
                       padding: '8px 12px',
@@ -688,6 +801,136 @@ export default function SuperAdminPlansPage() {
                       fontSize: '0.85rem',
                     }}
                   />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                    Max Users Allowed <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="e.g. 50"
+                    value={formData.maxUsers}
+                    onChange={(e) => setFormData({ ...formData, maxUsers: e.target.value === '' ? '' : e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-card)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.85rem',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                    Max Gates Allowed <span style={{ color: '#ef4444' }}>*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    placeholder="e.g. 5"
+                    value={formData.maxGates}
+                    onChange={(e) => setFormData({ ...formData, maxGates: e.target.value === '' ? '' : e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-main)',
+                      border: '1px solid var(--border-card)',
+                      color: 'var(--text-main)',
+                      fontSize: '0.85rem',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Per-unit overage pricing */}
+              <div
+                style={{
+                  background: 'rgba(196, 154, 108, 0.06)',
+                  border: '1px solid rgba(196, 154, 108, 0.22)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '14px',
+                }}
+              >
+                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--color-clay)', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Tag size={13} />
+                  Per-Unit Overage Pricing
+
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                      Extra Unit Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="e.g. 10"
+                      value={formData.extraUnitPrice}
+                      onChange={(e) => setFormData({ ...formData, extraUnitPrice: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-main)',
+                        border: '1px solid rgba(196, 154, 108, 0.3)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.85rem',
+                      }}
+                    />
+
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                      Extra User Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="e.g. 50"
+                      value={formData.extraUserPrice}
+                      onChange={(e) => setFormData({ ...formData, extraUserPrice: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-main)',
+                        border: '1px solid rgba(196, 154, 108, 0.3)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.85rem',
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-dim)', display: 'block', marginBottom: '4px' }}>
+                      Extra Gate Price (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="e.g. 200"
+                      value={formData.extraGatePrice}
+                      onChange={(e) => setFormData({ ...formData, extraGatePrice: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-main)',
+                        border: '1px solid rgba(196, 154, 108, 0.3)',
+                        color: 'var(--text-main)',
+                        fontSize: '0.85rem',
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -865,7 +1108,7 @@ export default function SuperAdminPlansPage() {
                     cursor: 'pointer',
                   }}
                 >
-                  {submitting ? 'Saving...' : editingPlan ? 'Update Plan' : 'Create Plan'}
+                  {submitting ? 'Saving...' : editingPlan ? 'Update Plan' : 'Create Subscription Plan'}
                 </button>
               </div>
             </form>
