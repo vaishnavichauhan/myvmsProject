@@ -50,7 +50,6 @@ export const ROLE_NAVIGATION = {
     { title: 'Usage & Limits', path: '/super-admin/limits', icon: Gauge },
     { title: 'Billing & Payments', path: '/super-admin/billing', icon: Landmark },
     { title: 'Reports & Analytics', path: '/super-admin/reports', icon: BarChart3 },
-    { title: 'Settings', path: '/super-admin/settings', icon: Settings },
     { title: 'Profile', path: '/super-admin/profile', icon: User },
   ],
 

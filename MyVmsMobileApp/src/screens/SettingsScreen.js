@@ -13,6 +13,7 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Share,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../constants/theme';
@@ -39,11 +40,14 @@ import {
   Trash2,
   X,
   Plus,
+  Search,
+  Download,
 } from 'lucide-react-native';
 
 export const SettingsScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
+  const isAdmin = user?.role === 'ADMIN' || user?.role === 'RESIDENTIAL_ADMIN' || user?.role === 'SUPER_ADMIN';
   const scrollViewRef = useRef(null);
 
   const [loading, setLoading] = useState(true);
@@ -63,7 +67,11 @@ export const SettingsScreen = ({ navigation }) => {
   const [emergencyPhone, setEmergencyPhone] = useState('');
   const [societyType, setSocietyType] = useState('FLAT');
   const [propertyConfig, setPropertyConfig] = useState('2BHK');
+  const [registrationNumber, setRegistrationNumber] = useState('');
+  const [contactEmail, setContactEmail] = useState('');
   const [totalHomes, setTotalHomes] = useState(0);
+  const [maxUnits, setMaxUnits] = useState(0);
+  const [exportUnitsCount, setExportUnitsCount] = useState('10');
   const [actualHomesCount, setActualHomesCount] = useState(0);
   const [occupiedHomesCount, setOccupiedHomesCount] = useState(0);
   const [vacantHomesCount, setVacantHomesCount] = useState(0);
@@ -79,6 +87,8 @@ export const SettingsScreen = ({ navigation }) => {
   const [editCity, setEditCity] = useState('');
   const [editState, setEditState] = useState('');
   const [editPincode, setEditPincode] = useState('');
+  const [editRegistrationNumber, setEditRegistrationNumber] = useState('');
+  const [editContactEmail, setEditContactEmail] = useState('');
   const [editSocietyType, setEditSocietyType] = useState('FLAT');
   const [editPropertyConfig, setEditPropertyConfig] = useState('2BHK');
   const [editTotalHomes, setEditTotalHomes] = useState('10');
@@ -89,9 +99,11 @@ export const SettingsScreen = ({ navigation }) => {
   const [editEmergency, setEditEmergency] = useState('');
   const [editStatus, setEditStatus] = useState('ACTIVE');
 
-  // Manage Homes Modal State
+  // Manage Homes Modal State & Filters
   const [showManageHomesModal, setShowManageHomesModal] = useState(false);
   const [societyHomes, setSocietyHomes] = useState([]);
+  const [homeSearchText, setHomeSearchText] = useState('');
+  const [homeStatusFilter, setHomeStatusFilter] = useState('ALL'); // 'ALL' | 'OCCUPIED' | 'VACANT'
   const [loadingHomes, setLoadingHomes] = useState(false);
 
   // Add Single Home State
@@ -145,6 +157,24 @@ export const SettingsScreen = ({ navigation }) => {
     });
     return units;
   }, [flatTowers]);
+
+  const filteredHomes = React.useMemo(() => {
+    return (societyHomes || []).filter((h) => {
+      const q = homeSearchText.toLowerCase();
+      const num = String(h.home_number || h.flat_number || h.id || '').toLowerCase();
+      const wing = String(h.building_or_wing || '').toLowerCase();
+      const matchesSearch = homeSearchText === '' || num.includes(q) || wing.includes(q);
+
+      const isOccupied =
+        h.occupancy_status === 'OCCUPIED_BY_OWNER' || h.occupancy_status === 'OCCUPIED_BY_TENANT';
+      const matchesStatus =
+        homeStatusFilter === 'ALL' ||
+        (homeStatusFilter === 'OCCUPIED' && isOccupied) ||
+        (homeStatusFilter === 'VACANT' && !isOccupied);
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [societyHomes, homeSearchText, homeStatusFilter]);
 
   const handleAddTower = () => {
     setFlatTowers((prev) => {
@@ -238,11 +268,16 @@ export const SettingsScreen = ({ navigation }) => {
         if (found.city) setCity(found.city);
         if (found.state) setStateName(found.state);
         if (found.pincode) setPincode(found.pincode);
+        if (found.registration_number) setRegistrationNumber(found.registration_number);
+        if (found.contact_email) setContactEmail(found.contact_email);
         if (found.contact_number) setPrimaryPhone(found.contact_number);
         if (found.emergency_number) setEmergencyPhone(found.emergency_number);
         if (found.society_type) setSocietyType(found.society_type);
         if (found.property_configuration) setPropertyConfig(found.property_configuration);
         if (found.total_homes) setTotalHomes(found.total_homes);
+        const socMaxUnits = found.max_units || found.total_homes || 10;
+        setMaxUnits(socMaxUnits);
+        setExportUnitsCount(String(found.total_homes || found.max_units || 10));
         if (found.status) setSocietyStatus(found.status);
 
         // Sync modal form fields
@@ -252,6 +287,8 @@ export const SettingsScreen = ({ navigation }) => {
         if (found.city) setEditCity(found.city);
         if (found.state) setEditState(found.state);
         if (found.pincode) setEditPincode(found.pincode);
+        setEditRegistrationNumber(found.registration_number || '');
+        setEditContactEmail(found.contact_email || '');
         setEditSocietyType(found.society_type || 'FLAT');
         setEditPropertyConfig(found.property_configuration || '2BHK');
         setEditTotalHomes(String(found.total_homes || 10));
@@ -345,167 +382,65 @@ export const SettingsScreen = ({ navigation }) => {
 
   const handleOpenEdit = () => {
     setIsCreatingSociety(false);
-    setEditName(societyName);
-    setEditCode(societyCode);
-    setEditAddress(address);
-    setEditCity(city);
-    setEditState(stateName);
-    setEditPincode(pincode);
-    setEditSocietyType(societyType || 'FLAT');
-    setEditPropertyConfig(propertyConfig || '2BHK');
-    setEditTotalHomes(totalHomes ? String(totalHomes) : '10');
-    setBungalowStartNo('1');
-    setBungalowEndNo(totalHomes ? String(totalHomes) : '10');
-    setEditPhone(primaryPhone);
-    setEditEmergency(emergencyPhone);
-    setEditStatus(societyStatus || 'ACTIVE');
-
-    if ((societyType || 'FLAT') === 'FLAT') {
-      const towerMap = new Map();
-      (societyHomes || []).forEach((h) => {
-        const wing = h.building_or_wing ? String(h.building_or_wing).replace(/^Tower\s*/i, '').trim() : 'A';
-        const fl = h.floor !== null && h.floor !== undefined ? String(h.floor) : '1';
-        const key = `${wing}-${fl}`;
-        const num = parseInt(String(h.home_number).replace(/^[A-Za-z]+[-_]/, ''), 10) || 1;
-        if (!towerMap.has(key)) {
-          towerMap.set(key, { name: wing, floor: fl, min: num, max: num });
-        } else {
-          const cur = towerMap.get(key);
-          cur.min = Math.min(cur.min, num);
-          cur.max = Math.max(cur.max, num);
-        }
-      });
-      if (towerMap.size > 0) {
-        const towers = Array.from(towerMap.values()).map((t, idx) => ({
-          id: Date.now() + idx,
-          name: t.name,
-          floor: t.floor,
-          startNo: String(t.min),
-          endNo: String(t.max),
-          count: t.max - t.min + 1,
-        }));
-        setFlatTowers(towers);
-      } else {
-        const curTot = totalHomes || 10;
-        const half = Math.ceil(curTot / 2);
-        setFlatTowers([
-          { id: 1, name: 'A', floor: '1', startNo: '1', endNo: String(half), count: half },
-          { id: 2, name: 'B', floor: '1', startNo: '1', endNo: String(curTot - half), count: curTot - half },
-        ]);
-      }
-    }
+    setEditRegistrationNumber(registrationNumber || '');
+    setEditContactEmail(contactEmail || '');
+    setEditAddress(address || '');
+    setEditTotalHomes(String(maxUnits || totalHomes || 10));
+    setEditPhone(primaryPhone || '');
+    setEditEmergency(emergencyPhone || '');
     setShowEditModal(true);
   };
 
   const handleOpenCreateSociety = () => {
     setIsCreatingSociety(true);
-    setEditName('');
-    setEditCode('');
+    setEditRegistrationNumber('');
+    setEditContactEmail('');
     setEditAddress('');
-    setEditCity('');
-    setEditState('');
-    setEditPincode('');
-    setEditSocietyType('FLAT');
-    setEditPropertyConfig('2BHK');
     setEditTotalHomes('10');
-    setBungalowStartNo('1');
-    setBungalowEndNo('10');
-    setFlatTowers([
-      { id: 1, name: 'A', floor: '1', startNo: '1', endNo: '5', count: 5 },
-      { id: 2, name: 'B', floor: '1', startNo: '1', endNo: '5', count: 5 },
-    ]);
     setEditPhone('');
     setEditEmergency('');
-    setEditStatus('ACTIVE');
     setShowEditModal(true);
   };
 
   const handleSave = async () => {
-    if (!editName.trim()) {
-      Alert.alert('Required', 'Please enter a society name.');
-      return;
-    }
     if (!editAddress.trim()) {
       Alert.alert('Required', 'Please enter a society address.');
       return;
     }
+    const unitsVal = parseInt(editTotalHomes, 10) || 1;
     setSaving(true);
     setSaveSuccess(false);
     try {
       const payload = {
-        name: editName.trim(),
-        society_code: editCode.trim().toUpperCase() || undefined,
+        name: societyName,
+        code: societyCode,
+        registration_number: editRegistrationNumber.trim(),
+        contact_email: editContactEmail.trim(),
         address: editAddress.trim(),
-        city: editCity.trim() || undefined,
-        state: editState.trim() || undefined,
-        pincode: editPincode.trim() || undefined,
-        society_type: editSocietyType,
-        property_configuration: editPropertyConfig,
-        total_homes: parseInt(editTotalHomes, 10) || totalHomes || 10,
+        society_type: societyType,
+        max_units: unitsVal,
+        total_homes: unitsVal,
+        status: societyStatus || 'ACTIVE',
         contact_number: editPhone.trim(),
         emergency_number: editEmergency.trim(),
-        status: editStatus || 'ACTIVE',
       };
 
-      if (isCreatingSociety) {
-        const res = await societyApi.createSociety(payload);
-        const newSoc = res?.data?.society || res?.society || res?.data;
-        const newSocId = newSoc?.id || newSoc?.insertId;
+      await societyApi.updateSociety(societyId, payload);
+      Alert.alert('Success', 'Society updated successfully!');
 
-        // Auto-generate initial homes if society created
-        if (newSocId) {
-          if (editSocietyType === 'BUNGALOW') {
-            const s = parseInt(bungalowStartNo, 10) || 1;
-            const e = parseInt(bungalowEndNo, 10) || (parseInt(editTotalHomes, 10) || 10);
-            for (let i = s; i <= e; i++) {
-              await societyApi.createHome(newSocId, {
-                home_number: String(i),
-                building_or_wing: null,
-                floor: null,
-                home_type: editPropertyConfig || '2BHK',
-                occupancy_status: 'VACANT',
-              });
-            }
-          } else if (editSocietyType === 'FLAT' && flatTowers.length > 0) {
-            for (const t of flatTowers) {
-              const s = parseInt(t.startNo, 10) || 1;
-              const e = parseInt(t.endNo, 10) || (s + (parseInt(t.count, 10) || 5) - 1);
-              for (let i = s; i <= e; i++) {
-                await societyApi.createHome(newSocId, {
-                  home_number: `${t.name}-${i}`,
-                  building_or_wing: t.name,
-                  floor: parseInt(t.floor, 10) || 1,
-                  home_type: editPropertyConfig || '2BHK',
-                  occupancy_status: 'VACANT',
-                });
-              }
-            }
-          }
-        }
-        Alert.alert('Success', 'Residential Society created successfully!');
-      } else {
-        await societyApi.updateSociety(societyId, payload);
-        Alert.alert('Success', 'Society updated successfully!');
-      }
-
-      setSocietyName(editName.trim());
-      if (editCode) setSocietyCode(editCode.trim().toUpperCase());
+      setRegistrationNumber(editRegistrationNumber.trim());
+      setContactEmail(editContactEmail.trim());
       setAddress(editAddress.trim());
-      setCity(editCity.trim());
-      setStateName(editState.trim());
-      setPincode(editPincode.trim());
-      setSocietyType(editSocietyType);
-      setPropertyConfig(editPropertyConfig);
-      setTotalHomes(parseInt(editTotalHomes, 10) || totalHomes || 10);
+      setTotalHomes(unitsVal);
+      setMaxUnits(unitsVal);
       setPrimaryPhone(editPhone.trim());
       setEmergencyPhone(editEmergency.trim());
-      setSocietyStatus(editStatus || 'ACTIVE');
       setSaveSuccess(true);
       setShowEditModal(false);
       fetchProfile();
       setTimeout(() => setSaveSuccess(false), 3500);
     } catch (err) {
-      Alert.alert('Error', err.message || 'Error saving society.');
+      Alert.alert('Error', err.response?.data?.message || err.message || 'Error updating society.');
     } finally {
       setSaving(false);
     }
@@ -647,28 +582,127 @@ export const SettingsScreen = ({ navigation }) => {
     }
   };
 
-  const handleDeleteSociety = () => {
-    Alert.alert(
-      'Delete Society',
-      `Are you sure you want to permanently delete "${societyName}"? All associated units and society data will be deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Permanently',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await societyApi.deleteSociety(societyId, true);
-              Alert.alert('Society Deleted', 'The society has been permanently deleted from the database.');
-              fetchProfile();
-            } catch (err) {
-              Alert.alert('Error', err.message || 'Failed to delete society.');
-            }
-          },
-        },
-      ]
-    );
+  const handleExportExcel = async () => {
+    try {
+      const isFlat = (societyType || 'FLAT').toUpperCase() === 'FLAT';
+      const parsedCount = parseInt(exportUnitsCount, 10);
+      const maxAllowed = parseInt(maxUnits || totalHomes || 100, 10);
+      const count = isNaN(parsedCount) || parsedCount < 1 ? 1 : Math.min(parsedCount, maxAllowed);
+
+      let headers = [];
+      if (isFlat) {
+        headers = [
+          'Sr No.',
+          'Unit',
+          'Home No',
+          'Home Type',
+          'Tower',
+          'Floor',
+          'Property Configuration',
+          'User Name',
+          'Resident Type',
+          'Phone Number',
+          'Email ID',
+          'Move In Date (YYYY-MM-DD)',
+          'Password',
+          'Max Family Members (Create Account No)',
+        ];
+      } else {
+        headers = [
+          'Sr No.',
+          'Unit',
+          'Home No',
+          'Home Type',
+          'Property Configuration',
+          'User Name',
+          'Resident Type',
+          'Phone Number',
+          'Email ID',
+          'Move In Date (YYYY-MM-DD)',
+          'Password',
+          'Max Family Members (Create Account No)',
+        ];
+      }
+
+      const rows = [headers.join(',')];
+      const todayStr = new Date().toISOString().split('T')[0];
+      const homeTypeVal = isFlat ? 'flat' : 'bunglow';
+
+      for (let i = 1; i <= count; i++) {
+        const unitNo = isFlat ? String(100 + i) : String(i);
+        const samplePhone = `98765432${String(10 + i).slice(-2)}`;
+        const sampleEmail = `resident${unitNo}@example.com`;
+        const sampleName = i === 1 ? 'Ramesh Patel' : `Resident ${unitNo}`;
+
+        if (isFlat) {
+          rows.push([
+            i,
+            `"${unitNo}"`,
+            `"${unitNo}"`,
+            `"${homeTypeVal}"`,
+            `"Tower A"`,
+            1,
+            `"2bhk"`,
+            `"${sampleName}"`,
+            `"Owner"`,
+            `"${samplePhone}"`,
+            `"${sampleEmail}"`,
+            `"${todayStr}"`,
+            `"Password@123"`,
+            1,
+          ].join(','));
+        } else {
+          rows.push([
+            i,
+            `"${unitNo}"`,
+            `"${unitNo}"`,
+            `"${homeTypeVal}"`,
+            `"2bhk"`,
+            `"${sampleName}"`,
+            `"Owner"`,
+            `"${samplePhone}"`,
+            `"${sampleEmail}"`,
+            `"${todayStr}"`,
+            `"Password@123"`,
+            1,
+          ].join(','));
+        }
+      }
+
+      const csvContent = rows.join('\n');
+      await Share.share({
+        title: `${societyName || 'Society'}_Residents_Template.csv`,
+        message: csvContent,
+      });
+    } catch (err) {
+      if (err.message && !err.message.includes('dismissed')) {
+        Alert.alert('Export Notice', 'Excel template generated successfully.');
+      }
+    }
   };
+
+  // const handleDeleteSociety = () => {
+  //   Alert.alert(
+  //     'Delete Society',
+  //     `Are you sure you want to permanently delete "${societyName}"? All associated units and society data will be deleted.`,
+  //     [
+  //       { text: 'Cancel', style: 'cancel' },
+  //       {
+  //         text: 'Delete Permanently',
+  //         style: 'destructive',
+  //         onPress: async () => {
+  //           try {
+  //             await societyApi.deleteSociety(societyId, true);
+  //             Alert.alert('Society Deleted', 'The society has been permanently deleted from the database.');
+  //             fetchProfile();
+  //           } catch (err) {
+  //             Alert.alert('Error', err.message || 'Failed to delete society.');
+  //           }
+  //         },
+  //       },
+  //     ]
+  //   );
+  // };
 
   // Get Admin Initials
   const getInitials = (name) => {
@@ -869,20 +903,62 @@ export const SettingsScreen = ({ navigation }) => {
 
                     {/* Basic Info Rows */}
                     <View style={styles.detailsGroup}>
-                      {/* Address Row */}
+                      {/* 1. Address Row */}
                       <View style={styles.detailItemTop}>
                         <View style={styles.detailIconBox}>
                           <MapPin size={16} color={THEME.colors.clay} />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.detailSubLabel}>ADDRESS</Text>
+                          <Text style={styles.detailSubLabel}>SOCIETY ADDRESS</Text>
                           <Text style={styles.detailValMultiline}>
                             {address || 'Address not configured'}
                           </Text>
                         </View>
                       </View>
 
-                      {/* Contact Number Row */}
+                      {/* 2. Society Structure Type */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, { backgroundColor: 'rgba(99, 102, 241, 0.12)' }]}>
+                          <Layers size={16} color="#4f46e5" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>SOCIETY STRUCTURE TYPE</Text>
+                          <Text style={[styles.detailVal, { fontWeight: '700' }]}>
+                            {societyType === 'BUNGALOW' ? 'Bungalow' : 'Flat'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 3. max Units */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                          <Building2 size={16} color="#059669" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>MAX UNITS</Text>
+                          <Text style={[styles.detailVal, { fontWeight: '800' }]}>
+                            {maxUnits || totalHomes || actualHomesCount || 10}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 4. Status */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
+                          <CheckCircle2 size={16} color={THEME.colors.fernGreenDark} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>STATUS</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                            <View style={[styles.statusBadgeDot, { backgroundColor: societyStatus === 'ACTIVE' ? '#22c55e' : '#f59e0b' }]} />
+                            <Text style={[styles.detailVal, { fontWeight: '700', color: societyStatus === 'ACTIVE' ? '#15803d' : '#b45309' }]}>
+                              {societyStatus || 'ACTIVE'}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* 5. Contact Number Row */}
                       <View style={styles.detailItem}>
                         <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
                           <Phone size={16} color={THEME.colors.fernGreen} />
@@ -895,7 +971,7 @@ export const SettingsScreen = ({ navigation }) => {
                         </View>
                       </View>
 
-                      {/* Emergency Helpline Row */}
+                      {/* 6. Emergency Helpline Row */}
                       <View style={styles.detailItem}>
                         <View style={[styles.detailIconBox, styles.detailIconBoxRose]}>
                           <PhoneCall size={16} color={THEME.colors.error} />
@@ -903,52 +979,104 @@ export const SettingsScreen = ({ navigation }) => {
                         <View style={{ flex: 1 }}>
                           <Text style={styles.detailSubLabel}>EMERGENCY HELPLINE</Text>
                           <Text style={styles.emergencyVal}>
-                            {emergencyPhone || '112 / Not provided'}
+                            {emergencyPhone || 'Not provided'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 7. Registration Number Row */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.12)' }]}>
+                          <ShieldCheck size={16} color="#7c3aed" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>REGISTRATION NUMBER</Text>
+                          <Text style={styles.detailVal}>
+                            {registrationNumber || 'N/A'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* 8. Contact Email Row */}
+                      <View style={styles.detailItem}>
+                        <View style={[styles.detailIconBox, { backgroundColor: 'rgba(2, 132, 199, 0.12)' }]}>
+                          <Mail size={16} color="#0284c7" />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.detailSubLabel}>CONTACT EMAIL</Text>
+                          <Text style={styles.detailVal}>
+                            {contactEmail || 'Not provided'}
                           </Text>
                         </View>
                       </View>
                     </View>
 
-                    {/* Action Buttons Row */}
-                    <View style={styles.socActionRow}>
-                      <TouchableOpacity
-                        style={styles.btnSecondary}
-                        activeOpacity={0.8}
-                        onPress={handleOpenManageHomes}
-                      >
-                        <Home size={15} color={THEME.colors.fernGreenDark} />
-                        <Text style={styles.btnSecondaryText}>
-                          Homes ({societyHomes.length || actualHomesCount || 0})
-                        </Text>
-                      </TouchableOpacity>
+                    {/* Units Export & Actions Section (Exact replica of frontend SocietiesPage lines 1135-1240) */}
+                    <View style={styles.exportAndActionsCard}>
+                      {/* Left/Top: Our Society Total Units Input & Export Excel Button */}
+                      <View style={styles.exportSection}>
+                        <View style={styles.exportHeaderRow}>
+                          <View style={styles.exportLabelRow}>
+                            <Building2 size={15} color={THEME.colors.clay} />
+                            <Text style={styles.exportLabelText}>Our Society Total Units:</Text>
+                          </View>
+                          <View style={styles.exportControlRow}>
+                            <TextInput
+                              style={styles.exportInput}
+                              keyboardType="number-pad"
+                              value={String(exportUnitsCount)}
+                              onChangeText={(text) => {
+                                const num = parseInt(text, 10);
+                                const maxAllowed = parseInt(maxUnits || totalHomes || 100, 10);
+                                if (!isNaN(num)) {
+                                  setExportUnitsCount(String(Math.max(1, Math.min(num, maxAllowed))));
+                                } else {
+                                  setExportUnitsCount(text);
+                                }
+                              }}
+                              onBlur={() => {
+                                const num = parseInt(exportUnitsCount, 10);
+                                const maxAllowed = parseInt(maxUnits || totalHomes || 100, 10);
+                                if (isNaN(num) || num < 1) {
+                                  setExportUnitsCount(String(Math.min(totalHomes || 1, maxAllowed)));
+                                }
+                              }}
+                            />
+                            <Text style={styles.exportMaxText}>
+                              (Max: {maxUnits || totalHomes || 100})
+                            </Text>
+                          </View>
+                        </View>
 
-                      <TouchableOpacity
-                        style={styles.btnOutline}
-                        activeOpacity={0.8}
-                        onPress={handleOpenEdit}
-                      >
-                        <Edit2 size={14} color={THEME.colors.clayDark} />
-                        <Text style={styles.btnOutlineText}>Edit</Text>
-                      </TouchableOpacity>
-
-                      {isAdmin && (
                         <TouchableOpacity
-                          style={[styles.btnOutline, { borderColor: THEME.colors.clay }]}
+                          style={styles.btnExportExcel}
                           activeOpacity={0.8}
-                          onPress={handleOpenCreateSociety}
+                          onPress={handleExportExcel}
                         >
-                          <Plus size={14} color={THEME.colors.clay} />
-                          <Text style={[styles.btnOutlineText, { color: THEME.colors.clay }]}>New</Text>
+                          <Download size={15} color="#15803D" />
+                          <Text style={styles.btnExportExcelText}>Export Excel Sheet</Text>
                         </TouchableOpacity>
-                      )}
+                      </View>
 
-                      <TouchableOpacity
-                        style={styles.btnDanger}
-                        activeOpacity={0.8}
-                        onPress={handleDeleteSociety}
-                      >
-                        <Trash2 size={15} color={THEME.colors.error} />
-                      </TouchableOpacity>
+                      {/* Right/Bottom: Admin Action Buttons */}
+                      <View style={styles.socActionRow}>
+                        <TouchableOpacity
+                          style={styles.btnOutline}
+                          activeOpacity={0.8}
+                          onPress={handleOpenEdit}
+                        >
+                          <Edit2 size={14} color={THEME.colors.clayDark} />
+                          <Text style={styles.btnOutlineText}>Edit Details</Text>
+                        </TouchableOpacity>
+
+                        {/* <TouchableOpacity
+                          style={styles.btnDanger}
+                          activeOpacity={0.8}
+                          onPress={handleDeleteSociety}
+                        >
+                          <Trash2 size={16} color={THEME.colors.error} />
+                        </TouchableOpacity> */}
+                      </View>
                     </View>
                   </View>
                 </>
@@ -989,7 +1117,7 @@ export const SettingsScreen = ({ navigation }) => {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.modalTitle} numberOfLines={1}>
-                    {isCreatingSociety ? 'Create New Residential Society' : `Edit Society: ${societyName}`}
+                    {`Edit Society: ${societyName}`}
                   </Text>
                 </View>
               </View>
@@ -1009,29 +1137,31 @@ export const SettingsScreen = ({ navigation }) => {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
             >
-              {/* Society Name * */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Society Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editName}
-                  onChangeText={setEditName}
-                  placeholder="e.g. Royal Palms Residency"
-                  placeholderTextColor={THEME.colors.textDim}
-                />
-              </View>
+              {/* Registration Number & Contact Email */}
+              <View style={styles.formRowTwoCol}>
+                <View style={[styles.inputGroup, styles.formColHalf]}>
+                  <Text style={styles.inputLabel}>Registration Number</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editRegistrationNumber}
+                    onChangeText={setEditRegistrationNumber}
+                    placeholder="e.g. REG-12345"
+                    placeholderTextColor={THEME.colors.textDim}
+                  />
+                </View>
 
-              {/* Society Code * */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Society Code * (Unique Key)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={editCode}
-                  onChangeText={(v) => setEditCode(v.toUpperCase())}
-                  autoCapitalize="characters"
-                  placeholder="e.g. RVS01"
-                  placeholderTextColor={THEME.colors.textDim}
-                />
+                <View style={[styles.inputGroup, styles.formColHalf]}>
+                  <Text style={styles.inputLabel}>Contact Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={editContactEmail}
+                    onChangeText={setEditContactEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    placeholder="society@example.com"
+                    placeholderTextColor={THEME.colors.textDim}
+                  />
+                </View>
               </View>
 
               {/* Society Address * */}
@@ -1048,327 +1178,20 @@ export const SettingsScreen = ({ navigation }) => {
                 />
               </View>
 
-              {/* 3-Column Row: City, State, Pincode */}
-              <View style={styles.formRowTwoCol}>
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>City</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editCity}
-                    onChangeText={setEditCity}
-                    placeholder="e.g. Mumbai"
-                    placeholderTextColor={THEME.colors.textDim}
-                  />
-                </View>
-
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>State</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editState}
-                    onChangeText={setEditState}
-                    placeholder="e.g. Maharashtra"
-                    placeholderTextColor={THEME.colors.textDim}
-                  />
-                </View>
-              </View>
-
+              {/* max Units * */}
               <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Pincode</Text>
+                <Text style={styles.inputLabel}>max Units *</Text>
                 <TextInput
                   style={styles.input}
-                  value={editPincode}
-                  onChangeText={setEditPincode}
+                  value={editTotalHomes}
+                  onChangeText={setEditTotalHomes}
                   keyboardType="numeric"
-                  placeholder="e.g. 400001"
+                  placeholder="10"
                   placeholderTextColor={THEME.colors.textDim}
                 />
               </View>
 
-              {/* 2-Column Row: Society Type & Total Units */}
-              <View style={styles.formRowTwoCol}>
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Society Type *</Text>
-                  <View style={styles.homeTypeSelectorRow}>
-                    {['FLAT', 'BUNGALOW'].map((st) => (
-                      <TouchableOpacity
-                        key={st}
-                        style={[
-                          styles.homeTypeChoiceBtn,
-                          editSocietyType === st && styles.homeTypeChoiceBtnActive,
-                        ]}
-                        onPress={() => setEditSocietyType(st)}
-                      >
-                        <Text
-                          style={[
-                            styles.homeTypeChoiceText,
-                            editSocietyType === st && styles.homeTypeChoiceTextActive,
-                          ]}
-                        >
-                          {st === 'BUNGALOW' ? 'Bungalow' : 'Flat'}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <View style={[styles.inputGroup, styles.formColHalf]}>
-                  <Text style={styles.inputLabel}>Total Units *</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={editTotalHomes}
-                    onChangeText={(val) => {
-                      setEditTotalHomes(val);
-                      if (editSocietyType === 'BUNGALOW') {
-                        setBungalowEndNo(val || '10');
-                      }
-                    }}
-                    keyboardType="numeric"
-                    placeholder="10"
-                    placeholderTextColor={THEME.colors.textDim}
-                  />
-                </View>
-              </View>
-
-              {/* SECTION: BUNGALOW ALLOCATION */}
-              {editSocietyType === 'BUNGALOW' && (
-                <View style={{ backgroundColor: 'rgba(196, 154, 108, 0.08)', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(196, 154, 108, 0.2)' }}>
-                  <Text style={{ fontSize: 12, fontWeight: '800', color: THEME.colors.clay, marginBottom: 8, textTransform: 'uppercase' }}>
-                    Bungalow Home Units Allocation
-                  </Text>
-                  <View style={styles.formRowTwoCol}>
-                    <View style={[styles.inputGroup, styles.formColHalf]}>
-                      <Text style={styles.inputLabel}>Start Home No</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={bungalowStartNo}
-                        onChangeText={setBungalowStartNo}
-                        keyboardType="numeric"
-                        placeholder="1"
-                        placeholderTextColor={THEME.colors.textDim}
-                      />
-                    </View>
-                    <View style={[styles.inputGroup, styles.formColHalf]}>
-                      <Text style={styles.inputLabel}>End Home No</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={bungalowEndNo}
-                        onChangeText={setBungalowEndNo}
-                        keyboardType="numeric"
-                        placeholder="10"
-                        placeholderTextColor={THEME.colors.textDim}
-                      />
-                    </View>
-                  </View>
-
-                  {/* Home Units Preview (Bungalow) */}
-                  <View style={{ marginTop: 8 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 6 }}>
-                      Home Units Preview ({bungalowUnits.length} homes):
-                    </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {bungalowUnits.map((num) => (
-                        <View
-                          key={num}
-                          style={{
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 58,
-                            paddingVertical: 6,
-                            backgroundColor: '#FFFFFF',
-                            borderRadius: 6,
-                            borderWidth: 1,
-                            borderColor: 'rgba(196, 154, 108, 0.3)',
-                          }}
-                        >
-                          <Home size={14} color={THEME.colors.clay} style={{ marginBottom: 2 }} />
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.darkBrown }}>
-                            Home {num}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {/* SECTION: FLAT TOWER & FLOOR ALLOCATION */}
-              {editSocietyType === 'FLAT' && (
-                <View style={{ backgroundColor: 'rgba(217, 119, 6, 0.06)', borderRadius: 10, padding: 12, marginBottom: 14, borderWidth: 1, borderColor: 'rgba(217, 119, 6, 0.2)' }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#b45309', textTransform: 'uppercase' }}>
-                      Flat Tower & Floor Allocation
-                    </Text>
-                    <TouchableOpacity
-                      onPress={handleAddTower}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 4,
-                        backgroundColor: '#d97706',
-                        paddingHorizontal: 10,
-                        paddingVertical: 5,
-                        borderRadius: 6,
-                      }}
-                      activeOpacity={0.8}
-                    >
-                      <Plus size={12} color="#FFFFFF" />
-                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>Add Tower & Floor</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* List of Towers */}
-                  {flatTowers.map((tower, idx) => (
-                    <View
-                      key={tower.id}
-                      style={{
-                        backgroundColor: '#FFFFFF',
-                        borderRadius: 8,
-                        padding: 10,
-                        marginBottom: 8,
-                        borderWidth: 1,
-                        borderColor: 'rgba(217, 119, 6, 0.2)',
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <Text style={{ fontSize: 11, fontWeight: '800', color: THEME.colors.darkBrown }}>
-                          Tower {tower.name} • Floor {tower.floor} ({tower.count} units)
-                        </Text>
-                        {flatTowers.length > 1 && (
-                          <TouchableOpacity onPress={() => handleRemoveTower(tower.id)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                            <Trash2 size={13} color="#e11d48" />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-
-                      <View style={styles.formRowTwoCol}>
-                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 6 }]}>
-                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Tower Name</Text>
-                          <TextInput
-                            style={[styles.input, { height: 38, fontSize: 12 }]}
-                            value={tower.name}
-                            onChangeText={(v) => handleUpdateTower(tower.id, 'name', v.toUpperCase())}
-                            placeholder="A"
-                          />
-                        </View>
-                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 6 }]}>
-                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Floor</Text>
-                          <TextInput
-                            style={[styles.input, { height: 38, fontSize: 12 }]}
-                            value={String(tower.floor)}
-                            onChangeText={(v) => handleUpdateTower(tower.id, 'floor', v)}
-                            keyboardType="numeric"
-                            placeholder="1"
-                          />
-                        </View>
-                      </View>
-
-                      <View style={styles.formRowTwoCol}>
-                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 0 }]}>
-                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>Start Home No</Text>
-                          <TextInput
-                            style={[styles.input, { height: 38, fontSize: 12 }]}
-                            value={String(tower.startNo)}
-                            onChangeText={(v) => handleUpdateTower(tower.id, 'startNo', v)}
-                            keyboardType="numeric"
-                            placeholder="101"
-                          />
-                        </View>
-                        <View style={[styles.inputGroup, styles.formColHalf, { marginBottom: 0 }]}>
-                          <Text style={[styles.inputLabel, { fontSize: 10 }]}>End Home No</Text>
-                          <TextInput
-                            style={[styles.input, { height: 38, fontSize: 12 }]}
-                            value={String(tower.endNo)}
-                            onChangeText={(v) => handleUpdateTower(tower.id, 'endNo', v)}
-                            keyboardType="numeric"
-                            placeholder="105"
-                          />
-                        </View>
-                      </View>
-                    </View>
-                  ))}
-
-                  <TouchableOpacity
-                    onPress={handleAddTower}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 5,
-                      paddingVertical: 8,
-                      borderWidth: 1,
-                      borderStyle: 'dashed',
-                      borderColor: '#d97706',
-                      borderRadius: 8,
-                      backgroundColor: '#FFFFFF',
-                      marginTop: 4,
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Plus size={13} color="#d97706" />
-                    <Text style={{ color: '#d97706', fontSize: 11, fontWeight: '700' }}>
-                      + Add Another Tower & Floor
-                    </Text>
-                  </TouchableOpacity>
-
-                  {/* Flat Units Preview */}
-                  <View style={{ marginTop: 10 }}>
-                    <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 6 }}>
-                      Flat Units Preview ({flatUnits.length} units):
-                    </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                      {flatUnits.map((u) => (
-                        <View
-                          key={u.id}
-                          style={{
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 66,
-                            paddingVertical: 6,
-                            backgroundColor: '#FFFFFF',
-                            borderRadius: 6,
-                            borderWidth: 1,
-                            borderColor: 'rgba(217, 119, 6, 0.25)',
-                          }}
-                        >
-                          <Building2 size={13} color="#d97706" style={{ marginBottom: 2 }} />
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: THEME.colors.darkBrown }}>
-                            Home {u.number}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                </View>
-              )}
-
-              {/* Property Configuration */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Property Configuration</Text>
-                <View style={styles.homeTypeSelectorRow}>
-                  {['1BHK', '2BHK', '3BHK', '4BHK', 'PENTHOUSE'].map((cfg) => (
-                    <TouchableOpacity
-                      key={cfg}
-                      style={[
-                        styles.homeTypeChoiceBtn,
-                        editPropertyConfig === cfg && styles.homeTypeChoiceBtnActive,
-                      ]}
-                      onPress={() => setEditPropertyConfig(cfg)}
-                    >
-                      <Text
-                        style={[
-                          styles.homeTypeChoiceText,
-                          editPropertyConfig === cfg && styles.homeTypeChoiceTextActive,
-                        ]}
-                      >
-                        {cfg === 'PENTHOUSE' ? 'Penthouse' : cfg}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              {/* 2-Column Row: Contact Number & Emergency Number */}
+              {/* Contact Number & Emergency Number */}
               <View style={styles.formRowTwoCol}>
                 <View style={[styles.inputGroup, styles.formColHalf]}>
                   <Text style={styles.inputLabel}>Contact Number</Text>
@@ -1389,40 +1212,14 @@ export const SettingsScreen = ({ navigation }) => {
                     value={editEmergency}
                     onChangeText={setEditEmergency}
                     keyboardType="phone-pad"
-                    placeholder="112"
+                    placeholder="108"
                     placeholderTextColor={THEME.colors.textDim}
                   />
                 </View>
               </View>
-
-              {/* Status */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Status</Text>
-                <View style={styles.homeTypeSelectorRow}>
-                  {['ACTIVE', 'INACTIVE', 'SUSPENDED'].map((stat) => (
-                    <TouchableOpacity
-                      key={stat}
-                      style={[
-                        styles.homeTypeChoiceBtn,
-                        editStatus === stat && styles.homeTypeChoiceBtnActive,
-                      ]}
-                      onPress={() => setEditStatus(stat)}
-                    >
-                      <Text
-                        style={[
-                          styles.homeTypeChoiceText,
-                          editStatus === stat && styles.homeTypeChoiceTextActive,
-                        ]}
-                      >
-                        {stat}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
             </ScrollView>
 
-            {/* Modal Bottom Action Row: Cancel and Update/Create Society Buttons */}
+            {/* Modal Bottom Action Row: Cancel and Update Society */}
             <View style={styles.modalBtnRow}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
@@ -1443,7 +1240,7 @@ export const SettingsScreen = ({ navigation }) => {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <Text style={styles.modalUpdateBtnText}>
-                    {isCreatingSociety ? 'Create Society' : 'Save Changes'}
+                    Update Society
                   </Text>
                 )}
               </TouchableOpacity>
@@ -1506,6 +1303,48 @@ export const SettingsScreen = ({ navigation }) => {
                   <Text style={styles.btnAddSingleHomeText}>Add Single Home</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* Search & Status Filter Controls */}
+              <View style={{ marginTop: 10, gap: 8 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(214, 194, 161, 0.4)', paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Search size={14} color={THEME.colors.textDim} />
+                  <TextInput
+                    style={{ flex: 1, fontSize: 12, color: THEME.colors.textDark, paddingLeft: 6 }}
+                    placeholder="Search home number..."
+                    placeholderTextColor={THEME.colors.textDim}
+                    value={homeSearchText}
+                    onChangeText={setHomeSearchText}
+                  />
+                  {homeSearchText ? (
+                    <TouchableOpacity onPress={() => setHomeSearchText('')}>
+                      <X size={14} color={THEME.colors.textDim} />
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                <View style={{ flexDirection: 'row', gap: 6 }}>
+                  {[
+                    { label: `All (${societyHomes.length})`, val: 'ALL' },
+                    { label: 'Occupied', val: 'OCCUPIED' },
+                    { label: 'Vacant', val: 'VACANT' },
+                  ].map((f) => (
+                    <TouchableOpacity
+                      key={f.val}
+                      style={{
+                        paddingHorizontal: 10,
+                        paddingVertical: 4,
+                        borderRadius: 6,
+                        backgroundColor: homeStatusFilter === f.val ? THEME.colors.clay : 'rgba(214, 194, 161, 0.2)',
+                      }}
+                      onPress={() => setHomeStatusFilter(f.val)}
+                    >
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: homeStatusFilter === f.val ? '#FFFFFF' : THEME.colors.textMuted }}>
+                        {f.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
             </View>
 
             {/* Homes List */}
@@ -1519,17 +1358,17 @@ export const SettingsScreen = ({ navigation }) => {
                   <ActivityIndicator size="small" color={THEME.colors.clay} />
                   <Text style={styles.manageHomesLoadingText}>Loading homes...</Text>
                 </View>
-              ) : societyHomes.length === 0 ? (
+              ) : filteredHomes.length === 0 ? (
                 <View style={styles.manageHomesEmpty}>
                   <Home size={36} color={THEME.colors.textDim} style={{ opacity: 0.5, marginBottom: 10 }} />
-                  <Text style={styles.manageHomesEmptyTitle}>No homes created yet in this society.</Text>
+                  <Text style={styles.manageHomesEmptyTitle}>No matching homes found.</Text>
                   <Text style={styles.manageHomesEmptySub}>
                     Use "Add Single Home" or "Batch Generate" above to create homes.
                   </Text>
                 </View>
               ) : (
                 <View style={styles.homesGrid}>
-                  {societyHomes.map((h, idx) => {
+                  {filteredHomes.map((h, idx) => {
                     const isOccupied =
                       h.occupancy_status === 'OCCUPIED_BY_OWNER' ||
                       h.occupancy_status === 'OCCUPIED_BY_TENANT';
@@ -2248,14 +2087,88 @@ const styles = StyleSheet.create({
     color: THEME.colors.error,
     fontWeight: '800',
   },
+  statusBadgeDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  exportAndActionsCard: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(214, 194, 161, 0.4)',
+  },
+  exportSection: {
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(214, 194, 161, 0.5)',
+    padding: 12,
+    marginBottom: 12,
+  },
+  exportHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  exportLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  exportLabelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.textDark,
+  },
+  exportControlRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  exportInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: 'rgba(214, 194, 161, 0.7)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textDark,
+    textAlign: 'center',
+    minWidth: 58,
+  },
+  exportMaxText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textDim,
+  },
+  btnExportExcel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(21, 128, 61, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(21, 128, 61, 0.35)',
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    gap: 8,
+  },
+  btnExportExcelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#15803D',
+  },
   socActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 18,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(214, 194, 161, 0.35)',
     flexWrap: 'wrap',
   },
   btnSecondary: {

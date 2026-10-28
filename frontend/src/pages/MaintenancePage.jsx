@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { Link } from 'react-router-dom';
 import {
   Receipt,
@@ -32,7 +33,11 @@ import {
   Check,
   CalendarDays,
   LayoutGrid,
-  ListFilter,
+  Download,
+  FileSpreadsheet,
+  Table,
+  Pencil,
+  RefreshCw,
 } from 'lucide-react';
 import { maintenanceApi } from '../api/maintenanceApi';
 import { societyApi } from '../api/societyApi';
@@ -46,16 +51,17 @@ export default function MaintenancePage() {
   // Active Society State
   const [societies, setSocieties] = useState([]);
   const [selectedSocietyId, setSelectedSocietyId] = useState(user?.societyId ? String(user.societyId) : '');
-  const myHomeNumber = user?.flatNumber || user?.unitNumber || '';
+  const myHomeNumber = user?.flatNumber || user?.unitNumber || user?.home_number || user?.homeNumber || '';
 
   // Tab State: 'bills' | 'plans' | 'payments'
   const [activeTab, setActiveTab] = useState('bills');
 
-  // View Mode for Bills Tab: 'TABLE' | 'HOME_LIST' | 'MONTH_LIST'
+  // View Mode for Bills Tab: 'TABLE' | 'HOME_LIST'
   const [viewMode, setViewMode] = useState('TABLE');
   const [billsSubTab, setBillsSubTab] = useState('INVOICES'); // 'INVOICES' | 'MONTHLY_PAYMENT'
   const [societyHomes, setSocietyHomes] = useState([]);
-  const [selectedMonthView, setSelectedMonthView] = useState('ALL');
+  const [residentCycleFilter, setResidentCycleFilter] = useState('ALL'); // 'ALL' | 'PAID' | 'UNPAID'
+  const [matrixCycleFilter, setMatrixCycleFilter] = useState('ALL'); // 'ALL' | cycleId
 
   // Scope Filter: 'ALL' (All homes in society) | 'MY_HOME' (Only resident's home)
   const [scopeFilter, setScopeFilter] = useState(isAdmin ? 'ALL' : 'MY_HOME');
@@ -131,7 +137,7 @@ export default function MaintenancePage() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.startMonth && parsed.endMonth) return parsed;
-      } catch (e) {}
+      } catch (e) { }
     }
     // Default cycle: current month (2026-10) to current month + 2 (2026-12)
     const endD = new Date(curY, today.getMonth() + 2, 1);
@@ -144,6 +150,34 @@ export default function MaintenancePage() {
   });
   const [showCycleModal, setShowCycleModal] = useState(false);
   const [cycleForm, setCycleForm] = useState(cycleRange);
+  const [cycles, setCycles] = useState([]);
+  const [activeCycle, setActiveCycle] = useState(null);
+  const [selectedCycleId, setSelectedCycleId] = useState('ALL');
+  const [editingCycle, setEditingCycle] = useState(null);
+  const [newCycleForm, setNewCycleForm] = useState({
+    name: '',
+    start_month: '',
+    end_month: '',
+  });
+  const [cycleActionLoading, setCycleActionLoading] = useState(false);
+
+  function getMonthsBetween(startMonth, endMonth) {
+    if (!startMonth || !endMonth) return [];
+    const [sY, sM] = String(startMonth).split('-').map(Number);
+    const [eY, eM] = String(endMonth).split('-').map(Number);
+    const result = [];
+    let curY = sY;
+    let curM = sM;
+    while (curY < eY || (curY === eY && curM <= eM)) {
+      result.push(`${curY}-${String(curM).padStart(2, '0')}`);
+      curM++;
+      if (curM > 12) {
+        curM = 1;
+        curY++;
+      }
+    }
+    return result;
+  }
 
   function getCurrentPeriod(cycle = 'MONTHLY') {
     const today = new Date();
@@ -234,6 +268,44 @@ export default function MaintenancePage() {
     }
     const mMatch = String(period).match(/(\d{4})[-_](\d{1,2})/);
     if (mMatch) {
+      // If billing cycle is QUARTERLY and period is a start-month (YYYY-MM),
+      // treat as a rolling 3-month window starting from that month.
+      if (cycle === 'QUARTERLY') {
+        const startY = parseInt(mMatch[1], 10);
+        const startM = parseInt(mMatch[2], 10);
+        const months = [];
+        for (let i = 0; i < 3; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
+      if (cycle === 'HALF_YEARLY') {
+        const startY = parseInt(mMatch[1], 10);
+        const startM = parseInt(mMatch[2], 10);
+        const months = [];
+        for (let i = 0; i < 6; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
+      if (cycle === 'YEARLY') {
+        const startY = parseInt(mMatch[1], 10);
+        const startM = parseInt(mMatch[2], 10);
+        const months = [];
+        for (let i = 0; i < 12; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
       const y = mMatch[1];
       const m = String(parseInt(mMatch[2], 10)).padStart(2, '0');
       return [`${y}-${m}`];
@@ -282,12 +354,14 @@ export default function MaintenancePage() {
     if (!selectedSocietyId) return;
     setLoading(true);
     try {
-      const [statsRes, plansRes, billsRes, paymentsRes, homesRes] = await Promise.all([
+      const [statsRes, plansRes, billsRes, paymentsRes, homesRes, cyclesRes, activeCycleRes] = await Promise.all([
         maintenanceApi.getStats({ society_id: selectedSocietyId }).catch(() => ({})),
         maintenanceApi.getPlans({ society_id: selectedSocietyId }).catch(() => ({})),
         maintenanceApi.getBills({ society_id: selectedSocietyId }).catch(() => ({})),
         maintenanceApi.getPayments({ society_id: selectedSocietyId }).catch(() => ({})),
         societyApi.getHomesBySociety(selectedSocietyId).catch(() => ({})),
+        maintenanceApi.getCycles({ society_id: selectedSocietyId }).catch(() => ({})),
+        maintenanceApi.getActiveCycle({ society_id: selectedSocietyId }).catch(() => ({})),
       ]);
 
       setStats(statsRes.data?.stats || null);
@@ -296,6 +370,21 @@ export default function MaintenancePage() {
       setPayments(paymentsRes.data?.payments || []);
       const rawHomes = homesRes?.data?.homes || homesRes?.homes || homesRes?.data || [];
       setSocietyHomes(Array.isArray(rawHomes) ? rawHomes : []);
+
+      const cycleList = cyclesRes.data?.cycles || [];
+      setCycles(cycleList);
+      const actCycle = activeCycleRes.data?.cycle || null;
+      setActiveCycle(actCycle);
+      if (actCycle && actCycle.start_month && actCycle.end_month) {
+        setCycleRange({
+          startMonth: actCycle.start_month,
+          endMonth: actCycle.end_month,
+        });
+        setCycleForm({
+          startMonth: actCycle.start_month,
+          endMonth: actCycle.end_month,
+        });
+      }
     } catch (err) {
       console.error('Error fetching maintenance records:', err);
       showError(err.message || 'Failed to load maintenance records');
@@ -326,6 +415,17 @@ export default function MaintenancePage() {
     return Array.from(map.values());
   }, [societyHomes, bills]);
 
+  // Format month for Excel spreadsheet row-column headers: e.g. "2026-10" -> "Oct-26", "2027-01" -> "Jan-27"
+  const formatMonthExcel = (monthStr) => {
+    if (!monthStr) return '';
+    const match = String(monthStr).match(/(\d{4})-(\d{1,2})/);
+    if (!match) return monthStr;
+    const shortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const mIdx = parseInt(match[2], 10) - 1;
+    const yy = match[1].slice(-2);
+    return `${shortNames[mIdx] || match[2]}-${yy}`;
+  };
+
   // Format month key helper: e.g. "2026-11" -> { short: "Nov-2026", long: "November 2026", year: "2026", monthName: "November" }
   const formatMonth = (monthStr) => {
     if (!monthStr) return { short: '', long: '', monthName: '', year: '' };
@@ -346,30 +446,50 @@ export default function MaintenancePage() {
     };
   };
 
-  // All active billing months tracked in system (strictly within selected cycle range)
+  // All billing months tracked in system across created cycles (both active and inactive)
   const allBillingMonths = useMemo(() => {
-    if (!cycleRange.startMonth || !cycleRange.endMonth) return [];
-    const [sY, sM] = cycleRange.startMonth.split('-').map(Number);
-    const [eY, eM] = cycleRange.endMonth.split('-').map(Number);
-    let curr = new Date(sY, sM - 1, 1);
-    const stop = new Date(eY, eM - 1, 1);
-    const list = [];
-    while (curr <= stop) {
-      const yyyy = curr.getFullYear();
-      const mm = String(curr.getMonth() + 1).padStart(2, '0');
-      list.push(`${yyyy}-${mm}`);
-      curr.setMonth(curr.getMonth() + 1);
-    }
-    // Also include any months that actually have bills within this cycle range
-    bills.forEach((b) => {
-      if (b.billing_cycle === 'MONTHLY' && b.billing_period && /^\d{4}-\d{2}$/.test(b.billing_period)) {
-        if (b.billing_period >= cycleRange.startMonth && b.billing_period <= cycleRange.endMonth) {
-          if (!list.includes(b.billing_period)) list.push(b.billing_period);
+    const list = new Set();
+
+    // 1. Include all months defined across any created cycle
+    if (Array.isArray(cycles) && cycles.length > 0) {
+      cycles.forEach((c) => {
+        if (c.start_month && c.end_month) {
+          const cMonths = getMonthsBetween(c.start_month, c.end_month);
+          cMonths.forEach((m) => list.add(m));
         }
+      });
+    } else if (cycleRange.startMonth && cycleRange.endMonth) {
+      const defMonths = getMonthsBetween(cycleRange.startMonth, cycleRange.endMonth);
+      defMonths.forEach((m) => list.add(m));
+    }
+
+    // 2. Also include any months that actually have bills
+    bills.forEach((b) => {
+      if (b.billing_period && /^\d{4}-\d{2}$/.test(b.billing_period)) {
+        list.add(b.billing_period);
       }
+      const cov = getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
+      cov.forEach((m) => list.add(m));
     });
-    return list.sort();
-  }, [cycleRange, bills]);
+
+    return Array.from(list).sort();
+  }, [cycles, cycleRange, bills]);
+
+  // Helper to check which cycle a month belongs to (all configured cycles are valid and payable)
+  const getMonthCycleInfo = (monthKey) => {
+    if (!monthKey) {
+      return { cycle: null, cycleId: null, cycleName: 'Out of Cycle' };
+    }
+    const matchingCycle = Array.isArray(cycles)
+      ? cycles.find((c) => c.start_month && c.end_month && monthKey >= c.start_month && monthKey <= c.end_month)
+      : null;
+
+    return {
+      cycle: matchingCycle || null,
+      cycleId: matchingCycle?.id || null,
+      cycleName: matchingCycle ? matchingCycle.name : 'Out of Cycle',
+    };
+  };
 
   // Helper to get payment status of a specific home for a given month (e.g. "2026-11")
   const getHomeMonthStatus = (homeId, monthKey) => {
@@ -380,12 +500,17 @@ export default function MaintenancePage() {
       return covered.includes(monthKey);
     });
 
+    const cycleInfo = getMonthCycleInfo(monthKey);
+
     if (!bill) {
       return {
         status: 'NOT_INVOICED',
         label: 'Not Invoiced',
         isPaid: false,
         bill: null,
+        cycle: cycleInfo.cycle,
+        cycleId: cycleInfo.cycleId,
+        cycleName: cycleInfo.cycleName,
       };
     }
 
@@ -404,6 +529,9 @@ export default function MaintenancePage() {
         isMultiMonth,
         coveredMonths: covered,
         method: bill.payment_method || 'ONLINE',
+        cycle: cycleInfo.cycle,
+        cycleId: cycleInfo.cycleId,
+        cycleName: cycleInfo.cycleName,
       };
     }
 
@@ -417,6 +545,9 @@ export default function MaintenancePage() {
         monthlyShare: Math.round(Number(bill.total_amount) / numCovered),
         isMultiMonth,
         coveredMonths: covered,
+        cycle: cycleInfo.cycle,
+        cycleId: cycleInfo.cycleId,
+        cycleName: cycleInfo.cycleName,
       };
     }
 
@@ -429,58 +560,72 @@ export default function MaintenancePage() {
       monthlyShare: Math.round(Number(bill.balance_amount || bill.total_amount) / numCovered),
       isMultiMonth,
       coveredMonths: covered,
+      cycle: cycleInfo.cycle,
+      cycleId: cycleInfo.cycleId,
+      cycleName: cycleInfo.cycleName,
     };
   };
 
-  // Helper to get consolidated payment periods for a home (combining Quarterly into 1 card showing 2500 once)
+  // Helper to get consolidated payment periods for a home.
+  // Multi-month (quarterly) bills are expanded into one card PER month,
+  // each tagged with billGroupId so they can be rendered as a grouped block.
   const getHomePaymentPeriods = (targetHomeId) => {
     if (!targetHomeId) return [];
     const homeBills = bills.filter((b) => String(b.home_id) === String(targetHomeId));
     const periods = [];
     const handledMonths = new Set();
 
-    // 1. Process Multi-Month / Quarterly bills first so they combine their 3 months
+    // 1. Expand multi-month bills into per-month cards
     const multiMonthBills = homeBills.filter(
       (b) => ['QUARTERLY', 'HALF_YEARLY', 'YEARLY'].includes(b.billing_cycle) ||
-             (getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle).length > 1)
+        (getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle).length > 1)
     );
 
     multiMonthBills.forEach((qBill) => {
       const covered = getCoveredMonthsForPeriod(qBill.billing_period, qBill.billing_cycle);
-      if (covered.length > 0) {
-        covered.forEach((m) => handledMonths.add(m));
+      if (covered.length === 0) return;
+      covered.forEach((m) => handledMonths.add(m));
 
-        const firstFmt = formatMonth(covered[0]);
-        const lastFmt = formatMonth(covered[covered.length - 1]);
-        const isPaid = qBill.status === 'PAID';
-        const isPendingApproval = qBill.status === 'PENDING_APPROVAL' || Number(qBill.pending_payments_count) > 0;
+      const isPaid = qBill.status === 'PAID';
+      const isPendingApproval = qBill.status === 'PENDING_APPROVAL' || Number(qBill.pending_payments_count) > 0;
+      const status = isPaid ? 'PAID' : isPendingApproval ? 'PENDING_APPROVAL' : (qBill.status || 'PENDING');
 
+      covered.forEach((m, idx) => {
+        const fmt = formatMonth(m);
+        const cycleInfo = getMonthCycleInfo(m);
+        const isPrimary = idx === 0; // first month carries the full amount
         periods.push({
-          key: `bill-${qBill.id}`,
-          sortKey: covered[0],
+          key: `bill-${qBill.id}-${m}`,
+          sortKey: m,
           isMultiMonth: true,
+          isPrimary,
+          billGroupId: `bill-${qBill.id}`,
+          groupSize: covered.length,
+          groupIndex: idx,
           billing_cycle: qBill.billing_cycle,
-          title: `${firstFmt.short.split(' ')[0]} – ${lastFmt.short}`,
-          subTitle: `Covers ${covered.map((m) => formatMonth(m).short.split(' ')[0]).join(', ')} ${firstFmt.year}`,
-          cycleBadge: qBill.billing_cycle === 'QUARTERLY' ? 'Quarterly (3 Months Plan)' : `${covered.length} Months Combined`,
+          title: fmt.short,
           coveredMonths: covered,
-          amount: Number(qBill.paid_amount || qBill.total_amount),
-          balanceAmount: Number(qBill.balance_amount || qBill.total_amount),
+          amount: isPrimary ? Number(qBill.paid_amount || qBill.total_amount) : 0,
+          balanceAmount: isPrimary ? Number(qBill.balance_amount || qBill.total_amount) : 0,
           isPaid,
-          status: isPaid ? 'PAID' : isPendingApproval ? 'PENDING_APPROVAL' : (qBill.status || 'PENDING'),
-          label: isPaid ? 'Done Payment' : isPendingApproval ? 'Approval Pending' : (qBill.status === 'OVERDUE' ? 'Overdue Due' : 'Pending Due'),
+          status,
+          label: isPaid ? 'Done Payment' : isPendingApproval ? 'Approval Pending' : (qBill.status === 'OVERDUE' ? 'Overdue' : 'Pending Due'),
           bill: qBill,
+          cycle: cycleInfo.cycle,
+          cycleId: cycleInfo.cycleId,
+          cycleName: cycleInfo.cycleName,
         });
-      }
+      });
     });
 
-    // 2. Process all remaining months in allBillingMonths
+    // 2. Process remaining individual months
     allBillingMonths.forEach((m) => {
       if (handledMonths.has(m)) return;
       handledMonths.add(m);
 
       const mBill = homeBills.find((b) => b.billing_period === m);
       const fmt = formatMonth(m);
+      const cycleInfo = getMonthCycleInfo(m);
 
       if (mBill) {
         const isPaid = mBill.status === 'PAID';
@@ -489,34 +634,48 @@ export default function MaintenancePage() {
           key: `bill-${mBill.id}`,
           sortKey: m,
           isMultiMonth: false,
+          isPrimary: true,
+          billGroupId: `bill-${mBill.id}`,
+          groupSize: 1,
+          groupIndex: 0,
           billing_cycle: mBill.billing_cycle || 'MONTHLY',
           title: fmt.short,
-          subTitle: fmt.long,
-          cycleBadge: 'Monthly Plan',
           coveredMonths: [m],
           amount: Number(mBill.paid_amount || mBill.total_amount),
           balanceAmount: Number(mBill.balance_amount || mBill.total_amount),
           isPaid,
           status: isPaid ? 'PAID' : isPendingApproval ? 'PENDING_APPROVAL' : (mBill.status || 'PENDING'),
-          label: isPaid ? 'Done Payment' : isPendingApproval ? 'Approval Pending' : (mBill.status === 'OVERDUE' ? 'Overdue Due' : 'Pending Due'),
+          label: isPaid ? 'Done Payment' : isPendingApproval ? 'Approval Pending' : (mBill.status === 'OVERDUE' ? 'Overdue' : 'Pending Due'),
           bill: mBill,
+          cycle: cycleInfo.cycle,
+          cycleId: cycleInfo.cycleId,
+          cycleName: cycleInfo.cycleName,
         });
       } else {
+        const sampleBill = homeBills.find((b) => Number(b.base_amount || b.total_amount) > 0);
+        const samplePlan = plans.find((p) => p.billing_cycle === 'MONTHLY' && Number(p.base_amount) > 0);
+        const estimatedMonthFee = sampleBill ? Number(sampleBill.base_amount || sampleBill.total_amount) : (samplePlan ? Number(samplePlan.base_amount) : 0);
+
         periods.push({
           key: `month-${m}`,
           sortKey: m,
           isMultiMonth: false,
+          isPrimary: true,
+          billGroupId: `month-${m}`,
+          groupSize: 1,
+          groupIndex: 0,
           billing_cycle: 'MONTHLY',
           title: fmt.short,
-          subTitle: fmt.long,
-          cycleBadge: 'Monthly',
           coveredMonths: [m],
-          amount: 0,
-          balanceAmount: 0,
+          amount: estimatedMonthFee,
+          balanceAmount: estimatedMonthFee,
           isPaid: false,
-          status: 'NOT_INVOICED',
-          label: 'Not Invoiced',
+          status: 'LEFT_TO_PAY',
+          label: 'Left to Pay',
           bill: null,
+          cycle: cycleInfo.cycle,
+          cycleId: cycleInfo.cycleId,
+          cycleName: cycleInfo.cycleName,
         });
       }
     });
@@ -524,16 +683,26 @@ export default function MaintenancePage() {
     return periods.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   };
 
+
   // Filtered Bills: Only show own maintenance for non-admins, or toggle for admins
   const filteredBills = useMemo(() => {
     return bills.filter((b) => {
       // Non-admins (Owners, Tenants, Family members) ONLY see their own maintenance bills
       if (!isAdmin || scopeFilter === 'MY_HOME') {
         const isMyHome =
+          (user?.homeId && Number(b.home_id) === Number(user.homeId)) ||
+          (user?.home_id && Number(b.home_id) === Number(user.home_id)) ||
           (myHomeNumber && String(b.home_number).trim().toLowerCase() === String(myHomeNumber).trim().toLowerCase()) ||
           (user?.id && Number(b.resident_id) === Number(user.id)) ||
           (user?.phone && b.resident_phone && String(b.resident_phone).trim() === String(user.phone).trim());
-        if (!isMyHome) return false;
+        if (!isMyHome) {
+          if (!isAdmin) {
+            const distinctHomes = new Set(bills.map((x) => x.home_id).filter(Boolean));
+            if (distinctHomes.size !== 1) return false;
+          } else {
+            return false;
+          }
+        }
       }
 
       if (statusFilter !== 'ALL' && b.status !== statusFilter) return false;
@@ -570,10 +739,19 @@ export default function MaintenancePage() {
     return payments.filter((p) => {
       if (!isAdmin || scopeFilter === 'MY_HOME') {
         const isMyPayment =
+          (user?.homeId && Number(p.home_id) === Number(user.homeId)) ||
+          (user?.home_id && Number(p.home_id) === Number(user.home_id)) ||
           (myHomeNumber && String(p.home_number).trim().toLowerCase() === String(myHomeNumber).trim().toLowerCase()) ||
           (user?.id && Number(p.paid_by_user_id || p.resident_id) === Number(user.id)) ||
           (user?.phone && p.resident_phone && String(p.resident_phone).trim() === String(user.phone).trim());
-        if (!isMyPayment) return false;
+        if (!isMyPayment) {
+          if (!isAdmin) {
+            const distinctHomes = new Set(payments.map((x) => x.home_id).filter(Boolean));
+            if (distinctHomes.size !== 1) return false;
+          } else {
+            return false;
+          }
+        }
       }
       return true;
     });
@@ -624,14 +802,15 @@ export default function MaintenancePage() {
   // Available Plans for the logged-in resident (e.g. Owner sees Monthly & Quarterly, Tenant sees Monthly)
   const residentAvailablePlans = useMemo(() => {
     if (isAdmin) return [];
-    const roleNormalized = (user?.role || '').toUpperCase() === 'OWNER' ? 'OWNER' : ((user?.role || '').toUpperCase() === 'TENANT' ? 'TENANT' : 'BOTH');
+    const userRole = (user?.role || '').toUpperCase();
+    const roleNormalized = (userRole === 'OWNER' || userRole === 'FAMILY_MEMBER') ? 'OWNER' : (userRole === 'TENANT' ? 'TENANT' : 'BOTH');
     return plans.filter((p) => {
       const matchRole = p.resident_type === 'BOTH' || p.resident_type === roleNormalized;
       return matchRole && p.status === 'ACTIVE';
     });
   }, [isAdmin, user, plans]);
 
-  // Helper to determine the next unpaid period for a given plan (advance billing)
+  // Helper to determine the next unpaid period for a given plan (advance billing & active cycle boundary)
   const getNextUnpaidPeriodForPlan = (plan) => {
     const today = new Date();
     const curYear = today.getFullYear();
@@ -648,26 +827,123 @@ export default function MaintenancePage() {
       }
     });
 
+    const planDuration =
+      plan.billing_cycle === 'YEARLY'
+        ? 12
+        : plan.billing_cycle === 'HALF_YEARLY'
+          ? 6
+          : plan.billing_cycle === 'QUARTERLY'
+            ? 3
+            : 1;
+
+    // ACTIVE CYCLE ENFORCEMENT
+    if (activeCycle && activeCycle.start_month && activeCycle.end_month) {
+      const cycleMonths = getMonthsBetween(activeCycle.start_month, activeCycle.end_month);
+      const unpaidCycleMonths = cycleMonths.filter((m) => !paidMonthsSet.has(m));
+
+      if (unpaidCycleMonths.length === 0) {
+        return {
+          isEligible: false,
+          isAllPaid: true,
+          period: null,
+          rollingMonths: [],
+          desc: 'Active Cycle Fully Paid',
+          disabledReason: `All months in active cycle "${activeCycle.name}" (${formatMonth(activeCycle.start_month).short} to ${formatMonth(activeCycle.end_month).short}) are already fully paid!`,
+        };
+      }
+
+      // Rule: Plan duration cannot exceed remaining unpaid months
+      if (planDuration > unpaidCycleMonths.length) {
+        return {
+          isEligible: false,
+          isAllPaid: false,
+          period: unpaidCycleMonths[0],
+          rollingMonths: [],
+          desc: `${unpaidCycleMonths.length} month(s) left in cycle`,
+          disabledReason: `Cannot select ${plan.name} (${planDuration} months): Only ${unpaidCycleMonths.length} unpaid month(s) remain in active cycle "${activeCycle.name}" (${formatMonth(activeCycle.start_month).short} to ${formatMonth(activeCycle.end_month).short}).`,
+        };
+      }
+
+      // Rule: Remaining unpaid months must divide cleanly by plan duration
+      if (unpaidCycleMonths.length % planDuration !== 0) {
+        return {
+          isEligible: false,
+          isAllPaid: false,
+          period: unpaidCycleMonths[0],
+          rollingMonths: [],
+          desc: `${unpaidCycleMonths.length} month(s) left in cycle`,
+          disabledReason: `Cannot select ${plan.name} (${planDuration} months): ${unpaidCycleMonths.length} unpaid month(s) remaining in active cycle "${activeCycle.name}" cannot be divided into ${planDuration}-month periods. Please use the Monthly plan.`,
+        };
+      }
+
+      // Eligible: take the next planDuration months from unpaidCycleMonths
+      const targetStartMonth = unpaidCycleMonths[0];
+      const rollingMonths = unpaidCycleMonths.slice(0, planDuration);
+
+      const monthNames = [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ];
+      const yearGroups = {};
+      rollingMonths.forEach((ms) => {
+        const [y, m] = ms.split('-');
+        if (!yearGroups[y]) yearGroups[y] = [];
+        yearGroups[y].push(monthNames[parseInt(m, 10) - 1]);
+      });
+      const desc = Object.entries(yearGroups)
+        .map(([y, mns]) => `${mns.join(', ')} ${y}`)
+        .join(' & ');
+
+      const isAdvance = targetStartMonth !== `${curYear}-${String(curMonth).padStart(2, '0')}`;
+      return {
+        isEligible: true,
+        isAllPaid: false,
+        period: targetStartMonth,
+        rollingMonths,
+        isAdvance,
+        desc,
+      };
+    }
+
+    // Fallback if no active cycle configured in backend
     if (plan.billing_cycle === 'QUARTERLY') {
-      const curQ = Math.ceil(curMonth / 3);
-      let qNum = curQ;
-      let qYear = curYear;
+      let mNum = curMonth;
+      let mYear = curYear;
       while (true) {
-        const qStr = `Q${qNum}-${qYear}`;
-        const qMonths = getCoveredMonthsForPeriod(qStr, 'QUARTERLY');
-        const hasAnyPaidMonth = qMonths.some((m) => paidMonthsSet.has(m));
-        if (!hasAnyPaidMonth) {
+        const mStr = `${mYear}-${String(mNum).padStart(2, '0')}`;
+        if (!paidMonthsSet.has(mStr)) {
+          const rollingMonths = [];
+          for (let i = 0; i < 3; i++) {
+            let nm = mNum + i;
+            let ny = mYear;
+            if (nm > 12) { nm -= 12; ny++; }
+            rollingMonths.push(`${ny}-${String(nm).padStart(2, '0')}`);
+          }
+          const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December',
+          ];
+          const yearGroups = {};
+          rollingMonths.forEach((ms) => {
+            const [y, m] = ms.split('-');
+            if (!yearGroups[y]) yearGroups[y] = [];
+            yearGroups[y].push(monthNames[parseInt(m, 10) - 1]);
+          });
+          const desc = Object.entries(yearGroups)
+            .map(([y, mns]) => `${mns.join(', ')} ${y}`)
+            .join(' & ');
+          const isAdvance = mNum !== curMonth || mYear !== curYear;
           return {
-            period: qStr,
-            isAdvance: qNum !== curQ || qYear !== curYear,
-            desc: getCoveredMonthsDescription(qStr, 'QUARTERLY'),
+            isEligible: true,
+            isAllPaid: false,
+            period: mStr,
+            rollingMonths,
+            isAdvance,
+            desc,
           };
         }
-        qNum++;
-        if (qNum > 4) {
-          qNum = 1;
-          qYear++;
-        }
+        mNum++;
+        if (mNum > 12) { mNum = 1; mYear++; }
       }
     }
 
@@ -678,6 +954,8 @@ export default function MaintenancePage() {
       if (!paidMonthsSet.has(mStr)) {
         const isAdvance = mNum !== curMonth || mYear !== curYear;
         return {
+          isEligible: true,
+          isAllPaid: false,
           period: mStr,
           isAdvance,
           desc: formatMonth(mStr).long,
@@ -691,24 +969,131 @@ export default function MaintenancePage() {
     }
   };
 
-  const handleSelectPlan = async (plan, targetPeriod = null) => {
-    setActionLoading(true);
-    try {
-      const payload = { plan_id: plan.id };
-      if (targetPeriod) {
-        payload.billing_period = targetPeriod;
-      }
-      const res = await maintenanceApi.selectResidentPlan(payload);
-      const bill = res.data?.bill;
-      await fetchData();
-      if (bill) {
-        handleOpenPaymentModal(bill);
-      }
-    } catch (err) {
-      showError(err.message || 'Failed to select maintenance plan');
-    } finally {
-      setActionLoading(false);
+  // Cycle Management Handlers (Admin can create upcoming cycles or modify existing cycles)
+  const handleOpenCreateCycleModal = () => {
+    setEditingCycle(null);
+    const sortedCycles = Array.isArray(cycles) && cycles.length > 0
+      ? [...cycles].sort((a, b) => (a.end_month || '').localeCompare(b.end_month || ''))
+      : [];
+    const latestCycle = sortedCycles.length > 0 ? sortedCycles[sortedCycles.length - 1] : null;
+
+    let nextStart = '';
+    if (latestCycle && latestCycle.end_month) {
+      const [y, m] = latestCycle.end_month.split('-').map(Number);
+      let nm = m + 1;
+      let ny = y;
+      if (nm > 12) { nm = 1; ny += 1; }
+      nextStart = `${ny}-${String(nm).padStart(2, '0')}`;
+    } else {
+      const today = new Date();
+      nextStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     }
+
+    const [sy, sm] = nextStart.split('-').map(Number);
+    let ey = sy;
+    let em = sm + 11;
+    while (em > 12) { em -= 12; ey += 1; }
+    const defaultEnd = `${ey}-${String(em).padStart(2, '0')}`;
+
+    const cycleNumber = sortedCycles.length + 1;
+    setNewCycleForm({
+      name: `Cycle ${cycleNumber} (${formatMonth(nextStart).short} - ${formatMonth(defaultEnd).short})`,
+      start_month: nextStart,
+      end_month: defaultEnd,
+    });
+    setShowCycleModal(true);
+  };
+
+  const handleOpenCycleModal = () => {
+    handleOpenCreateCycleModal();
+  };
+
+  const handleOpenEditCycleModal = (cycle) => {
+    setEditingCycle(cycle);
+    setNewCycleForm({
+      name: cycle.name,
+      start_month: cycle.start_month,
+      end_month: cycle.end_month,
+    });
+    setShowCycleModal(true);
+  };
+
+  const handleSaveCycle = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!newCycleForm.name?.trim() || !newCycleForm.start_month || !newCycleForm.end_month) {
+      showError('Please provide cycle name, start month, and end month');
+      return;
+    }
+    if (newCycleForm.start_month > newCycleForm.end_month) {
+      showError('Start month cannot be after end month');
+      return;
+    }
+
+    try {
+      setCycleActionLoading(true);
+      if (editingCycle) {
+        await maintenanceApi.updateCycle(editingCycle.id, {
+          name: newCycleForm.name.trim(),
+          start_month: newCycleForm.start_month,
+          end_month: newCycleForm.end_month,
+        });
+        showToast(`Cycle "${newCycleForm.name}" updated successfully!`);
+      } else {
+        await maintenanceApi.createCycle({
+          society_id: selectedSocietyId,
+          name: newCycleForm.name.trim(),
+          start_month: newCycleForm.start_month,
+          end_month: newCycleForm.end_month,
+        });
+        showToast(`Cycle "${newCycleForm.name}" created successfully!`);
+      }
+      setShowCycleModal(false);
+      setEditingCycle(null);
+      setNewCycleForm({ name: '', start_month: '', end_month: '' });
+      await fetchData();
+    } catch (err) {
+      console.error('Error saving cycle:', err);
+      showError(err.response?.data?.message || err.message || 'Failed to save cycle');
+    } finally {
+      setCycleActionLoading(false);
+    }
+  };
+
+  const handleDeleteCycle = async (cycleId) => {
+    if (!window.confirm('Are you sure you want to delete this maintenance cycle?')) return;
+    try {
+      setCycleActionLoading(true);
+      await maintenanceApi.deleteCycle(cycleId);
+      showToast('Cycle deleted successfully');
+      await fetchData();
+    } catch (err) {
+      console.error('Error deleting cycle:', err);
+      showError(err.response?.data?.message || err.message || 'Failed to delete cycle');
+    } finally {
+      setCycleActionLoading(false);
+    }
+  };
+
+  const handleProceedToPayPlan = (plan, targetPeriod = null) => {
+    setShowPayMaintenanceModal(false);
+    // Draft payment object - invoice will only be generated upon clicking "Confirm Payment"
+    const draftPaymentObj = {
+      isPlanPayment: true,
+      plan,
+      billing_period: targetPeriod,
+      billing_cycle: plan.billing_cycle,
+      plan_name: plan.name,
+      total_amount: Number(plan.amount),
+      balance_amount: Number(plan.amount),
+      amount: Number(plan.amount),
+      home_number: myHomeNumber,
+      resident_name: user?.name,
+    };
+    handleOpenPaymentModal(draftPaymentObj);
+  };
+
+  const handleSelectPlan = (plan, targetPeriod = null) => {
+    handleProceedToPayPlan(plan, targetPeriod);
   };
 
   // Plan Handlers
@@ -862,16 +1247,33 @@ export default function MaintenancePage() {
 
     setActionLoading(true);
     try {
+      let targetBill = selectedBillForPayment;
+
+      // If initiated from "Pay Maintenance" plan selection (draft plan):
+      // Only generate the bill / invoice now upon confirming payment!
+      if (selectedBillForPayment?.isPlanPayment) {
+        const payload = { plan_id: selectedBillForPayment.plan.id };
+        if (selectedBillForPayment.billing_period) {
+          payload.billing_period = selectedBillForPayment.billing_period;
+        }
+        const planRes = await maintenanceApi.selectResidentPlan(payload);
+        targetBill = planRes.data?.bill;
+        if (!targetBill) {
+          throw new Error('Failed to generate invoice for the selected plan');
+        }
+      }
+
       const res = await maintenanceApi.recordPayment({
-        bill_id: selectedBillForPayment.id,
+        bill_id: targetBill.id,
         amount: Number(paymentFormData.amount),
         payment_method: paymentFormData.payment_method,
         transaction_reference: paymentFormData.transaction_reference,
         remarks: paymentFormData.remarks,
       });
+
       const coveredDesc = getCoveredMonthsDescription(
-        selectedBillForPayment.billing_period,
-        selectedBillForPayment.billing_cycle
+        targetBill.billing_period,
+        targetBill.billing_cycle
       );
       const isPending = res.data?.payment?.status === 'PENDING_APPROVAL';
       if (isPending) {
@@ -879,8 +1281,18 @@ export default function MaintenancePage() {
       } else {
         showToast(`Payment of ₹${paymentFormData.amount} recorded and approved successfully for ${coveredDesc}!`);
       }
+
       setShowPaymentModal(false);
-      fetchData();
+      await fetchData();
+
+      // Show the generated invoice & receipt preview immediately after confirming payment
+      try {
+        const fullBillRes = await maintenanceApi.getBillById(targetBill.id);
+        setSelectedBillForReceipt(fullBillRes.data?.bill || targetBill);
+      } catch {
+        setSelectedBillForReceipt(targetBill);
+      }
+      setShowReceiptModal(true);
     } catch (err) {
       showError(err.message || 'Failed to record payment');
     } finally {
@@ -1236,7 +1648,42 @@ export default function MaintenancePage() {
             </div>
           )}
 
-          {isAdmin && (
+          {isAdmin ? (
+            <>
+              <button
+                type="button"
+                onClick={handleOpenCycleModal}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '7px',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  color: 'var(--text-main)',
+                  border: '1.5px solid var(--border-card)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '9px 14px',
+                  fontSize: '0.84rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                title="Manage society maintenance cycles and activation"
+              >
+                <CalendarDays size={16} color="var(--color-clay)" />
+                <span>
+                  Cycle: {activeCycle ? activeCycle.name : `${formatMonth(cycleRange.startMonth).short} - ${formatMonth(cycleRange.endMonth).short}`}
+                </span>
+                <span
+                  style={{
+                    background: activeCycle ? '#10b981' : '#f59e0b',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    display: 'inline-block',
+                  }}
+                />
+              </button>
+
               <button
                 onClick={handleOpenCreatePlan}
                 style={{
@@ -1258,6 +1705,27 @@ export default function MaintenancePage() {
                 <Plus size={16} />
                 <span>New Plan</span>
               </button>
+            </>
+          ) : (
+            activeCycle && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: '0.8rem',
+                  fontWeight: 700,
+                  color: '#10b981',
+                }}
+              >
+                <CalendarDays size={14} />
+                <span>Active Cycle: {activeCycle.name}</span>
+              </div>
+            )
           )}
         </div>
       </div>
@@ -1417,7 +1885,7 @@ export default function MaintenancePage() {
             }}
           >
             <FileText size={17} />
-            <span>Invoices & Collections ({filteredBills.length})</span>
+            <span>Invoices & Collections(2)</span>
           </button>
 
           <button
@@ -1495,1603 +1963,505 @@ export default function MaintenancePage() {
           ===================================================================== */}
       {activeTab === 'bills' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Transparency / Community Notice for Non-Admins */}
+          {/* Owner / Family Member Sub-Tabs: "Invoices" and "Month Payment Tracker" */}
           {!isAdmin && (
             <div
               style={{
-                background: 'rgba(196, 154, 108, 0.09)',
-                border: '1px solid rgba(196, 154, 108, 0.3)',
-                borderRadius: 'var(--radius-md)',
-                padding: '12px 18px',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
                 gap: '10px',
-                fontSize: '0.84rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Home size={18} color="var(--color-clay)" />
-                <span style={{ color: 'var(--text-main)' }}>
-                  <strong>My Maintenance Account:</strong> Viewing maintenance bills, dues, and payment options for your unit.
-                </span>
-              </div>
-              {myHomeNumber && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>Logged in for:</span>
-                  <span
-                    style={{
-                      background: 'var(--color-clay)',
-                      color: '#ffffff',
-                      padding: '3px 9px',
-                      borderRadius: 'var(--radius-full)',
-                      fontWeight: 700,
-                      fontSize: '0.75rem',
-                    }}
-                  >
-                    Home {myHomeNumber}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-
-          {/* Resident Month-Wise Payment Done Track Record */}
-          {!isAdmin && (
-            <div
-              style={{
                 background: 'var(--bg-secondary)',
                 border: '1px solid var(--border-card)',
-                borderRadius: 'var(--radius-md)',
-                padding: '16px 20px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px',
-              }}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CalendarDays size={18} color="var(--color-clay)" />
-                    <span>My Monthly Payment Track Record {myHomeNumber ? `(Unit / Home ${myHomeNumber})` : ''}</span>
-                  </h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Monthly breakdown of maintenance dues and verified payments for your home.
-                  </p>
-                </div>
-              </div>
-
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-                  gap: '10px',
-                }}
-              >
-                {allBillingMonths.slice(0, 6).map((m) => {
-                  const myHomeObj = allHomes.find(
-                    (h) => (myHomeNumber && String(h.home_number).trim() === String(myHomeNumber).trim()) ||
-                           (filteredBills.length > 0 && String(h.id) === String(filteredBills[0]?.home_id))
-                  );
-                  const homeId = myHomeObj?.id || filteredBills[0]?.home_id;
-                  const monthStatus = homeId ? getHomeMonthStatus(homeId, m) : { status: 'NOT_INVOICED', label: 'Not Invoiced', isPaid: false };
-                  const fmt = formatMonth(m);
-
-                  return (
-                    <div
-                      key={m}
-                      style={{
-                        background: monthStatus.isPaid
-                          ? 'rgba(16, 185, 129, 0.08)'
-                          : monthStatus.status === 'PENDING_APPROVAL'
-                          ? 'rgba(245, 158, 11, 0.08)'
-                          : monthStatus.status === 'NOT_INVOICED'
-                          ? 'rgba(255, 255, 255, 0.02)'
-                          : 'rgba(239, 68, 68, 0.08)',
-                        border: monthStatus.isPaid
-                          ? '1px solid #10b981'
-                          : monthStatus.status === 'PENDING_APPROVAL'
-                          ? '1px solid #f59e0b'
-                          : monthStatus.status === 'NOT_INVOICED'
-                          ? '1px dashed var(--border-card)'
-                          : '1px solid rgba(239, 68, 68, 0.4)',
-                        borderRadius: '8px',
-                        padding: '12px 14px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-main)' }}>
-                          {fmt.short}
-                        </span>
-                        {monthStatus.isPaid ? (
-                          <span
-                            style={{
-                              background: '#10b981',
-                              color: '#fff',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.7rem',
-                              fontWeight: 800,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            <CheckCircle2 size={12} />
-                            Done Payment
-                          </span>
-                        ) : monthStatus.status === 'PENDING_APPROVAL' ? (
-                          <span
-                            style={{
-                              background: '#f59e0b',
-                              color: '#000',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.7rem',
-                              fontWeight: 800,
-                            }}
-                          >
-                            Approval Pending
-                          </span>
-                        ) : monthStatus.status === 'NOT_INVOICED' ? (
-                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Not Invoiced</span>
-                        ) : (
-                          <span
-                            style={{
-                              background: 'rgba(239, 68, 68, 0.15)',
-                              color: '#ef4444',
-                              padding: '2px 8px',
-                              borderRadius: '4px',
-                              fontSize: '0.7rem',
-                              fontWeight: 800,
-                            }}
-                          >
-                            Pending Due
-                          </span>
-                        )}
-                      </div>
-
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.78rem' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>
-                          {monthStatus.isPaid
-                            ? `₹${Number(monthStatus.amount || 0).toLocaleString()} Paid (Approved)`
-                            : monthStatus.bill
-                            ? `Due: ₹${Number(monthStatus.amount || 0).toLocaleString()}`
-                            : '—'}
-                        </span>
-
-                        {monthStatus.bill && !monthStatus.isPaid && monthStatus.status !== 'PENDING_APPROVAL' && (
-                          <button
-                            onClick={() => handleOpenPaymentModal(monthStatus.bill)}
-                            style={{
-                              background: 'var(--color-clay)',
-                              color: '#fff',
-                              border: 'none',
-                              borderRadius: '4px',
-                              padding: '4px 10px',
-                              fontSize: '0.75rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Pay Dues
-                          </button>
-                        )}
-                        {monthStatus.bill && monthStatus.isPaid && (
-                          <button
-                            onClick={() => handleOpenReceiptModal(monthStatus.bill)}
-                            style={{
-                              background: 'transparent',
-                              border: '1px solid var(--border-card)',
-                              color: 'var(--text-main)',
-                              borderRadius: '4px',
-                              padding: '3px 8px',
-                              fontSize: '0.72rem',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            Receipt
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Admin View Switcher: Invoices Table | Home No List | Month-Wise List */}
-          {isAdmin && (
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                borderRadius: 'var(--radius-lg)',
+                padding: '8px 12px',
+                marginBottom: '4px',
+                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.04)',
                 flexWrap: 'wrap',
-                gap: '12px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-card)',
-                borderRadius: 'var(--radius-md)',
-                padding: '10px 16px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)' }}>
-                  View Mode:
-                </span>
-                <div
-                  style={{
-                    display: 'flex',
-                    background: 'var(--bg-primary)',
-                    borderRadius: '8px',
-                    padding: '3px',
-                    border: '1px solid var(--border-card)',
-                    gap: '3px',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('TABLE')}
-                    style={{
-                      background: viewMode === 'TABLE' ? 'var(--color-clay)' : 'transparent',
-                      color: viewMode === 'TABLE' ? '#ffffff' : 'var(--text-muted)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: viewMode === 'TABLE' ? 700 : 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <FileText size={14} />
-                    <span>📑 Invoices Table</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('HOME_LIST')}
-                    style={{
-                      background: viewMode === 'HOME_LIST' ? 'var(--color-clay)' : 'transparent',
-                      color: viewMode === 'HOME_LIST' ? '#ffffff' : 'var(--text-muted)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: viewMode === 'HOME_LIST' ? 700 : 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <Home size={14} />
-                    <span>🏠 Home No List</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setViewMode('MONTH_LIST')}
-                    style={{
-                      background: viewMode === 'MONTH_LIST' ? 'var(--color-clay)' : 'transparent',
-                      color: viewMode === 'MONTH_LIST' ? '#ffffff' : 'var(--text-muted)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 14px',
-                      fontSize: '0.8rem',
-                      fontWeight: viewMode === 'MONTH_LIST' ? 700 : 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <CalendarDays size={14} />
-                    <span>📅 Month-Wise List</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Maintenance Cycle Selector Button for Admin */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Cycle:</span>
-                <button
-                  type="button"
-                  id="btn-admin-maintenance-cycle"
-                  onClick={() => {
-                    setCycleForm(cycleRange);
-                    setShowCycleModal(true);
-                  }}
-                  className="btn btn-outline"
-                  style={{
-                    padding: '6px 14px',
-                    fontSize: '0.8rem',
-                    fontWeight: 700,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: 'rgba(196, 154, 108, 0.12)',
-                    borderColor: 'var(--color-clay)',
-                    color: 'var(--color-clay)',
-                    borderRadius: '20px',
-                    cursor: 'pointer',
-                  }}
-                  title="Click to select start and end month cycle"
-                >
-                  <CalendarDays size={14} />
-                  <span>{formatMonth(cycleRange.startMonth).short} to {formatMonth(cycleRange.endMonth).short}</span>
-                  <Edit2 size={12} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* VIEW 1: STANDARD INVOICES TABLE */}
-          {(viewMode === 'TABLE' || !isAdmin) && (
-            <>
-              {/* Filter Bar */}
-              <div
-            style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: '12px',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}
-          >
-            {/* Scope Filter: Admins can toggle between All Society Homes and My Home. Residents only see their own home */}
-            {isAdmin ? (
-              <div
+              <button
+                type="button"
+                id="subtab-invoices"
+                onClick={() => setBillsSubTab('INVOICES')}
                 style={{
-                  display: 'flex',
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-card)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '3px',
-                  gap: '3px',
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setScopeFilter('ALL')}
-                  style={{
-                    background: scopeFilter === 'ALL' ? 'var(--color-clay)' : 'transparent',
-                    color: scopeFilter === 'ALL' ? '#ffffff' : 'var(--text-muted)',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '6px 12px',
-                    fontSize: '0.8rem',
-                    fontWeight: scopeFilter === 'ALL' ? 700 : 500,
-                    cursor: 'pointer',
-                    transition: 'all 0.15s',
-                  }}
-                >
-                  All Society Homes ({bills.length})
-                </button>
-
-                {myHomeNumber && (
-                  <button
-                    type="button"
-                    onClick={() => setScopeFilter('MY_HOME')}
-                    style={{
-                      background: scopeFilter === 'MY_HOME' ? 'var(--color-clay)' : 'transparent',
-                      color: scopeFilter === 'MY_HOME' ? '#ffffff' : 'var(--text-muted)',
-                      border: 'none',
-                      borderRadius: '6px',
-                      padding: '6px 12px',
-                      fontSize: '0.8rem',
-                      fontWeight: scopeFilter === 'MY_HOME' ? 700 : 500,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    My Home (Unit {myHomeNumber})
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(196, 154, 108, 0.1)',
-                  border: '1px solid rgba(196, 154, 108, 0.3)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '6px 14px',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                  color: 'var(--color-clay)',
-                }}
-              >
-                <Home size={15} />
-                <span>My Unit Maintenance {myHomeNumber ? `(Home ${myHomeNumber})` : ''}</span>
-              </div>
-            )}
-
-            {/* Search Input */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-card)',
-                borderRadius: 'var(--radius-md)',
-                padding: '6px 14px',
-                minWidth: '260px',
-                flex: 1,
-              }}
-            >
-              <Search size={16} color="var(--text-muted)" />
-              <input
-                type="text"
-                placeholder="Search unit, resident name, invoice no..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={{
-                  background: 'transparent',
+                  background: billsSubTab === 'INVOICES' ? 'var(--color-clay)' : 'transparent',
+                  color: billsSubTab === 'INVOICES' ? '#ffffff' : 'var(--text-muted)',
                   border: 'none',
-                  color: 'var(--text-main)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '9px 20px',
                   fontSize: '0.88rem',
-                  outline: 'none',
-                  width: '100%',
-                }}
-              />
-            </div>
-
-            {/* Status Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-card)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '7px 12px',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="PENDING">Pending</option>
-                <option value="PENDING_APPROVAL">Pending Admin Approval</option>
-                <option value="OVERDUE">Overdue</option>
-                <option value="PARTIALLY_PAID">Partially Paid</option>
-                <option value="PAID">Paid / Approved</option>
-              </select>
-            </div>
-
-            {/* Cycle Filter */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Period:</span>
-              <select
-                value={cycleFilter}
-                onChange={(e) => setCycleFilter(e.target.value)}
-                style={{
-                  background: 'var(--bg-secondary)',
-                  color: 'var(--text-main)',
-                  border: '1px solid var(--border-card)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '7px 12px',
-                  fontSize: '0.85rem',
-                }}
-              >
-                <option value="ALL">All Cycles</option>
-                <option value="MONTHLY">Monthly</option>
-                <option value="QUARTERLY">Quarterly (3 Months)</option>
-                <option value="HALF_YEARLY">Half-Yearly</option>
-                <option value="YEARLY">Yearly</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Table Container */}
-          <div
-            style={{
-              background: 'var(--bg-secondary)',
-              border: '1px solid var(--border-card)',
-              borderRadius: 'var(--radius-md)',
-              overflowX: 'auto',
-            }}
-          >
-            {loading ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                Loading maintenance invoices...
-              </div>
-            ) : filteredBills.length === 0 ? (
-              <div style={{ padding: '50px 20px', textAlign: 'center' }}>
-                <Receipt size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
-                <h3 style={{ margin: 0, color: 'var(--text-main)' }}>No Invoices Found</h3>
-                <p style={{ margin: '6px 0 16px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  {bills.length === 0
-                    ? 'No maintenance bills have been generated for this society yet.'
-                    : 'No invoices match your current search and filter criteria.'}
-                </p>
-                {isAdmin && bills.length === 0 && (
-                  <button
-                    onClick={handleOpenGenerateModal}
-                    style={{
-                      background: 'var(--color-clay)',
-                      color: '#fff',
-                      border: 'none',
-                      borderRadius: 'var(--radius-md)',
-                      padding: '8px 18px',
-                      fontSize: '0.85rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Generate First Invoices
-                  </button>
-                )}
-              </div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border-card)', background: 'rgba(255,255,255,0.02)' }}>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Invoice #</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Unit / Home</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Resident</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Period</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Base</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Late Penalty</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Total / Balance</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Due Date</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
-                    <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredBills.map((b) => {
-                    const isOverdue = b.status === 'OVERDUE';
-                    const isPaid = b.status === 'PAID';
-                    const hasPenalty = Number(b.penalty_amount) > 0;
-                    const isMyHome = Boolean(
-                      (myHomeNumber && String(b.home_number).trim().toLowerCase() === String(myHomeNumber).trim().toLowerCase()) ||
-                      (user?.id && Number(b.resident_id) === Number(user.id)) ||
-                      (user?.phone && b.resident_phone && String(b.resident_phone).trim() === String(user.phone).trim())
-                    );
-
-                    return (
-                      <tr
-                        key={b.id}
-                        style={{
-                          borderBottom: '1px solid var(--border-card)',
-                          background: isMyHome
-                            ? 'rgba(196, 154, 108, 0.08)'
-                            : isOverdue
-                            ? 'rgba(239, 68, 68, 0.03)'
-                            : 'transparent',
-                        }}
-                      >
-                        {/* Invoice Number */}
-                        <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--text-main)' }}>
-                          {b.bill_number}
-                        </td>
-
-                        {/* Unit / Home */}
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            <span style={{ fontWeight: 700, color: 'var(--color-clay)' }}>{b.home_number}</span>
-                            {isMyHome && (
-                              <span
-                                style={{
-                                  background: 'var(--color-clay)',
-                                  color: '#ffffff',
-                                  fontSize: '0.65rem',
-                                  fontWeight: 800,
-                                  padding: '1px 6px',
-                                  borderRadius: '3px',
-                                  textTransform: 'uppercase',
-                                }}
-                              >
-                                My Home
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {b.home_type} {b.block_or_tower ? `• ${b.block_or_tower}` : ''}
-                          </div>
-                        </td>
-
-                        {/* Resident */}
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>
-                            {b.resident_name || 'Vacant / Unassigned'}
-                          </div>
-                          {b.resident_phone && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{b.resident_phone}</div>
-                          )}
-                        </td>
-
-                        {/* Period */}
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.84rem' }}>
-                            {getCoveredMonthsDescription(b.billing_period, b.billing_cycle)}
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '3px' }}>
-                            <span
-                              style={{
-                                background: b.billing_cycle === 'QUARTERLY' ? 'rgba(59, 130, 246, 0.12)' : 'rgba(196, 154, 108, 0.12)',
-                                color: b.billing_cycle === 'QUARTERLY' ? '#3b82f6' : 'var(--color-clay)',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                                fontSize: '0.7rem',
-                                fontWeight: 700,
-                              }}
-                            >
-                              {b.billing_cycle === 'QUARTERLY' ? 'Quarterly (3 Months)' : (b.billing_cycle || 'Monthly')}
-                            </span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                              ({b.billing_period})
-                            </span>
-                          </div>
-                        </td>
-
-                        {/* Base Amount */}
-                        <td style={{ padding: '14px 16px', fontWeight: 600 }}>₹{Number(b.base_amount).toLocaleString()}</td>
-
-                        {/* Late Penalty */}
-                        <td style={{ padding: '14px 16px' }}>
-                          {hasPenalty ? (
-                            <span
-                              style={{
-                                color: '#ef4444',
-                                fontWeight: 700,
-                                background: 'rgba(239, 68, 68, 0.1)',
-                                padding: '2px 6px',
-                                borderRadius: '4px',
-                              }}
-                            >
-                              +₹{Number(b.penalty_amount).toLocaleString()}
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)' }}>₹0</span>
-                          )}
-                        </td>
-
-                        {/* Total / Balance */}
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                            ₹{Number(b.total_amount).toLocaleString()}
-                          </div>
-                          {!isPaid && (
-                            <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600 }}>
-                              Bal: ₹{Number(b.balance_amount).toLocaleString()}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Due Date */}
-                        <td style={{ padding: '14px 16px' }}>
-                          <div style={{ color: isOverdue ? '#ef4444' : 'var(--text-main)', fontWeight: isOverdue ? 700 : 500 }}>
-                            {new Date(b.due_date).toLocaleDateString()}
-                          </div>
-                        </td>
-
-                        {/* Status Badge */}
-                        <td style={{ padding: '14px 16px' }}>
-                          {b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0 ? (
-                            <div>
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '4px 9px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  background: 'rgba(245, 158, 11, 0.15)',
-                                  color: '#f59e0b',
-                                  border: '1px solid rgba(245, 158, 11, 0.35)',
-                                }}
-                              >
-                                <ShieldCheck size={13} />
-                                Pending Admin Approval
-                              </span>
-                              <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, marginTop: '3px' }}>
-                                ₹{Number(b.pending_payment_amount || b.paid_amount || b.total_amount).toLocaleString()} paid • Awaiting admin confirm
-                              </div>
-                            </div>
-                          ) : b.status === 'PAID' ? (
-                            <div>
-                              <span
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  padding: '4px 9px',
-                                  borderRadius: '4px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  background: 'rgba(16, 185, 129, 0.15)',
-                                  color: '#10b981',
-                                  border: '1px solid rgba(16, 185, 129, 0.35)',
-                                }}
-                              >
-                                <CheckCircle2 size={13} />
-                                Done Payment
-                              </span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#10b981', fontSize: '0.72rem', fontWeight: 700, marginTop: '3px' }}>
-                                <ShieldCheck size={12} />
-                                Approved by Admin {b.approved_by_name ? `(${b.approved_by_name})` : ''}
-                              </div>
-                            </div>
-                          ) : (
-                            <span
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                background:
-                                  b.status === 'OVERDUE'
-                                    ? 'rgba(239, 68, 68, 0.15)'
-                                    : b.status === 'PARTIALLY_PAID'
-                                    ? 'rgba(245, 158, 11, 0.15)'
-                                    : 'rgba(148, 163, 184, 0.15)',
-                                color:
-                                  b.status === 'OVERDUE'
-                                    ? '#ef4444'
-                                    : b.status === 'PARTIALLY_PAID'
-                                    ? '#f59e0b'
-                                    : '#94a3b8',
-                              }}
-                            >
-                              {b.status}
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Actions */}
-                        <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                            {isAdmin && (b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0) ? (
-                              <button
-                                onClick={() => handleOpenVerifyModal(b)}
-                                title="Check payment details and confirm"
-                                style={{
-                                  background: '#f59e0b',
-                                  color: '#000',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  padding: '5px 12px',
-                                  fontSize: '0.78rem',
-                                  fontWeight: 800,
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                  boxShadow: '0 2px 6px rgba(245, 158, 11, 0.35)',
-                                }}
-                              >
-                                <ShieldCheck size={14} />
-                                Check & Confirm
-                              </button>
-                            ) : !isAdmin && (b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0) ? (
-                              <span
-                                style={{
-                                  background: 'rgba(245, 158, 11, 0.12)',
-                                  color: '#f59e0b',
-                                  border: '1px solid rgba(245, 158, 11, 0.3)',
-                                  borderRadius: '4px',
-                                  padding: '5px 10px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 700,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '4px',
-                                }}
-                              >
-                                <Clock size={12} />
-                                Awaiting Admin Approval
-                              </span>
-                            ) : !isPaid ? (
-                              <button
-                                onClick={() => handleOpenPaymentModal(b)}
-                                style={{
-                                  background: isMyHome ? 'var(--color-clay)' : '#10b981',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  padding: '5px 12px',
-                                  fontSize: '0.78rem',
-                                  fontWeight: 700,
-                                  cursor: 'pointer',
-                                }}
-                              >
-                                {isMyHome ? 'Pay Dues' : isAdmin ? 'Collect' : 'Pay'}
-                              </button>
-                            ) : (
-                              <span
-                                style={{
-                                  background: 'rgba(16, 185, 129, 0.12)',
-                                  color: '#10b981',
-                                  border: '1px solid rgba(16, 185, 129, 0.3)',
-                                  borderRadius: '4px',
-                                  padding: '4px 8px',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '3px',
-                                }}
-                              >
-                                <CheckCircle2 size={12} />
-                                Done Payment
-                              </span>
-                            )}
-
-                            <button
-                              onClick={() => handleOpenReceiptModal(b)}
-                              title="View Invoice"
-                              style={{
-                                background: 'transparent',
-                                border: '1px solid var(--border-card)',
-                                color: 'var(--text-main)',
-                                borderRadius: '4px',
-                                padding: '5px 8px',
-                                fontSize: '0.78rem',
-                                cursor: 'pointer',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px',
-                              }}
-                            >
-                              <Printer size={14} />
-                              <span>View</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-            </>
-          )}
-
-          {/* VIEW 2: HOME NO LIST */}
-          {isAdmin && viewMode === 'HOME_LIST' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Home Search & Status Bar */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  flexWrap: 'wrap',
-                  gap: '12px',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-card)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '8px 14px',
-                    minWidth: '280px',
-                    flex: 1,
-                  }}
-                >
-                  <Search size={16} color="var(--text-muted)" />
-                  <input
-                    type="text"
-                    placeholder="Search home no (e.g. 1, 2) or resident name..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    style={{
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--text-main)',
-                      fontSize: '0.88rem',
-                      outline: 'none',
-                      width: '100%',
-                    }}
-                  />
-                </div>
-
-                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
-                  Tracking payment status across <strong>{allHomes.length} Society Homes</strong>
-                </div>
-              </div>
-
-              {/* Home Cards Grid */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                {allHomes
-                  .filter((home) => {
-                    if (!searchQuery.trim()) return true;
-                    const q = searchQuery.toLowerCase();
-                    return (
-                      String(home.home_number || '').toLowerCase().includes(q) ||
-                      String(home.resident_name || home.owner_name || '').toLowerCase().includes(q) ||
-                      String(home.home_type || '').toLowerCase().includes(q)
-                    );
-                  })
-                  .map((home) => {
-                    const residentName = home.resident_name || home.owner_name || 'Resident';
-                    const residentPhone = home.resident_phone || home.owner_phone || '';
-                    const homeType = home.home_type || 'Unit';
-
-                    // Compute overall stats for this home
-                    const homeBills = bills.filter((b) => String(b.home_id) === String(home.id));
-                    const totalInvoiced = homeBills.reduce((acc, b) => acc + Number(b.total_amount || 0), 0);
-                    const totalPaid = homeBills.reduce((acc, b) => acc + Number(b.paid_amount || 0), 0);
-                    const balanceDue = homeBills.reduce((acc, b) => acc + Number(b.balance_amount || 0), 0);
-
-                    return (
-                      <div
-                        key={home.id}
-                        style={{
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-card)',
-                          borderRadius: 'var(--radius-md)',
-                          padding: '18px 20px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '14px',
-                        }}
-                      >
-                        {/* Header: Home Info & Summary Metrics */}
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            flexWrap: 'wrap',
-                            gap: '12px',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                            paddingBottom: '12px',
-                          }}
-                        >
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                            <div
-                              style={{
-                                background: 'var(--color-clay)',
-                                color: '#ffffff',
-                                padding: '6px 14px',
-                                borderRadius: '8px',
-                                fontWeight: 800,
-                                fontSize: '1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '6px',
-                              }}
-                            >
-                              <Home size={16} />
-                              <span>Home {home.home_number}</span>
-                            </div>
-
-                            <div>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--text-main)' }}>
-                                  {residentName}
-                                </span>
-                                <span
-                                  style={{
-                                    fontSize: '0.72rem',
-                                    padding: '2px 8px',
-                                    borderRadius: '4px',
-                                    background: 'rgba(255, 255, 255, 0.06)',
-                                    color: 'var(--text-muted)',
-                                    textTransform: 'uppercase',
-                                    fontWeight: 700,
-                                  }}
-                                >
-                                  {homeType}
-                                </span>
-                              </div>
-                              {residentPhone && (
-                                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                                  Phone: {residentPhone}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.82rem' }}>
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Invoiced: </span>
-                              <strong style={{ color: 'var(--text-main)' }}>₹{totalInvoiced.toLocaleString()}</strong>
-                            </div>
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Paid Done: </span>
-                              <strong style={{ color: '#10b981' }}>₹{totalPaid.toLocaleString()}</strong>
-                            </div>
-                            <div>
-                              <span style={{ color: 'var(--text-muted)' }}>Due: </span>
-                              <strong style={{ color: balanceDue > 0 ? '#ef4444' : '#10b981' }}>
-                                ₹{balanceDue.toLocaleString()}
-                              </strong>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Month-Wise Payment Done Matrix for this Home */}
-                        <div>
-                          <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                            Month-Wise Payment Track Record (Home {home.home_number})
-                          </div>
-
-                          <div
-                            style={{
-                              display: 'grid',
-                              gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-                              gap: '10px',
-                            }}
-                          >
-                            {allBillingMonths.slice(0, 6).map((monthKey) => {
-                              const monthStatus = getHomeMonthStatus(home.id, monthKey);
-                              const fmt = formatMonth(monthKey);
-
-                              return (
-                                <div
-                                  key={monthKey}
-                                  style={{
-                                    background: monthStatus.isPaid
-                                      ? 'rgba(16, 185, 129, 0.08)'
-                                      : monthStatus.status === 'PENDING_APPROVAL'
-                                      ? 'rgba(245, 158, 11, 0.08)'
-                                      : monthStatus.status === 'NOT_INVOICED'
-                                      ? 'rgba(255, 255, 255, 0.02)'
-                                      : 'rgba(239, 68, 68, 0.08)',
-                                    border: monthStatus.isPaid
-                                      ? '1px solid #10b981'
-                                      : monthStatus.status === 'PENDING_APPROVAL'
-                                      ? '1px solid #f59e0b'
-                                      : monthStatus.status === 'NOT_INVOICED'
-                                      ? '1px dashed var(--border-card)'
-                                      : '1px solid rgba(239, 68, 68, 0.4)',
-                                    borderRadius: '8px',
-                                    padding: '10px 12px',
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    justifyContent: 'space-between',
-                                    gap: '6px',
-                                  }}
-                                >
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--text-main)' }}>
-                                      {fmt.short}
-                                    </span>
-
-                                    {monthStatus.isPaid ? (
-                                      <span
-                                        style={{
-                                          background: '#10b981',
-                                          color: '#ffffff',
-                                          padding: '2px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.68rem',
-                                          fontWeight: 800,
-                                          display: 'flex',
-                                          alignItems: 'center',
-                                          gap: '4px',
-                                        }}
-                                      >
-                                        <CheckCircle2 size={11} />
-                                        Done Payment
-                                      </span>
-                                    ) : monthStatus.status === 'PENDING_APPROVAL' ? (
-                                      <span
-                                        style={{
-                                          background: '#f59e0b',
-                                          color: '#000',
-                                          padding: '2px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.68rem',
-                                          fontWeight: 800,
-                                        }}
-                                      >
-                                        Check & Confirm
-                                      </span>
-                                    ) : monthStatus.status === 'NOT_INVOICED' ? (
-                                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                        Not Invoiced
-                                      </span>
-                                    ) : (
-                                      <span
-                                        style={{
-                                          background: 'rgba(239, 68, 68, 0.15)',
-                                          color: '#ef4444',
-                                          padding: '2px 8px',
-                                          borderRadius: '4px',
-                                          fontSize: '0.68rem',
-                                          fontWeight: 800,
-                                        }}
-                                      >
-                                        Pending Due
-                                      </span>
-                                    )}
-                                  </div>
-
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.76rem', marginTop: '2px' }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>
-                                      {monthStatus.isPaid
-                                        ? `₹${Number(monthStatus.amount || 0).toLocaleString()} (Approved)`
-                                        : monthStatus.bill
-                                        ? `₹${Number(monthStatus.amount || 0).toLocaleString()}`
-                                        : '—'}
-                                    </span>
-
-                                    <div>
-                                      {monthStatus.status === 'PENDING_APPROVAL' && monthStatus.bill && (
-                                        <button
-                                          onClick={() => handleOpenVerifyModal(monthStatus.bill)}
-                                          style={{
-                                            background: '#f59e0b',
-                                            color: '#000',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            padding: '3px 8px',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 800,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Confirm
-                                        </button>
-                                      )}
-
-                                      {monthStatus.bill && !monthStatus.isPaid && monthStatus.status !== 'PENDING_APPROVAL' && (
-                                        <button
-                                          onClick={() => handleOpenPaymentModal(monthStatus.bill)}
-                                          style={{
-                                            background: '#10b981',
-                                            color: '#ffffff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            padding: '3px 8px',
-                                            fontSize: '0.72rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Collect
-                                        </button>
-                                      )}
-
-                                      {monthStatus.isPaid && monthStatus.bill && (
-                                        <button
-                                          onClick={() => handleOpenReceiptModal(monthStatus.bill)}
-                                          style={{
-                                            background: 'transparent',
-                                            border: '1px solid var(--border-card)',
-                                            color: 'var(--text-main)',
-                                            borderRadius: '4px',
-                                            padding: '2px 6px',
-                                            fontSize: '0.7rem',
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Receipt
-                                        </button>
-                                      )}
-
-                                      {monthStatus.status === 'NOT_INVOICED' && (
-                                        <button
-                                          onClick={() => handleOpenGenerateModal()}
-                                          style={{
-                                            background: 'transparent',
-                                            border: '1px solid rgba(196, 154, 108, 0.4)',
-                                            color: 'var(--color-clay)',
-                                            borderRadius: '4px',
-                                            padding: '2px 6px',
-                                            fontSize: '0.7rem',
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          + Bill
-                                        </button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          )}
-
-          {/* VIEW 3: MONTH-WISE LIST */}
-          {isAdmin && viewMode === 'MONTH_LIST' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {/* Month Selector Chips */}
-              <div
-                style={{
+                  fontWeight: billsSubTab === 'INVOICES' ? 800 : 600,
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  overflowX: 'auto',
-                  paddingBottom: '4px',
+                  transition: 'all 0.15s ease',
+                  boxShadow: billsSubTab === 'INVOICES' ? '0 2px 8px rgba(196, 154, 108, 0.35)' : 'none',
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setSelectedMonthView('ALL')}
+                <FileText size={16} />
+                <span>Invoices</span>
+                <span
                   style={{
-                    background: selectedMonthView === 'ALL' ? 'var(--color-clay)' : 'var(--bg-secondary)',
-                    color: selectedMonthView === 'ALL' ? '#ffffff' : 'var(--text-muted)',
-                    border: '1px solid var(--border-card)',
-                    borderRadius: '20px',
-                    padding: '6px 14px',
-                    fontSize: '0.8rem',
-                    fontWeight: selectedMonthView === 'ALL' ? 700 : 500,
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
+                    background: billsSubTab === 'INVOICES' ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                    color: billsSubTab === 'INVOICES' ? '#ffffff' : 'var(--text-main)',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
                   }}
                 >
-                  All Months ({allBillingMonths.length})
-                </button>
+                  {filteredBills.length}
+                </span>
+              </button>
 
-                {allBillingMonths.slice(0, 8).map((m) => {
-                  const isSel = selectedMonthView === m;
-                  const fmt = formatMonth(m);
-                  return (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => setSelectedMonthView(m)}
-                      style={{
-                        background: isSel ? 'var(--color-clay)' : 'var(--bg-secondary)',
-                        color: isSel ? '#ffffff' : 'var(--text-muted)',
-                        border: '1px solid var(--border-card)',
-                        borderRadius: '20px',
-                        padding: '6px 14px',
-                        fontSize: '0.8rem',
-                        fontWeight: isSel ? 700 : 500,
-                        cursor: 'pointer',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {fmt.short}
-                    </button>
-                  );
-                })}
-              </div>
+              <button
+                type="button"
+                id="subtab-month-tracker"
+                onClick={() => setBillsSubTab('TRACKER')}
+                style={{
+                  background: billsSubTab === 'TRACKER' ? 'var(--color-clay)' : 'transparent',
+                  color: billsSubTab === 'TRACKER' ? '#ffffff' : 'var(--text-muted)',
+                  border: 'none',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '9px 20px',
+                  fontSize: '0.88rem',
+                  fontWeight: billsSubTab === 'TRACKER' ? 800 : 600,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  transition: 'all 0.15s ease',
+                  boxShadow: billsSubTab === 'TRACKER' ? '0 2px 8px rgba(196, 154, 108, 0.35)' : 'none',
+                }}
+              >
+                <CalendarDays size={16} />
+                <span>Month Payment Tracker</span>
+                <span
+                  style={{
+                    background: billsSubTab === 'TRACKER' ? 'rgba(255,255,255,0.25)' : 'rgba(16, 185, 129, 0.15)',
+                    color: billsSubTab === 'TRACKER' ? '#ffffff' : '#10b981',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  Cycle Wise
+                </span>
+              </button>
+            </div>
+          )}
 
-              {/* Month Sections */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                {(selectedMonthView === 'ALL' ? allBillingMonths.slice(0, 6) : [selectedMonthView]).map((monthKey) => {
-                  const fmt = formatMonth(monthKey);
+          {/* RESIDENT (USER) CYCLE MONTHS TRACK RECORD */}
+          {!isAdmin && billsSubTab === 'TRACKER' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {(() => {
+                const userHomeId = user?.homeId || user?.home_id;
+                const userHomes = allHomes.filter(
+                  (h) =>
+                    (userHomeId && (Number(h.id) === Number(userHomeId) || String(h.id) === String(userHomeId))) ||
+                    (myHomeNumber && String(h.home_number).trim().toLowerCase() === String(myHomeNumber).trim().toLowerCase()) ||
+                    (user?.id && (String(h.owner_id) === String(user.id) || String(h.resident_id) === String(user.id)))
+                );
+                const residentHomes = userHomes.length > 0
+                  ? userHomes
+                  : (filteredBills.length > 0 && filteredBills[0]?.home_id
+                    ? [{ id: filteredBills[0].home_id, home_number: filteredBills[0].home_number || myHomeNumber || 'Unit', building_or_wing: '' }]
+                    : [{ id: userHomeId || 'my-home', home_number: myHomeNumber || 'Unit', building_or_wing: '' }]);
 
-                  // Calculate aggregate statistics for this month across all homes
-                  let paidHomesCount = 0;
-                  let pendingHomesCount = 0;
-                  let totalMonthCollected = 0;
-                  let totalMonthPending = 0;
+                const primaryHome = residentHomes[0];
+                const resolvedHomeNum = myHomeNumber || primaryHome?.home_number || 'Unit';
+                console.log("residentHomes", residentHomes);
 
-                  allHomes.forEach((home) => {
-                    const st = getHomeMonthStatus(home.id, monthKey);
-                    if (st.isPaid) {
-                      paidHomesCount++;
-                      totalMonthCollected += Number(st.amount || 0);
-                    } else if (st.status !== 'NOT_INVOICED') {
-                      pendingHomesCount++;
-                      totalMonthPending += Number(st.amount || 0);
-                    }
-                  });
+                // Compute displayed months based on matrixCycleFilter
+                const trackerMonths = (() => {
+                  if (matrixCycleFilter === 'ALL') {
+                    return allBillingMonths;
+                  }
+                  const selCycle = cycles.find((c) => String(c.id) === String(matrixCycleFilter));
+                  if (!selCycle || !selCycle.start_month || !selCycle.end_month) {
+                    return allBillingMonths;
+                  }
+                  return getMonthsBetween(selCycle.start_month, selCycle.end_month);
+                })();
 
-                  return (
+                // Compute metrics for the resident
+                let totalPaidCount = 0;
+                let totalUnpaidCount = 0;
+                let totalPaidAmount = 0;
+                let totalDueAmount = 0;
+
+                trackerMonths.forEach((m) => {
+                  const st = getHomeMonthStatus(primaryHome.id, m);
+                  if (st.isPaid) {
+                    totalPaidCount++;
+                    totalPaidAmount += Number(st.monthlyShare || st.amount || 0);
+                  } else if (st.bill) {
+                    totalUnpaidCount++;
+                    totalDueAmount += Number(st.balanceAmount || st.amount || 0);
+                  }
+                });
+
+                const totalTrackerMonths = trackerMonths.length;
+                const progressPct = totalTrackerMonths > 0 ? Math.round((totalPaidCount / totalTrackerMonths) * 100) : 0;
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {/* Toolbar: Home Badge + Cycle Selector Dropdown + Legend */}
                     <div
-                      key={monthKey}
                       style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px',
                         background: 'var(--bg-secondary)',
                         border: '1px solid var(--border-card)',
                         borderRadius: 'var(--radius-md)',
-                        overflow: 'hidden',
+                        padding: '12px 16px',
                       }}
                     >
-                      {/* Month Header Banner */}
-                      <div
-                        style={{
-                          background: 'rgba(196, 154, 108, 0.08)',
-                          borderBottom: '1px solid var(--border-card)',
-                          padding: '14px 20px',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          flexWrap: 'wrap',
-                          gap: '12px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <CalendarDays size={20} color="var(--color-clay)" />
-                          <div>
-                            <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-main)' }}>
-                              {fmt.long} ({fmt.short})
-                            </h3>
-                            <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                              Maintenance Billing Cycle: {fmt.short}
-                            </span>
-                          </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                        {/* Home Badge */}
+                        <div
+                          style={{
+                            background: 'var(--color-clay)',
+                            color: '#ffffff',
+                            padding: '6px 12px',
+                            borderRadius: '6px',
+                            fontWeight: 800,
+                            fontSize: '0.84rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                          }}
+                        >
+                          <Home size={14} />
+                          <span>Home {resolvedHomeNum}</span>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '0.82rem' }}>
-                          <div style={{ background: 'var(--bg-primary)', padding: '5px 12px', borderRadius: '6px', border: '1px solid var(--border-card)' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>Done Payment: </span>
-                            <strong style={{ color: '#10b981' }}>{paidHomesCount} / {allHomes.length} Homes</strong>
-                          </div>
-
-                          <div style={{ background: 'var(--bg-primary)', padding: '5px 12px', borderRadius: '6px', border: '1px solid var(--border-card)' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>Collected: </span>
-                            <strong style={{ color: '#10b981' }}>₹{totalMonthCollected.toLocaleString()}</strong>
-                          </div>
-
-                          <div style={{ background: 'var(--bg-primary)', padding: '5px 12px', borderRadius: '6px', border: '1px solid var(--border-card)' }}>
-                            <span style={{ color: 'var(--text-muted)' }}>Pending Due: </span>
-                            <strong style={{ color: totalMonthPending > 0 ? '#ef4444' : 'var(--text-muted)' }}>
-                              ₹{totalMonthPending.toLocaleString()}
-                            </strong>
-                          </div>
+                        {/* Cycle Dropdown Selector */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            Cycle:
+                          </label>
+                          <select
+                            value={matrixCycleFilter}
+                            onChange={(e) => setMatrixCycleFilter(e.target.value)}
+                            style={{
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-card)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '7px 12px',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              color: 'var(--text-main)',
+                              outline: 'none',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <option value="ALL">All Cycles ({allBillingMonths.length} Months)</option>
+                            {cycles.map((c, cIdx) => (
+                              <option key={c.id} value={c.id}>
+                                Cycle {cIdx + 1} ({formatMonthExcel(c.start_month)} – {formatMonthExcel(c.end_month)})
+                              </option>
+                            ))}
+                          </select>
                         </div>
                       </div>
 
-                      {/* Homes Table for this Month */}
-                      <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                      {/* Legend */}
+
+                    </div>
+
+
+                    {/* SPREADSHEET ROW-COLUMN MATRIX TABLE (REF SAME AS ADMIN) */}
+                    <div
+                      className="glass-panel"
+                      style={{
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-card)',
+                        overflow: 'hidden',
+                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                      }}
+                    >
+                      <div style={{ overflowX: 'auto', maxHeight: '72vh', position: 'relative' }}>
+                        <table
+                          style={{
+                            width: '100%',
+                            borderCollapse: 'separate',
+                            borderSpacing: 0,
+                            fontSize: '0.82rem',
+                            textAlign: 'left',
+                          }}
+                        >
                           <thead>
-                            <tr style={{ background: 'rgba(255, 255, 255, 0.02)', borderBottom: '1px solid var(--border-card)', color: 'var(--text-muted)', fontSize: '0.78rem', textTransform: 'uppercase' }}>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Unit / Home #</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Resident Info</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Config</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Invoice #</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Month Fee</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700 }}>Payment Status ({fmt.short})</th>
-                              <th style={{ padding: '12px 18px', fontWeight: 700, textAlign: 'right' }}>Actions</th>
+                            <tr style={{ background: 'var(--bg-primary)', position: 'sticky', top: 0, zIndex: 10 }}>
+                              {/* Sticky Col 1: Unit */}
+                              <th
+                                style={{
+                                  position: 'sticky',
+                                  left: 0,
+                                  zIndex: 12,
+                                  background: 'var(--bg-primary)',
+                                  padding: '12px 10px',
+                                  fontWeight: 800,
+                                  color: 'var(--text-muted)',
+                                  borderBottom: '2px solid var(--border-card)',
+                                  borderRight: '1px solid var(--border-card)',
+                                  width: '60px',
+                                  textAlign: 'center',
+                                  textTransform: 'lowercase',
+                                }}
+                              >
+                                unit
+                              </th>
+
+                              {/* Sticky Col 2: Home no */}
+                              <th
+                                style={{
+                                  position: 'sticky',
+                                  left: '60px',
+                                  zIndex: 12,
+                                  background: 'var(--bg-primary)',
+                                  padding: '12px 14px',
+                                  fontWeight: 800,
+                                  color: 'var(--text-muted)',
+                                  borderBottom: '2px solid var(--border-card)',
+                                  borderRight: '2px solid var(--border-card)',
+                                  minWidth: '120px',
+                                }}
+                              >
+                                Home no
+                              </th>
+
+                              {/* Month Columns (Oct-26, Nov-26, Dec-26, Jan-27 ...) */}
+                              {trackerMonths.map((m) => {
+                                const label = formatMonthExcel(m);
+                                return (
+                                  <th
+                                    key={m}
+                                    style={{
+                                      padding: '10px 14px',
+                                      fontWeight: 800,
+                                      color: 'var(--text-main)',
+                                      borderBottom: '2px solid var(--border-card)',
+                                      borderRight: '1px solid var(--border-card)',
+                                      textAlign: 'center',
+                                      minWidth: '95px',
+                                      background: 'var(--bg-primary)',
+                                    }}
+                                  >
+                                    <div style={{ fontSize: '0.84rem', fontWeight: 800 }}>{label}</div>
+                                  </th>
+                                );
+                              })}
                             </tr>
                           </thead>
+
                           <tbody>
-                            {allHomes.map((home) => {
-                              const monthStatus = getHomeMonthStatus(home.id, monthKey);
-                              const b = monthStatus.bill;
-                              const residentName = home.resident_name || home.owner_name || 'Resident';
-                              const residentPhone = home.resident_phone || home.owner_phone || '';
+                            {residentHomes.map((home, idx) => {
+                              const rowBg = idx % 2 === 0 ? 'var(--bg-secondary)' : 'rgba(255, 255, 255, 0.015)';
 
                               return (
                                 <tr
                                   key={home.id}
                                   style={{
-                                    borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
-                                    background: monthStatus.isPaid ? 'rgba(16, 185, 129, 0.02)' : 'transparent',
+                                    background: rowBg,
+                                    borderBottom: '1px solid var(--border-card)',
+                                    transition: 'background 0.15s ease',
+                                  }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.background = 'rgba(196, 154, 108, 0.08)';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.background = rowBg;
                                   }}
                                 >
-                                  {/* Home Number */}
-                                  <td style={{ padding: '12px 18px' }}>
-                                    <span
-                                      style={{
-                                        background: 'rgba(196, 154, 108, 0.15)',
-                                        color: 'var(--color-clay)',
-                                        padding: '4px 10px',
-                                        borderRadius: '6px',
-                                        fontWeight: 800,
-                                        fontSize: '0.85rem',
-                                      }}
-                                    >
-                                      Home {home.home_number}
-                                    </span>
+                                  {/* Col 1: Unit index */}
+                                  <td
+                                    style={{
+                                      position: 'sticky',
+                                      left: 0,
+                                      zIndex: 5,
+                                      background: rowBg,
+                                      padding: '10px 8px',
+                                      fontWeight: 700,
+                                      color: 'var(--text-muted)',
+                                      textAlign: 'center',
+                                      borderRight: '1px solid var(--border-card)',
+                                      borderBottom: '1px solid var(--border-card)',
+                                    }}
+                                  >
+                                    {idx + 1}
                                   </td>
 
-                                  {/* Resident Info */}
-                                  <td style={{ padding: '12px 18px' }}>
-                                    <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                                      {residentName}
-                                    </div>
-                                    {residentPhone && (
-                                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                        {residentPhone}
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* Config */}
-                                  <td style={{ padding: '12px 18px' }}>
-                                    <span
-                                      style={{
-                                        fontSize: '0.72rem',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-muted)',
-                                        fontWeight: 700,
-                                        textTransform: 'uppercase',
-                                      }}
-                                    >
-                                      {home.home_type || '2BHK'}
-                                    </span>
-                                  </td>
-
-                                  {/* Invoice # */}
-                                  <td style={{ padding: '12px 18px', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-                                    {b?.bill_number || '—'}
-                                  </td>
-
-                                  {/* Month Fee */}
-                                  <td style={{ padding: '12px 18px' }}>
-                                    <span style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.92rem' }}>
-                                      {b ? `₹${Number(b.total_amount).toLocaleString()}` : '—'}
-                                    </span>
-                                  </td>
-
-                                  {/* Payment Status for Month */}
-                                  <td style={{ padding: '12px 18px' }}>
-                                    {monthStatus.isPaid ? (
-                                      <div>
-                                        <span
-                                          style={{
-                                            background: '#10b981',
-                                            color: '#ffffff',
-                                            padding: '3px 10px',
-                                            borderRadius: '4px',
-                                            fontSize: '0.74rem',
-                                            fontWeight: 800,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <CheckCircle2 size={13} />
-                                          Done Payment ({fmt.short})
-                                        </span>
-                                        <div style={{ fontSize: '0.72rem', color: '#10b981', fontWeight: 600, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                          <ShieldCheck size={12} />
-                                          Approved by Admin
-                                        </div>
-                                      </div>
-                                    ) : monthStatus.status === 'PENDING_APPROVAL' ? (
-                                      <div>
-                                        <span
-                                          style={{
-                                            background: 'rgba(245, 158, 11, 0.15)',
-                                            color: '#f59e0b',
-                                            border: '1px solid rgba(245, 158, 11, 0.3)',
-                                            padding: '3px 10px',
-                                            borderRadius: '4px',
-                                            fontSize: '0.74rem',
-                                            fontWeight: 800,
-                                            display: 'inline-flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <Clock size={12} />
-                                          Awaiting Admin Approval
-                                        </span>
-                                      </div>
-                                    ) : monthStatus.status === 'NOT_INVOICED' ? (
-                                      <span style={{ fontSize: '0.76rem', color: 'var(--text-muted)' }}>
-                                        Not Invoiced for {fmt.short}
+                                  {/* Col 2: Home no */}
+                                  <td
+                                    style={{
+                                      position: 'sticky',
+                                      left: '60px',
+                                      zIndex: 5,
+                                      background: rowBg,
+                                      padding: '10px 14px',
+                                      borderRight: '2px solid var(--border-card)',
+                                      borderBottom: '1px solid var(--border-card)',
+                                    }}
+                                  >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main)' }}>
+                                        {home.home_number}
                                       </span>
-                                    ) : (
-                                      <div>
-                                        <span
-                                          style={{
-                                            background: 'rgba(239, 68, 68, 0.15)',
-                                            color: '#ef4444',
-                                            padding: '3px 10px',
-                                            borderRadius: '4px',
-                                            fontSize: '0.74rem',
-                                            fontWeight: 800,
-                                          }}
-                                        >
-                                          Pending Due: ₹{Number(monthStatus.amount || 0).toLocaleString()}
+                                      {home.building_or_wing && (
+                                        <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                                          ({home.building_or_wing})
                                         </span>
-                                      </div>
-                                    )}
-                                  </td>
-
-                                  {/* Actions */}
-                                  <td style={{ padding: '12px 18px', textAlign: 'right' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                                      {monthStatus.status === 'PENDING_APPROVAL' && b && (
-                                        <button
-                                          onClick={() => handleOpenVerifyModal(b)}
-                                          style={{
-                                            background: '#f59e0b',
-                                            color: '#000',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            padding: '4px 10px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 800,
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <ShieldCheck size={12} />
-                                          Check & Confirm
-                                        </button>
-                                      )}
-
-                                      {b && !monthStatus.isPaid && monthStatus.status !== 'PENDING_APPROVAL' && (
-                                        <button
-                                          onClick={() => handleOpenPaymentModal(b)}
-                                          style={{
-                                            background: '#10b981',
-                                            color: '#fff',
-                                            border: 'none',
-                                            borderRadius: '4px',
-                                            padding: '4px 10px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          Collect
-                                        </button>
-                                      )}
-
-                                      {monthStatus.isPaid && b && (
-                                        <button
-                                          onClick={() => handleOpenReceiptModal(b)}
-                                          style={{
-                                            background: 'transparent',
-                                            border: '1px solid var(--border-card)',
-                                            color: 'var(--text-main)',
-                                            borderRadius: '4px',
-                                            padding: '4px 8px',
-                                            fontSize: '0.75rem',
-                                            cursor: 'pointer',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '4px',
-                                          }}
-                                        >
-                                          <Printer size={12} />
-                                          <span>Receipt</span>
-                                        </button>
-                                      )}
-
-                                      {monthStatus.status === 'NOT_INVOICED' && (
-                                        <button
-                                          onClick={() => handleOpenGenerateModal()}
-                                          style={{
-                                            background: 'rgba(196, 154, 108, 0.15)',
-                                            color: 'var(--color-clay)',
-                                            border: '1px solid rgba(196, 154, 108, 0.3)',
-                                            borderRadius: '4px',
-                                            padding: '4px 8px',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 700,
-                                            cursor: 'pointer',
-                                          }}
-                                        >
-                                          + Generate
-                                        </button>
                                       )}
                                     </div>
                                   </td>
+
+                                  {/* Dynamic Month Cells with multi-month merging (e.g. Oct, Nov, Dec merged showing 2500) */}
+                                  {(() => {
+                                    const cells = [];
+                                    let i = 0;
+                                    while (i < trackerMonths.length) {
+                                      const m = trackerMonths[i];
+                                      const st = getHomeMonthStatus(home.id, m);
+
+                                      if (st.bill) {
+                                        const billId = st.bill.id;
+                                        let span = 1;
+                                        while (
+                                          i + span < trackerMonths.length &&
+                                          getHomeMonthStatus(home.id, trackerMonths[i + span])?.bill?.id === billId
+                                        ) {
+                                          span++;
+                                        }
+
+                                        const totalDisplayVal = st.isPaid
+                                          ? Number(st.bill.paid_amount || st.bill.total_amount || 0)
+                                          : Number(st.bill.balance_amount || st.bill.total_amount || 0);
+
+                                        if (st.isPaid) {
+                                          cells.push(
+                                            <td
+                                              key={`${m}-${billId}`}
+                                              colSpan={span}
+                                              style={{
+                                                padding: '8px 10px',
+                                                textAlign: 'center',
+                                                background: 'rgba(16, 185, 129, 0.12)',
+                                                borderRight: '1px solid rgba(16, 185, 129, 0.25)',
+                                                borderBottom: '1px solid var(--border-card)',
+                                                cursor: 'pointer',
+                                              }}
+                                              onClick={() => handleOpenReceiptModal(st.bill)}
+                                              title={`Home ${home.home_number}: ₹${totalDisplayVal.toLocaleString()} Paid for ${st.bill.billing_period || span + ' months'}. Click to view receipt.`}
+                                            >
+                                              <div style={{ fontWeight: 800, color: '#10b981', fontSize: '0.86rem' }}>
+                                                {totalDisplayVal > 0 ? totalDisplayVal.toLocaleString() : '✓'}
+                                              </div>
+                                              <div style={{ fontSize: '0.62rem', color: '#10b981', opacity: 0.85, fontWeight: 700 }}>
+                                                Paid
+                                              </div>
+                                            </td>
+                                          );
+                                        } else if (st.status === 'PENDING_APPROVAL') {
+                                          cells.push(
+                                            <td
+                                              key={`${m}-${billId}`}
+                                              colSpan={span}
+                                              style={{
+                                                padding: '6px 8px',
+                                                textAlign: 'center',
+                                                background: 'rgba(245, 158, 11, 0.12)',
+                                                borderRight: '1px solid rgba(245, 158, 11, 0.25)',
+                                                borderBottom: '1px solid var(--border-card)',
+                                              }}
+                                              title="Payment pending admin confirmation"
+                                            >
+                                              <div style={{ fontWeight: 800, color: '#f59e0b', fontSize: '0.82rem' }}>
+                                                {totalDisplayVal.toLocaleString()}
+                                              </div>
+                                              <span
+                                                style={{
+                                                  background: '#f59e0b',
+                                                  color: '#000000',
+                                                  borderRadius: '3px',
+                                                  padding: '1px 5px',
+                                                  fontSize: '0.6rem',
+                                                  fontWeight: 800,
+                                                  display: 'inline-block',
+                                                  marginTop: '2px',
+                                                }}
+                                              >
+                                                Pending
+                                              </span>
+                                            </td>
+                                          );
+                                        } else {
+                                          cells.push(
+                                            <td
+                                              key={`${m}-${billId}`}
+                                              colSpan={span}
+                                              style={{
+                                                padding: '6px 8px',
+                                                textAlign: 'center',
+                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                borderRight: '1px solid rgba(239, 68, 68, 0.2)',
+                                                borderBottom: '1px solid var(--border-card)',
+                                              }}
+                                              title={`Home ${home.home_number}: ₹${totalDisplayVal.toLocaleString()} Due`}
+                                            >
+                                              <div style={{ fontWeight: 800, color: '#ef4444', fontSize: '0.82rem' }}>
+                                                {totalDisplayVal.toLocaleString()}
+                                              </div>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenPaymentModal(st.bill)}
+                                                style={{
+                                                  background: '#10b981',
+                                                  color: '#ffffff',
+                                                  border: 'none',
+                                                  borderRadius: '3px',
+                                                  padding: '2px 6px',
+                                                  fontSize: '0.62rem',
+                                                  fontWeight: 700,
+                                                  cursor: 'pointer',
+                                                  marginTop: '2px',
+                                                }}
+                                              >
+                                                Pay
+                                              </button>
+                                            </td>
+                                          );
+                                        }
+
+                                        i += span;
+                                      } else {
+                                        cells.push(
+                                          <td
+                                            key={m}
+                                            style={{
+                                              padding: '10px 8px',
+                                              textAlign: 'center',
+                                              color: 'var(--text-dim)',
+                                              borderRight: '1px solid var(--border-card)',
+                                              borderBottom: '1px solid var(--border-card)',
+                                              fontSize: '0.82rem',
+                                            }}
+                                            title={`No invoice generated for ${formatMonthExcel(m)}`}
+                                          >
+                                            —
+                                          </td>
+                                        );
+                                        i++;
+                                      }
+                                    }
+                                    return cells;
+                                  })()}
                                 </tr>
                               );
                             })}
@@ -3099,10 +2469,1132 @@ export default function MaintenancePage() {
                         </table>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })()}
             </div>
+          )}
+
+
+          {(isAdmin || billsSubTab === 'INVOICES') && (
+            <>
+
+              {/* Admin View Switcher: Invoices Table | Home No List | Month-Wise List */}
+              {isAdmin && (
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '12px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-card)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '10px 16px',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-muted)' }}>
+                      View Mode:
+                    </span>
+                    <div
+                      style={{
+                        display: 'flex',
+                        background: 'var(--bg-primary)',
+                        borderRadius: '8px',
+                        padding: '3px',
+                        border: '1px solid var(--border-card)',
+                        gap: '3px',
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('TABLE')}
+                        style={{
+                          background: viewMode === 'TABLE' ? 'var(--color-clay)' : 'transparent',
+                          color: viewMode === 'TABLE' ? '#ffffff' : 'var(--text-muted)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '6px 14px',
+                          fontSize: '0.8rem',
+                          fontWeight: viewMode === 'TABLE' ? 700 : 500,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FileText size={14} />
+                        <span>📑 Invoices Table</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('HOME_LIST')}
+                        style={{
+                          background: viewMode === 'HOME_LIST' ? 'var(--color-clay)' : 'transparent',
+                          color: viewMode === 'HOME_LIST' ? '#ffffff' : 'var(--text-muted)',
+                          border: 'none',
+                          borderRadius: '6px',
+                          padding: '6px 14px',
+                          fontSize: '0.8rem',
+                          fontWeight: viewMode === 'HOME_LIST' ? 700 : 500,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        <FileSpreadsheet size={14} />
+                        <span>📊 Home No Matrix</span>
+                      </button>
+
+                    </div>
+                  </div>
+
+
+                </div>
+              )}
+
+              {/* VIEW 1: STANDARD INVOICES TABLE */}
+              {(viewMode === 'TABLE' || !isAdmin) && (
+                <>
+                  {/* Filter Bar */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    {!isAdmin && (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          background: 'rgba(196, 154, 108, 0.1)',
+                          border: '1px solid rgba(196, 154, 108, 0.3)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '6px 14px',
+                          fontSize: '0.82rem',
+                          fontWeight: 700,
+                          color: 'var(--color-clay)',
+                        }}
+                      >
+                        <Home size={15} />
+                        <span>My Unit Maintenance {myHomeNumber ? `(Home ${myHomeNumber})` : ''}</span>
+                      </div>
+                    )}
+
+                    {/* Search Input */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-card)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '6px 14px',
+                        minWidth: '260px',
+                        flex: 1,
+                      }}
+                    >
+                      <Search size={16} color="var(--text-muted)" />
+                      <input
+                        type="text"
+                        placeholder="Search unit, resident name, invoice no..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-main)',
+                          fontSize: '0.88rem',
+                          outline: 'none',
+                          width: '100%',
+                        }}
+                      />
+                    </div>
+
+                    {/* Status Filter */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status:</span>
+                      <select
+                        value={statusFilter}
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          color: 'var(--text-main)',
+                          border: '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '7px 12px',
+                          fontSize: '0.85rem',
+                        }}
+                      >
+                        <option value="ALL">All Statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="PENDING_APPROVAL">Pending Admin Approval</option>
+                        <option value="OVERDUE">Overdue</option>
+                        <option value="PARTIALLY_PAID">Partially Paid</option>
+                        <option value="PAID">Paid / Approved</option>
+                      </select>
+                    </div>
+
+
+                  </div>
+
+                  {/* Table Container */}
+                  <div
+                    style={{
+                      background: 'var(--bg-secondary)',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      overflowX: 'auto',
+                    }}
+                  >
+                    {loading ? (
+                      <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                        Loading maintenance invoices...
+                      </div>
+                    ) : filteredBills.length === 0 ? (
+                      <div style={{ padding: '50px 20px', textAlign: 'center' }}>
+                        <Receipt size={40} color="var(--text-muted)" style={{ margin: '0 auto 12px' }} />
+                        <h3 style={{ margin: 0, color: 'var(--text-main)' }}>No Invoices Found</h3>
+                        <p style={{ margin: '6px 0 16px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                          {bills.length === 0
+                            ? 'No maintenance bills have been generated for this society yet.'
+                            : 'No invoices match your current search and filter criteria.'}
+                        </p>
+                        {isAdmin && bills.length === 0 && (
+                          <button
+                            onClick={handleOpenGenerateModal}
+                            style={{
+                              background: 'var(--color-clay)',
+                              color: '#fff',
+                              border: 'none',
+                              borderRadius: 'var(--radius-md)',
+                              padding: '8px 18px',
+                              fontSize: '0.85rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Generate First Invoices
+                          </button>
+                        )}
+                      </div>
+                    ) : (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+                        <thead>
+                          <tr style={{ borderBottom: '1px solid var(--border-card)', background: 'rgba(255,255,255,0.02)' }}>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Invoice #</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Unit / Home</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Resident</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Period</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Base</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Late Penalty</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Total / Balance</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Due Date</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600 }}>Status</th>
+                            <th style={{ padding: '12px 16px', color: 'var(--text-muted)', fontWeight: 600, textAlign: 'right' }}>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredBills.map((b) => {
+                            const isOverdue = b.status === 'OVERDUE';
+                            const isPaid = b.status === 'PAID';
+                            const hasPenalty = Number(b.penalty_amount) > 0;
+                            const isMyHome = Boolean(
+                              (myHomeNumber && String(b.home_number).trim().toLowerCase() === String(myHomeNumber).trim().toLowerCase()) ||
+                              (user?.id && Number(b.resident_id) === Number(user.id)) ||
+                              (user?.phone && b.resident_phone && String(b.resident_phone).trim() === String(user.phone).trim())
+                            );
+
+                            return (
+                              <tr
+                                key={b.id}
+                                style={{
+                                  borderBottom: '1px solid var(--border-card)',
+                                  background: isMyHome
+                                    ? 'rgba(196, 154, 108, 0.08)'
+                                    : isOverdue
+                                      ? 'rgba(239, 68, 68, 0.03)'
+                                      : 'transparent',
+                                }}
+                              >
+                                {/* Invoice Number */}
+                                <td style={{ padding: '14px 16px', fontWeight: 700, color: 'var(--text-main)' }}>
+                                  {b.bill_number}
+                                </td>
+
+                                {/* Unit / Home */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontWeight: 700, color: 'var(--color-clay)' }}>{b.home_number}</span>
+                                    {isMyHome && (
+                                      <span
+                                        style={{
+                                          background: 'var(--color-clay)',
+                                          color: '#ffffff',
+                                          fontSize: '0.65rem',
+                                          fontWeight: 800,
+                                          padding: '1px 6px',
+                                          borderRadius: '3px',
+                                          textTransform: 'uppercase',
+                                        }}
+                                      >
+                                        My Home
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                    {b.home_type} {b.block_or_tower ? `• ${b.block_or_tower}` : ''}
+                                  </div>
+                                </td>
+
+                                {/* Resident */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>
+                                    {b.resident_name || 'Vacant / Unassigned'}
+                                  </div>
+                                  {b.resident_phone && (
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{b.resident_phone}</div>
+                                  )}
+                                </td>
+
+                                {/* Period */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--text-main)', fontSize: '0.84rem' }}>
+                                    {getCoveredMonthsDescription(b.billing_period, b.billing_cycle)}
+                                  </div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px', flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                      {b.billing_period}
+                                    </span>
+                                    {(() => {
+                                      const bCycle = getMonthCycleInfo(b.billing_period);
+                                      if (bCycle.cycle) {
+                                        return (
+                                          <span
+                                            style={{
+                                              background: 'rgba(196, 154, 108, 0.15)',
+                                              color: 'var(--color-clay)',
+                                              padding: '1px 5px',
+                                              borderRadius: '3px',
+                                              fontSize: '0.62rem',
+                                              fontWeight: 800,
+                                            }}
+                                          >
+                                            🗓️ {bCycle.cycleName}
+                                          </span>
+                                        );
+                                      }
+                                      return null;
+                                    })()}
+                                  </div>
+                                </td>
+
+                                {/* Base Amount */}
+                                <td style={{ padding: '14px 16px', fontWeight: 600 }}>₹{Number(b.base_amount).toLocaleString()}</td>
+
+                                {/* Late Penalty */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  {hasPenalty ? (
+                                    <span
+                                      style={{
+                                        color: '#ef4444',
+                                        fontWeight: 700,
+                                        background: 'rgba(239, 68, 68, 0.1)',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                      }}
+                                    >
+                                      +₹{Number(b.penalty_amount).toLocaleString()}
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-muted)' }}>₹0</span>
+                                  )}
+                                </td>
+
+                                {/* Total / Balance */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                                    ₹{Number(b.total_amount).toLocaleString()}
+                                  </div>
+                                  {!isPaid && (
+                                    <div style={{ fontSize: '0.75rem', color: '#ef4444', fontWeight: 600 }}>
+                                      Bal: ₹{Number(b.balance_amount).toLocaleString()}
+                                    </div>
+                                  )}
+                                </td>
+
+                                {/* Due Date */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  <div style={{ color: isOverdue ? '#ef4444' : 'var(--text-main)', fontWeight: isOverdue ? 700 : 500 }}>
+                                    {new Date(b.due_date).toLocaleDateString()}
+                                  </div>
+                                </td>
+
+                                {/* Status Badge */}
+                                <td style={{ padding: '14px 16px' }}>
+                                  {b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0 ? (
+                                    <div>
+                                      <span
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '4px 9px',
+                                          borderRadius: '4px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 700,
+                                          background: 'rgba(245, 158, 11, 0.15)',
+                                          color: '#f59e0b',
+                                          border: '1px solid rgba(245, 158, 11, 0.35)',
+                                        }}
+                                      >
+                                        <ShieldCheck size={13} />
+                                        Pending Admin Approval
+                                      </span>
+                                      <div style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 600, marginTop: '3px' }}>
+                                        ₹{Number(b.pending_payment_amount || b.paid_amount || b.total_amount).toLocaleString()} paid • Awaiting admin confirm
+                                      </div>
+                                    </div>
+                                  ) : b.status === 'PAID' ? (
+                                    <div>
+                                      <span
+                                        style={{
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          padding: '4px 9px',
+                                          borderRadius: '4px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 700,
+                                          background: 'rgba(16, 185, 129, 0.15)',
+                                          color: '#10b981',
+                                          border: '1px solid rgba(16, 185, 129, 0.35)',
+                                        }}
+                                      >
+                                        <CheckCircle2 size={13} />
+                                        Done Payment
+                                      </span>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px', color: '#10b981', fontSize: '0.72rem', fontWeight: 700, marginTop: '3px' }}>
+                                        <ShieldCheck size={12} />
+                                        Approved by Admin {b.approved_by_name ? `(${b.approved_by_name})` : ''}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <span
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        padding: '3px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.75rem',
+                                        fontWeight: 700,
+                                        background:
+                                          b.status === 'OVERDUE'
+                                            ? 'rgba(239, 68, 68, 0.15)'
+                                            : b.status === 'PARTIALLY_PAID'
+                                              ? 'rgba(245, 158, 11, 0.15)'
+                                              : 'rgba(148, 163, 184, 0.15)',
+                                        color:
+                                          b.status === 'OVERDUE'
+                                            ? '#ef4444'
+                                            : b.status === 'PARTIALLY_PAID'
+                                              ? '#f59e0b'
+                                              : '#94a3b8',
+                                      }}
+                                    >
+                                      {b.status}
+                                    </span>
+                                  )}
+                                </td>
+
+                                {/* Actions */}
+                                <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                    {isAdmin && (b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0) ? (
+                                      <button
+                                        onClick={() => handleOpenVerifyModal(b)}
+                                        title="Check payment details and confirm"
+                                        style={{
+                                          background: '#f59e0b',
+                                          color: '#000',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          padding: '5px 12px',
+                                          fontSize: '0.78rem',
+                                          fontWeight: 800,
+                                          cursor: 'pointer',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                          boxShadow: '0 2px 6px rgba(245, 158, 11, 0.35)',
+                                        }}
+                                      >
+                                        <ShieldCheck size={14} />
+                                        Check & Confirm
+                                      </button>
+                                    ) : !isAdmin && (b.status === 'PENDING_APPROVAL' || Number(b.pending_payments_count) > 0) ? (
+                                      <span
+                                        style={{
+                                          background: 'rgba(245, 158, 11, 0.12)',
+                                          color: '#f59e0b',
+                                          border: '1px solid rgba(245, 158, 11, 0.3)',
+                                          borderRadius: '4px',
+                                          padding: '5px 10px',
+                                          fontSize: '0.75rem',
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '4px',
+                                        }}
+                                      >
+                                        <Clock size={12} />
+                                        Awaiting Admin Approval
+                                      </span>
+                                    ) : !isPaid ? (
+                                      <button
+                                        onClick={() => handleOpenPaymentModal(b)}
+                                        style={{
+                                          background: isMyHome ? 'var(--color-clay)' : '#10b981',
+                                          color: '#fff',
+                                          border: 'none',
+                                          borderRadius: '4px',
+                                          padding: '5px 12px',
+                                          fontSize: '0.78rem',
+                                          fontWeight: 700,
+                                          cursor: 'pointer',
+                                        }}
+                                      >
+                                        {isMyHome ? 'Pay Dues' : isAdmin ? 'Collect' : 'Pay'}
+                                      </button>
+                                    ) : (
+                                      <span
+                                        style={{
+                                          background: 'rgba(16, 185, 129, 0.12)',
+                                          color: '#10b981',
+                                          border: '1px solid rgba(16, 185, 129, 0.3)',
+                                          borderRadius: '4px',
+                                          padding: '4px 8px',
+                                          fontSize: '0.72rem',
+                                          fontWeight: 700,
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '3px',
+                                        }}
+                                      >
+                                        <CheckCircle2 size={12} />
+                                        Done Payment
+                                      </span>
+                                    )}
+
+                                    <button
+                                      onClick={() => handleOpenReceiptModal(b)}
+                                      title="View Invoice"
+                                      style={{
+                                        background: 'transparent',
+                                        border: '1px solid var(--border-card)',
+                                        color: 'var(--text-main)',
+                                        borderRadius: '4px',
+                                        padding: '5px 8px',
+                                        fontSize: '0.78rem',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                      }}
+                                    >
+                                      <Printer size={14} />
+                                      <span>View</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {/* VIEW 2: HOME NO LIST (ROW & COLUMN SPREADSHEET MATRIX) */}
+              {isAdmin && viewMode === 'HOME_LIST' && (() => {
+                // 1. Determine months to display based on selected cycle filter
+                const displayedMonths = (() => {
+                  if (matrixCycleFilter === 'ALL') {
+                    return allBillingMonths;
+                  }
+                  const selCycle = cycles.find((c) => String(c.id) === String(matrixCycleFilter));
+                  if (selCycle && selCycle.start_month && selCycle.end_month) {
+                    return getMonthsBetween(selCycle.start_month, selCycle.end_month);
+                  }
+                  return allBillingMonths;
+                })();
+
+                // 2. Filter homes based on search and status
+                const filteredHomes = allHomes.filter((home) => {
+                  if (searchQuery.trim()) {
+                    const q = searchQuery.toLowerCase();
+                    const matchesQuery =
+                      String(home.home_number || '').toLowerCase().includes(q) ||
+                      String(home.resident_name || home.owner_name || '').toLowerCase().includes(q) ||
+                      String(home.building_or_wing || '').toLowerCase().includes(q) ||
+                      String(home.home_type || '').toLowerCase().includes(q);
+                    if (!matchesQuery) return false;
+                  }
+
+                  return true;
+                });
+
+                // 3. Compute aggregate statistics
+                const totalHomesCount = allHomes.length;
+                let grandInvoiced = 0;
+                let grandPaid = 0;
+                let grandDue = 0;
+
+                allHomes.forEach((home) => {
+                  const hBills = bills.filter((b) => String(b.home_id) === String(home.id));
+                  grandInvoiced += hBills.reduce((acc, b) => acc + Number(b.total_amount || 0), 0);
+                  grandPaid += hBills.reduce((acc, b) => acc + Number(b.paid_amount || 0), 0);
+                  grandDue += hBills.reduce((acc, b) => acc + Number(b.balance_amount || 0), 0);
+                });
+
+                // 4. Excel export handler
+                const handleExportExcel = () => {
+                  try {
+                    const socName = selectedSociety?.name || (Array.isArray(societies) && societies.find((s) => String(s.id) === String(selectedSocietyId))?.name) || 'Society';
+
+                    const headerRow = [
+                      'unit',
+                      'Home no',
+                      ...displayedMonths.map((m) => formatMonthExcel(m)),
+                    ];
+
+                    const merges = [];
+                    const dataRows = filteredHomes.map((home, rowIdx) => {
+                      const sheetRowIndex = rowIdx + 1; // row 0 is headerRow
+
+                      const monthValues = [];
+                      let mColIdx = 2; // col 0: unit, 1: Home no
+                      let i = 0;
+                      while (i < displayedMonths.length) {
+                        const m = displayedMonths[i];
+                        const st = getHomeMonthStatus(home.id, m);
+
+                        if (st.bill) {
+                          const billId = st.bill.id;
+                          let span = 1;
+                          while (
+                            i + span < displayedMonths.length &&
+                            getHomeMonthStatus(home.id, displayedMonths[i + span])?.bill?.id === billId
+                          ) {
+                            span++;
+                          }
+
+                          const totalVal = st.isPaid
+                            ? Number(st.bill.paid_amount || st.bill.total_amount || 0)
+                            : Number(st.bill.balance_amount || st.bill.total_amount || 0);
+
+                          monthValues.push(totalVal);
+                          for (let s = 1; s < span; s++) {
+                            monthValues.push('');
+                          }
+
+                          if (span > 1) {
+                            merges.push({
+                              s: { r: sheetRowIndex, c: mColIdx },
+                              e: { r: sheetRowIndex, c: mColIdx + span - 1 },
+                            });
+                          }
+
+                          mColIdx += span;
+                          i += span;
+                        } else {
+                          monthValues.push('');
+                          mColIdx++;
+                          i++;
+                        }
+                      }
+
+                      return [
+                        rowIdx + 1,
+                        home.home_number,
+                        ...monthValues,
+                      ];
+                    });
+
+                    const wsData = [headerRow, ...dataRows];
+                    const ws = XLSX.utils.aoa_to_sheet(wsData);
+                    if (merges.length > 0) {
+                      ws['!merges'] = merges;
+                    }
+
+                    const colWidths = headerRow.map((h, i) => {
+                      let maxLen = String(h).length;
+                      dataRows.forEach((r) => {
+                        const cellLen = String(r[i] ?? '').length;
+                        if (cellLen > maxLen) maxLen = cellLen;
+                      });
+                      return { wch: Math.min(Math.max(maxLen + 3, 10), 30) };
+                    });
+                    ws['!cols'] = colWidths;
+
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, 'Maintenance Matrix');
+                    const filename = `${socName.replace(/\s+/g, '_')}_Maintenance_Matrix.xlsx`;
+                    XLSX.writeFile(wb, filename);
+                    showToast('Excel matrix spreadsheet exported successfully!');
+                  } catch (err) {
+                    console.error('Error exporting matrix excel:', err);
+                    showError('Failed to export Excel spreadsheet: ' + (err.message || ''));
+                  }
+                };
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {/* Filter & Action Toolbar: Search + Cycle Dropdown on left, Export Excel on right */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        flexWrap: 'wrap',
+                        gap: '12px',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border-card)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '10px 14px',
+                      }}
+                    >
+                      {/* Left: Search input & Cycle selector dropdown */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1, minWidth: '280px', flexWrap: 'wrap' }}>
+                        {/* Search box */}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-card)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '7px 12px',
+                            minWidth: '240px',
+                            flex: 1,
+                            maxWidth: '420px',
+                          }}
+                        >
+                          <Search size={15} color="var(--text-muted)" />
+                          <input
+                            type="text"
+                            placeholder="Search Home No or resident name..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-main)',
+                              fontSize: '0.84rem',
+                              outline: 'none',
+                              width: '100%',
+                            }}
+                          />
+                        </div>
+
+                        {/* All Cycles Dropdown */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <label style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                            Cycle:
+                          </label>
+                          <select
+                            value={matrixCycleFilter}
+                            onChange={(e) => setMatrixCycleFilter(e.target.value)}
+                            style={{
+                              background: 'var(--bg-primary)',
+                              border: '1px solid var(--border-card)',
+                              borderRadius: 'var(--radius-sm)',
+                              padding: '7px 12px',
+                              fontSize: '0.82rem',
+                              fontWeight: 600,
+                              color: 'var(--text-main)',
+                              outline: 'none',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <option value="ALL">All Cycles ({allBillingMonths.length} Months)</option>
+                            {cycles.map((c, cIdx) => (
+                              <option key={c.id} value={c.id}>
+                                Cycle {cIdx + 1} ({formatMonthExcel(c.start_month)} – {formatMonthExcel(c.end_month)})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Right: Export to Excel Button */}
+                      <button
+                        type="button"
+                        onClick={handleExportExcel}
+                        style={{
+                          background: '#10b981',
+                          color: '#ffffff',
+                          border: 'none',
+                          borderRadius: 'var(--radius-sm)',
+                          padding: '7px 14px',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                          whiteSpace: 'nowrap',
+                        }}
+                        title="Export this matrix table as an Excel spreadsheet (.xlsx)"
+                      >
+                        <Download size={14} />
+                        <span>Export Excel</span>
+                      </button>
+                    </div>
+
+                    {/* SPREADSHEET MATRIX TABLE VIEW */}
+                    <div
+                      className="glass-panel"
+                      style={{
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-card)',
+                        overflow: 'hidden',
+                        boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)',
+                      }}
+                    >
+                      <div
+                        style={{
+                          overflowX: 'auto',
+                          maxHeight: '72vh',
+                          position: 'relative',
+                        }}
+                      >
+                        <table
+                          style={{
+                            width: '100%',
+                            borderCollapse: 'separate',
+                            borderSpacing: 0,
+                            fontSize: '0.82rem',
+                            textAlign: 'left',
+                          }}
+                        >
+                          <thead>
+                            <tr style={{ background: 'var(--bg-primary)', position: 'sticky', top: 0, zIndex: 10 }}>
+                              {/* Sticky Col 1: Unit */}
+                              <th
+                                style={{
+                                  position: 'sticky',
+                                  left: 0,
+                                  zIndex: 12,
+                                  background: 'var(--bg-primary)',
+                                  padding: '12px 10px',
+                                  fontWeight: 800,
+                                  color: 'var(--text-muted)',
+                                  borderBottom: '2px solid var(--border-card)',
+                                  borderRight: '1px solid var(--border-card)',
+                                  width: '60px',
+                                  textAlign: 'center',
+                                  textTransform: 'lowercase',
+                                }}
+                              >
+                                unit
+                              </th>
+
+                              {/* Sticky Col 2: Home no */}
+                              <th
+                                style={{
+                                  position: 'sticky',
+                                  left: '60px',
+                                  zIndex: 12,
+                                  background: 'var(--bg-primary)',
+                                  padding: '12px 14px',
+                                  fontWeight: 800,
+                                  color: 'var(--text-muted)',
+                                  borderBottom: '2px solid var(--border-card)',
+                                  borderRight: '2px solid var(--border-card)',
+                                  minWidth: '120px',
+                                }}
+                              >
+                                Home no
+                              </th>
+
+
+                              {/* Month Columns (Oct-26, Nov-26, Dec-26, Jan-27 ...) */}
+                              {displayedMonths.map((m) => {
+                                const label = formatMonthExcel(m);
+                                return (
+                                  <th
+                                    key={m}
+                                    style={{
+                                      padding: '10px 14px',
+                                      fontWeight: 800,
+                                      color: 'var(--text-main)',
+                                      borderBottom: '2px solid var(--border-card)',
+                                      borderRight: '1px solid var(--border-card)',
+                                      textAlign: 'center',
+                                      minWidth: '95px',
+                                      background: 'var(--bg-primary)',
+                                    }}
+                                  >
+                                    <div style={{ fontSize: '0.84rem', fontWeight: 800 }}>{label}</div>
+                                  </th>
+                                );
+                              })}
+                            </tr>
+                          </thead>
+
+                          <tbody>
+                            {filteredHomes.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={2 + displayedMonths.length}
+                                  style={{
+                                    padding: '36px',
+                                    textAlign: 'center',
+                                    color: 'var(--text-muted)',
+                                  }}
+                                >
+                                  No homes match the selected filters.
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredHomes.map((home, idx) => {
+                                const isEven = idx % 2 === 0;
+                                const rowBg = isEven ? 'var(--bg-secondary)' : 'rgba(255, 255, 255, 0.015)';
+
+                                return (
+                                  <tr
+                                    key={home.id}
+                                    style={{
+                                      background: rowBg,
+                                      borderBottom: '1px solid var(--border-card)',
+                                      transition: 'background 0.15s ease',
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = 'rgba(196, 154, 108, 0.08)';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = rowBg;
+                                    }}
+                                  >
+                                    {/* Col 1: Unit index */}
+                                    <td
+                                      style={{
+                                        position: 'sticky',
+                                        left: 0,
+                                        zIndex: 5,
+                                        background: rowBg,
+                                        padding: '10px 8px',
+                                        fontWeight: 700,
+                                        color: 'var(--text-muted)',
+                                        textAlign: 'center',
+                                        borderRight: '1px solid var(--border-card)',
+                                        borderBottom: '1px solid var(--border-card)',
+                                      }}
+                                    >
+                                      {idx + 1}
+                                    </td>
+
+                                    {/* Col 2: Home no */}
+                                    <td
+                                      style={{
+                                        position: 'sticky',
+                                        left: '60px',
+                                        zIndex: 5,
+                                        background: rowBg,
+                                        padding: '10px 14px',
+                                        borderRight: '2px solid var(--border-card)',
+                                        borderBottom: '1px solid var(--border-card)',
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main)' }}>
+                                          {home.home_number}
+                                        </span>
+                                        {home.building_or_wing && (
+                                          <span style={{ fontSize: '0.64rem', color: 'var(--text-muted)' }}>
+                                            ({home.building_or_wing})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </td>
+
+                                    {/* Dynamic Month Cells with multi-month merging (e.g. Oct, Nov, Dec merged showing 2500) */}
+                                    {(() => {
+                                      const cells = [];
+                                      let i = 0;
+                                      while (i < displayedMonths.length) {
+                                        const m = displayedMonths[i];
+                                        const st = getHomeMonthStatus(home.id, m);
+
+                                        if (st.bill) {
+                                          const billId = st.bill.id;
+                                          let span = 1;
+                                          while (
+                                            i + span < displayedMonths.length &&
+                                            getHomeMonthStatus(home.id, displayedMonths[i + span])?.bill?.id === billId
+                                          ) {
+                                            span++;
+                                          }
+
+                                          const totalDisplayVal = st.isPaid
+                                            ? Number(st.bill.paid_amount || st.bill.total_amount || 0)
+                                            : Number(st.bill.balance_amount || st.bill.total_amount || 0);
+
+                                          if (st.isPaid) {
+                                            cells.push(
+                                              <td
+                                                key={`${m}-${billId}`}
+                                                colSpan={span}
+                                                style={{
+                                                  padding: '8px 10px',
+                                                  textAlign: 'center',
+                                                  background: 'rgba(16, 185, 129, 0.12)',
+                                                  borderRight: '1px solid rgba(16, 185, 129, 0.25)',
+                                                  borderBottom: '1px solid var(--border-card)',
+                                                  cursor: 'pointer',
+                                                }}
+                                                onClick={() => handleOpenReceiptModal(st.bill)}
+                                                title={`Home ${home.home_number}: ₹${totalDisplayVal.toLocaleString()} Paid for ${st.bill.billing_period || span + ' months'}. Click to view receipt.`}
+                                              >
+                                                <div style={{ fontWeight: 800, color: '#10b981', fontSize: '0.86rem' }}>
+                                                  {totalDisplayVal > 0 ? totalDisplayVal.toLocaleString() : '✓'}
+                                                </div>
+                                                <div style={{ fontSize: '0.62rem', color: '#10b981', opacity: 0.85, fontWeight: 700 }}>
+                                                  Paid
+                                                </div>
+                                              </td>
+                                            );
+                                          } else if (st.status === 'PENDING_APPROVAL') {
+                                            cells.push(
+                                              <td
+                                                key={`${m}-${billId}`}
+                                                colSpan={span}
+                                                style={{
+                                                  padding: '6px 8px',
+                                                  textAlign: 'center',
+                                                  background: 'rgba(245, 158, 11, 0.12)',
+                                                  borderRight: '1px solid rgba(245, 158, 11, 0.25)',
+                                                  borderBottom: '1px solid var(--border-card)',
+                                                }}
+                                                title={`Home ${home.home_number}: Payment pending admin confirmation`}
+                                              >
+                                                <div style={{ fontWeight: 800, color: '#f59e0b', fontSize: '0.82rem' }}>
+                                                  {totalDisplayVal.toLocaleString()}
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenVerifyModal(st.bill)}
+                                                  style={{
+                                                    background: '#f59e0b',
+                                                    color: '#000000',
+                                                    border: 'none',
+                                                    borderRadius: '3px',
+                                                    padding: '2px 6px',
+                                                    fontSize: '0.62rem',
+                                                    fontWeight: 800,
+                                                    cursor: 'pointer',
+                                                    marginTop: '2px',
+                                                  }}
+                                                >
+                                                  Confirm
+                                                </button>
+                                              </td>
+                                            );
+                                          } else {
+                                            cells.push(
+                                              <td
+                                                key={`${m}-${billId}`}
+                                                colSpan={span}
+                                                style={{
+                                                  padding: '6px 8px',
+                                                  textAlign: 'center',
+                                                  background: 'rgba(239, 68, 68, 0.08)',
+                                                  borderRight: '1px solid rgba(239, 68, 68, 0.2)',
+                                                  borderBottom: '1px solid var(--border-card)',
+                                                }}
+                                                title={`Home ${home.home_number}: ₹${totalDisplayVal.toLocaleString()} Due`}
+                                              >
+                                                <div style={{ fontWeight: 800, color: '#ef4444', fontSize: '0.82rem' }}>
+                                                  {totalDisplayVal.toLocaleString()}
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenPaymentModal(st.bill)}
+                                                  style={{
+                                                    background: '#10b981',
+                                                    color: '#ffffff',
+                                                    border: 'none',
+                                                    borderRadius: '3px',
+                                                    padding: '2px 6px',
+                                                    fontSize: '0.62rem',
+                                                    fontWeight: 700,
+                                                    cursor: 'pointer',
+                                                    marginTop: '2px',
+                                                  }}
+                                                >
+                                                  Collect
+                                                </button>
+                                              </td>
+                                            );
+                                          }
+
+                                          i += span;
+                                        } else {
+                                          cells.push(
+                                            <td
+                                              key={m}
+                                              style={{
+                                                padding: '10px 8px',
+                                                textAlign: 'center',
+                                                color: 'var(--text-dim)',
+                                                borderRight: '1px solid var(--border-card)',
+                                                borderBottom: '1px solid var(--border-card)',
+                                                fontSize: '0.82rem',
+                                              }}
+                                              title={`No invoice generated for ${formatMonthExcel(m)}`}
+                                            >
+                                              —
+                                            </td>
+                                          );
+                                          i++;
+                                        }
+                                      }
+                                      return cells;
+                                    })()}
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+
+                    </div>
+                  </div>
+                );
+              })()}
+
+            </>
           )}
         </div>
       )}
@@ -3185,14 +3677,14 @@ export default function MaintenancePage() {
                               p.resident_type === 'TENANT'
                                 ? 'rgba(59, 130, 246, 0.12)'
                                 : p.resident_type === 'OWNER'
-                                ? 'rgba(16, 185, 129, 0.12)'
-                                : 'rgba(107, 142, 90, 0.12)',
+                                  ? 'rgba(16, 185, 129, 0.12)'
+                                  : 'rgba(107, 142, 90, 0.12)',
                             color:
                               p.resident_type === 'TENANT'
                                 ? '#2563eb'
                                 : p.resident_type === 'OWNER'
-                                ? '#059669'
-                                : 'var(--color-fern-green)',
+                                  ? '#059669'
+                                  : 'var(--color-fern-green)',
                             padding: '3px 8px',
                             borderRadius: '4px',
                             fontSize: '0.75rem',
@@ -3202,8 +3694,8 @@ export default function MaintenancePage() {
                           {p.resident_type === 'TENANT'
                             ? 'Tenant Only'
                             : p.resident_type === 'OWNER'
-                            ? 'Owner Only'
-                            : 'Both (Owner & Tenant)'}
+                              ? 'Owner Only'
+                              : 'Both (Owner & Tenant)'}
                         </span>
                       </div>
                       <h3 style={{ margin: '0 0 2px', fontSize: '1.15rem', color: 'var(--text-main)' }}>
@@ -4059,42 +4551,13 @@ export default function MaintenancePage() {
                   >
                     <CheckCircle2 size={14} />
                     <span>
-                      Selected Plan Amount: <strong>₹{Number(plans.find((p) => String(p.id) === String(generateFormData.plan_id))?.amount || 0).toLocaleString()}</strong> ({generateFormData.billing_cycle}). All generated invoices will carry this amount.
+                      Selected Plan Amount: <strong>₹{Number(plans.find((p) => String(p.id) === String(generateFormData.plan_id))?.amount || 0).toLocaleString()}</strong>. All generated invoices will carry this amount.
                     </span>
                   </div>
                 )}
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Billing Cycle
-                </label>
-                <select
-                  value={generateFormData.billing_cycle}
-                  onChange={(e) => {
-                    const cycle = e.target.value;
-                    setGenerateFormData({
-                      ...generateFormData,
-                      billing_cycle: cycle,
-                      billing_period: getCurrentPeriod(cycle),
-                    });
-                  }}
-                  style={{
-                    width: '100%',
-                    background: 'var(--bg-primary)',
-                    border: '1px solid var(--border-card)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '9px 12px',
-                    color: 'var(--text-main)',
-                    fontSize: '0.88rem',
-                  }}
-                >
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="QUARTERLY">Quarterly (3 Months)</option>
-                  <option value="HALF_YEARLY">Half-Yearly (6 Months)</option>
-                  <option value="YEARLY">Yearly (12 Months)</option>
-                </select>
-              </div>
+
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
@@ -4234,12 +4697,16 @@ export default function MaintenancePage() {
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Invoice:</span>
-                <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>{selectedBillForPayment.bill_number}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{selectedBillForPayment.isPlanPayment ? 'Plan / Invoice:' : 'Invoice:'}</span>
+                <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
+                  {selectedBillForPayment.isPlanPayment
+                    ? `${selectedBillForPayment.plan_name} (Generated on Confirm)`
+                    : selectedBillForPayment.bill_number}
+                </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Unit:</span>
-                <span style={{ fontWeight: 700, color: 'var(--color-clay)' }}>{selectedBillForPayment.home_number}</span>
+                <span style={{ fontWeight: 700, color: 'var(--color-clay)' }}>{selectedBillForPayment.home_number || myHomeNumber}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Covered Period:</span>
@@ -4252,11 +4719,13 @@ export default function MaintenancePage() {
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Total Amount:</span>
-                <span style={{ fontWeight: 700 }}>₹{Number(selectedBillForPayment.total_amount).toLocaleString()}</span>
+                <span style={{ fontWeight: 700 }}>₹{Number(selectedBillForPayment.total_amount || selectedBillForPayment.amount || 0).toLocaleString()}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-muted)' }}>Outstanding Balance:</span>
-                <span style={{ fontWeight: 800, color: '#ef4444' }}>₹{Number(selectedBillForPayment.balance_amount).toLocaleString()}</span>
+                <span style={{ color: 'var(--text-muted)' }}>{selectedBillForPayment.isPlanPayment ? 'Payable Amount:' : 'Outstanding Balance:'}</span>
+                <span style={{ fontWeight: 800, color: selectedBillForPayment.isPlanPayment ? '#10b981' : '#ef4444' }}>
+                  ₹{Number(selectedBillForPayment.balance_amount || selectedBillForPayment.total_amount || selectedBillForPayment.amount || 0).toLocaleString()}
+                </span>
               </div>
             </div>
 
@@ -4276,7 +4745,7 @@ export default function MaintenancePage() {
               >
                 <ShieldCheck size={20} color="#f59e0b" style={{ flexShrink: 0 }} />
                 <span>
-                  <strong>Approval Workflow:</strong> Once you confirm payment, your submission will be reviewed and verified by the society admin. After admin confirmation, both sides will show <strong>"Approved by Admin"</strong> and <strong>"Done Payment"</strong>.
+                  <strong>Payment Confirmation:</strong> Clicking <strong>"Confirm Payment"</strong> will generate your official invoice, record your payment submission, and show your invoice receipt preview immediately.
                 </span>
               </div>
             )}
@@ -4544,18 +5013,18 @@ export default function MaintenancePage() {
                         selectedBillForReceipt.status === 'PAID'
                           ? '#dcfce7'
                           : selectedBillForReceipt.status === 'PENDING_APPROVAL'
-                          ? '#fef3c7'
-                          : selectedBillForReceipt.status === 'OVERDUE'
-                          ? '#fee2e2'
-                          : '#fef3c7',
+                            ? '#fef3c7'
+                            : selectedBillForReceipt.status === 'OVERDUE'
+                              ? '#fee2e2'
+                              : '#fef3c7',
                       color:
                         selectedBillForReceipt.status === 'PAID'
                           ? '#15803d'
                           : selectedBillForReceipt.status === 'PENDING_APPROVAL'
-                          ? '#b45309'
-                          : selectedBillForReceipt.status === 'OVERDUE'
-                          ? '#b91c1c'
-                          : '#b45309',
+                            ? '#b45309'
+                            : selectedBillForReceipt.status === 'OVERDUE'
+                              ? '#b91c1c'
+                              : '#b45309',
                       padding: '3px 9px',
                       borderRadius: '4px',
                       fontWeight: 700,
@@ -4568,8 +5037,8 @@ export default function MaintenancePage() {
                     {selectedBillForReceipt.status === 'PAID'
                       ? `✓ Done Payment • Approved by Admin`
                       : selectedBillForReceipt.status === 'PENDING_APPROVAL'
-                      ? `⏳ Pending Admin Approval`
-                      : selectedBillForReceipt.status}
+                        ? `⏳ Pending Admin Approval`
+                        : selectedBillForReceipt.status}
                   </span>
                 </div>
               </div>
@@ -5075,6 +5544,27 @@ export default function MaintenancePage() {
                 <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '6px 0 0' }}>
                   {myHomeNumber ? `Unit / Home: ${myHomeNumber} • ` : ''}Select any plan below to make payment for current dues or advance months.
                 </p>
+                {activeCycle && (
+                  <div style={{ marginTop: '8px' }}>
+                    <span
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        color: '#10b981',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        borderRadius: '4px',
+                        padding: '3px 8px',
+                        fontSize: '0.74rem',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                      }}
+                    >
+                      <CalendarDays size={13} />
+                      <span>Active Cycle: <strong>{activeCycle.name}</strong> ({formatMonth(activeCycle.start_month).short} to {formatMonth(activeCycle.end_month).short})</span>
+                    </span>
+                  </div>
+                )}
               </div>
               <button
                 type="button"
@@ -5084,6 +5574,33 @@ export default function MaintenancePage() {
                 <X size={20} />
               </button>
             </div>
+
+            {/* Check if all active cycle months are fully paid */}
+            {activeCycle &&
+              residentAvailablePlans.length > 0 &&
+              residentAvailablePlans.every((p) => {
+                const info = getNextUnpaidPeriodForPlan(p);
+                return !info.isEligible && info.isAllPaid;
+              }) && (
+                <div
+                  style={{
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1.5px solid rgba(16, 185, 129, 0.35)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '18px',
+                    textAlign: 'center',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <CheckCircle2 size={36} color="#10b981" style={{ margin: '0 auto 8px' }} />
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#10b981', margin: 0 }}>
+                    Active Cycle Fully Settled!
+                  </h3>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-main)', margin: '6px 0 0' }}>
+                    All maintenance dues for active cycle <strong>{activeCycle.name}</strong> ({formatMonth(activeCycle.start_month).short} to {formatMonth(activeCycle.end_month).short}) are completely cleared!
+                  </p>
+                </div>
+              )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {residentAvailablePlans.map((plan) => {
@@ -5095,12 +5612,13 @@ export default function MaintenancePage() {
                     key={plan.id}
                     style={{
                       background: 'rgba(255, 255, 255, 0.04)',
-                      border: '1.5px solid var(--border-card)',
+                      border: `1.5px solid ${nextInfo.isEligible ? 'var(--border-card)' : 'rgba(239, 68, 68, 0.3)'}`,
                       borderRadius: 'var(--radius-md)',
                       padding: '16px 18px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '10px',
+                      opacity: nextInfo.isEligible ? 1 : 0.85,
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -5120,7 +5638,7 @@ export default function MaintenancePage() {
                               textTransform: 'uppercase',
                             }}
                           >
-                            {isQuarterly ? 'Quarterly (3 Months)' : 'Monthly'}
+                            {isQuarterly ? 'Quarterly (3 Months)' : plan.billing_cycle === 'HALF_YEARLY' ? 'Half Yearly (6 Mos)' : plan.billing_cycle === 'YEARLY' ? 'Yearly (12 Mos)' : 'Monthly (1 Mo)'}
                           </span>
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '4px' }}>
@@ -5135,59 +5653,79 @@ export default function MaintenancePage() {
                       </div>
                     </div>
 
-                    {/* Target Cycle Info Banner */}
-                    <div
-                      style={{
-                        background: nextInfo.isAdvance ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                        border: `1px solid ${nextInfo.isAdvance ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
-                        borderRadius: '6px',
-                        padding: '8px 12px',
-                        fontSize: '0.8rem',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <div>
-                        <span style={{ color: nextInfo.isAdvance ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
-                          {nextInfo.isAdvance ? '✓ Current Month Done' : 'Due Period'}:
-                        </span>{' '}
-                        <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>
-                          Will Pay for: {nextInfo.desc}
-                        </span>
+                    {/* Eligibility or Ineligibility Banner */}
+                    {!nextInfo.isEligible ? (
+                      <div
+                        style={{
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: '6px',
+                          padding: '10px 12px',
+                          fontSize: '0.8rem',
+                          color: '#f87171',
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '8px',
+                        }}
+                      >
+                        <AlertCircle size={16} style={{ marginTop: '2px', flexShrink: 0 }} />
+                        <div>
+                          <strong>Unavailable in Active Cycle:</strong> {nextInfo.disabledReason}
+                        </div>
                       </div>
-                      {nextInfo.isAdvance && (
-                        <span
-                          style={{
-                            background: '#10b981',
-                            color: '#fff',
-                            fontSize: '0.68rem',
-                            fontWeight: 800,
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                          }}
-                        >
-                          Next Cycle
-                        </span>
-                      )}
-                    </div>
+                    ) : (
+                      <div
+                        style={{
+                          background: nextInfo.isAdvance ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
+                          border: `1px solid ${nextInfo.isAdvance ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                          borderRadius: '6px',
+                          padding: '8px 12px',
+                          fontSize: '0.8rem',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        }}
+                      >
+                        <div>
+                          <span style={{ color: nextInfo.isAdvance ? '#10b981' : '#f59e0b', fontWeight: 700 }}>
+                            {nextInfo.isAdvance ? '✓ Current Month Settled' : 'Due Period'}:
+                          </span>{' '}
+                          <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>
+                            Will Pay for: {nextInfo.desc}
+                          </span>
+                        </div>
+                        {nextInfo.isAdvance && (
+                          <span
+                            style={{
+                              background: '#10b981',
+                              color: '#fff',
+                              fontSize: '0.68rem',
+                              fontWeight: 800,
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                            }}
+                          >
+                            Advance
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <button
                       type="button"
                       onClick={() => {
-                        setShowPayMaintenanceModal(false);
-                        handleSelectPlan(plan, nextInfo.period);
+                        handleProceedToPayPlan(plan, nextInfo.period);
                       }}
-                      disabled={actionLoading}
+                      disabled={!nextInfo.isEligible || actionLoading}
                       style={{
-                        background: 'var(--color-clay)',
-                        color: '#fff',
+                        background: nextInfo.isEligible ? 'var(--color-clay)' : 'rgba(255, 255, 255, 0.08)',
+                        color: nextInfo.isEligible ? '#fff' : 'var(--text-muted)',
                         border: 'none',
                         borderRadius: 'var(--radius-sm)',
                         padding: '10px 16px',
                         fontSize: '0.88rem',
                         fontWeight: 800,
-                        cursor: 'pointer',
+                        cursor: nextInfo.isEligible ? 'pointer' : 'not-allowed',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -5196,7 +5734,11 @@ export default function MaintenancePage() {
                       }}
                     >
                       <CreditCard size={15} />
-                      <span>Proceed & Pay ₹{Number(plan.amount).toLocaleString()} for {nextInfo.desc}</span>
+                      <span>
+                        {nextInfo.isEligible
+                          ? `Proceed & Pay ₹${Number(plan.amount).toLocaleString()} for ${nextInfo.desc}`
+                          : 'Unavailable in Current Cycle'}
+                      </span>
                     </button>
                   </div>
                 );
@@ -5207,7 +5749,7 @@ export default function MaintenancePage() {
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* MODAL: ADMIN MAINTENANCE CYCLE SELECTOR (START TO END MONTH/YEAR)  */}
+      {/* MODAL: ADMIN MAINTENANCE CYCLE MANAGER & ACTIVATOR                 */}
       {/* ------------------------------------------------------------------ */}
       {showCycleModal && (
         <div
@@ -5226,182 +5768,414 @@ export default function MaintenancePage() {
             className="glass-panel"
             style={{
               width: '100%',
-              maxWidth: '480px',
-              padding: '28px',
+              maxWidth: '680px',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '26px',
               background: 'var(--bg-secondary)',
               borderRadius: 'var(--radius-lg)',
               boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
               border: '1px solid var(--border-card)',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '18px' }}>
               <div>
-                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <CalendarDays size={20} color="var(--color-clay)" />
-                  <span>Maintenance Month Cycle</span>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CalendarDays size={22} color="var(--color-clay)" />
+                  <span>Maintenance Billing Cycles</span>
                 </h3>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
-                  Set the start and end month cycle. Only months in this range will be tracked and displayed.
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                  Default 12-month cycle starts from society creation month. Admin can modify existing cycles or create the upcoming cycle.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowCycleModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                onClick={() => {
+                  setShowCycleModal(false);
+                  setEditingCycle(null);
+                }}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (cycleForm.startMonth > cycleForm.endMonth) {
-                  showError('Start month cannot be after end month');
-                  return;
-                }
-                setCycleRange(cycleForm);
-                localStorage.setItem(`myvms_maint_cycle`, JSON.stringify(cycleForm));
-                setShowCycleModal(false);
-                showToast(`Cycle set: ${formatMonth(cycleForm.startMonth).short} to ${formatMonth(cycleForm.endMonth).short}`);
+            {/* Society Cycles Overview Banner */}
+            <div
+              style={{
+                background: 'rgba(196, 154, 108, 0.08)',
+                border: '1.5px solid rgba(196, 154, 108, 0.35)',
+                borderRadius: 'var(--radius-md)',
+                padding: '14px 16px',
+                marginBottom: '20px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '12px',
               }}
             >
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '16px' }}>
-                <div className="input-group">
-                  <label className="input-label">Start Month & Year *</label>
-                  <input
-                    type="month"
-                    required
-                    className="input-field"
-                    value={cycleForm.startMonth}
-                    onChange={(e) => setCycleForm({ ...cycleForm, startMonth: e.target.value })}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">End Month & Year *</label>
-                  <input
-                    type="month"
-                    required
-                    className="input-field"
-                    value={cycleForm.endMonth}
-                    onChange={(e) => setCycleForm({ ...cycleForm, endMonth: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              {/* Quick Cycle Presets */}
-              <div style={{ marginBottom: '18px' }}>
-                <label className="input-label" style={{ marginBottom: '6px' }}>Quick Presets:</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const today = new Date();
-                      const y = today.getFullYear();
-                      const m = String(today.getMonth() + 1).padStart(2, '0');
-                      const endD = new Date(y, today.getMonth() + 2, 1);
-                      setCycleForm({
-                        startMonth: `${y}-${m}`,
-                        endMonth: `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}`,
-                      });
-                    }}
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span
                     style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--border-card)',
-                      borderRadius: '16px',
-                      padding: '4px 10px',
-                      fontSize: '0.72rem',
-                      color: 'var(--text-main)',
-                      cursor: 'pointer',
+                      background: 'var(--color-clay)',
+                      color: '#fff',
+                      fontSize: '0.65rem',
+                      fontWeight: 900,
+                      padding: '2px 7px',
+                      borderRadius: '4px',
+                      letterSpacing: '0.04em',
                     }}
                   >
-                    Current Quarter (3 Mos)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const today = new Date();
-                      const y = today.getFullYear();
-                      const m = String(today.getMonth() + 1).padStart(2, '0');
-                      const endD = new Date(y, today.getMonth() + 5, 1);
-                      setCycleForm({
-                        startMonth: `${y}-${m}`,
-                        endMonth: `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}`,
-                      });
-                    }}
-                    style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--border-card)',
-                      borderRadius: '16px',
-                      padding: '4px 10px',
-                      fontSize: '0.72rem',
-                      color: 'var(--text-main)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Half Yearly (6 Mos)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const today = new Date();
-                      const y = today.getFullYear();
-                      const m = String(today.getMonth() + 1).padStart(2, '0');
-                      const endD = new Date(y, today.getMonth() + 11, 1);
-                      setCycleForm({
-                        startMonth: `${y}-${m}`,
-                        endMonth: `${endD.getFullYear()}-${String(endD.getMonth() + 1).padStart(2, '0')}`,
-                      });
-                    }}
-                    style={{
-                      background: 'rgba(255,255,255,0.06)',
-                      border: '1px solid var(--border-card)',
-                      borderRadius: '16px',
-                      padding: '4px 10px',
-                      fontSize: '0.72rem',
-                      color: 'var(--text-main)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Annual (12 Mos)
-                  </button>
+                    CONTINUOUS CYCLES
+                  </span>
+                  <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--text-main)' }}>
+                    {cycles.length} Cycle{cycles.length !== 1 ? 's' : ''} Configured
+                  </span>
                 </div>
+                <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  Cycles run consecutively without gaps or overlaps. Residents can make payments across any configured cycle.
+                </p>
               </div>
 
-              <div
-                style={{
-                  background: 'rgba(16, 185, 129, 0.08)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  fontSize: '0.78rem',
-                  color: '#10b981',
-                  marginBottom: '16px',
-                }}
-              >
-                💡 Only months from <strong>{formatMonth(cycleForm.startMonth).short}</strong> to <strong>{formatMonth(cycleForm.endMonth).short}</strong> will be displayed. Past months like Aug-2026 or Sep-2026 will not be shown.
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              {!editingCycle && (
                 <button
                   type="button"
-                  onClick={() => setShowCycleModal(false)}
-                  className="btn btn-secondary"
+                  onClick={handleOpenCreateCycleModal}
+                  style={{
+                    background: 'var(--color-clay)',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '6px 14px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 2px 6px rgba(196, 154, 108, 0.3)',
+                  }}
                 >
-                  Cancel
+                  <Plus size={14} />
+                  <span>Create Cycle {cycles.length + 1}</span>
                 </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                >
-                  Apply Cycle
-                </button>
+              )}
+            </div>
+
+            {/* List of Created Cycles */}
+            <div style={{ marginBottom: '22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                  Configured Society Cycles ({cycles.length})
+                </h4>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Click Modify to edit any cycle
+                </span>
               </div>
-            </form>
+
+              {cycles.length === 0 ? (
+                <div
+                  style={{
+                    padding: '20px',
+                    textAlign: 'center',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    border: '1px dashed var(--border-card)',
+                    borderRadius: 'var(--radius-md)',
+                    color: 'var(--text-muted)',
+                    fontSize: '0.84rem',
+                  }}
+                >
+                  No maintenance cycles found. Fill the form below to initialize your cycle.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {cycles.map((c, cIdx) => {
+                    const monthsCount = getMonthsBetween(c.start_month, c.end_month).length;
+                    const isBeingEdited = editingCycle && editingCycle.id === c.id;
+
+                    return (
+                      <div
+                        key={c.id}
+                        style={{
+                          background: isBeingEdited ? 'rgba(196, 154, 108, 0.12)' : 'rgba(255, 255, 255, 0.03)',
+                          border: isBeingEdited ? '1.5px solid var(--color-clay)' : '1px solid var(--border-card)',
+                          borderRadius: 'var(--radius-md)',
+                          padding: '12px 16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '12px',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <div style={{ minWidth: '180px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--text-main)' }}>
+                              {c.name}
+                            </span>
+                            <span
+                              style={{
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#10b981',
+                                fontSize: '0.65rem',
+                                fontWeight: 800,
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                              }}
+                            >
+                              CYCLE {cIdx + 1}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                            {formatMonth(c.start_month).short} to {formatMonth(c.end_month).short} • <strong>{monthsCount} Months</strong>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditCycleModal(c)}
+                            disabled={cycleActionLoading}
+                            style={{
+                              background: isBeingEdited ? 'var(--color-clay)' : 'rgba(196, 154, 108, 0.15)',
+                              color: isBeingEdited ? '#ffffff' : 'var(--color-clay)',
+                              border: '1px solid rgba(196, 154, 108, 0.3)',
+                              borderRadius: '5px',
+                              padding: '5px 12px',
+                              fontSize: '0.76rem',
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                            }}
+                          >
+                            <Pencil size={12} />
+                            <span>{isBeingEdited ? 'Editing' : 'Modify'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCycle(c.id)}
+                            disabled={cycleActionLoading}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#ef4444',
+                              cursor: 'pointer',
+                              padding: '6px',
+                            }}
+                            title="Delete cycle"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Create New Cycle / Modify Cycle Form */}
+            <div
+              style={{
+                background: 'rgba(255, 255, 255, 0.02)',
+                border: '1px solid var(--border-card)',
+                borderRadius: 'var(--radius-md)',
+                padding: '16px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <h4 style={{ fontSize: '0.88rem', fontWeight: 800, margin: 0, color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {editingCycle ? <Pencil size={15} color="var(--color-clay)" /> : <Plus size={15} color="var(--color-clay)" />}
+                  <span>{editingCycle ? `Modify Cycle: ${editingCycle.name}` : `Create Upcoming Cycle (Cycle ${cycles.length + 1})`}</span>
+                </h4>
+                {editingCycle && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCycle(null);
+                      handleOpenCreateCycleModal();
+                    }}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    Cancel Edit (Create Mode)
+                  </button>
+                )}
+              </div>
+
+              <form onSubmit={handleSaveCycle} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                    Cycle Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder='e.g. "Cycle 2 (Oct 2027 - Sep 2028)"'
+                    value={newCycleForm.name}
+                    onChange={(e) => setNewCycleForm({ ...newCycleForm, name: e.target.value })}
+                    style={{
+                      width: '100%',
+                      background: 'var(--bg-primary)',
+                      border: '1px solid var(--border-card)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 12px',
+                      fontSize: '0.84rem',
+                      color: 'var(--text-main)',
+                      outline: 'none',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      Start Month *
+                    </label>
+                    <input
+                      type="month"
+                      required
+                      value={newCycleForm.start_month}
+                      onChange={(e) => setNewCycleForm({ ...newCycleForm, start_month: e.target.value })}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-card)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '8px 12px',
+                        fontSize: '0.84rem',
+                        color: 'var(--text-main)',
+                        outline: 'none',
+                      }}
+                    />
+                    {!editingCycle && cycles.length > 0 && (
+                      <span style={{ fontSize: '0.68rem', color: '#10b981', marginTop: '2px', display: 'block' }}>
+                        ✓ Auto-linked to upcoming next month
+                      </span>
+                    )}
+                  </div>
+
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.76rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      End Month *
+                    </label>
+                    <input
+                      type="month"
+                      required
+                      value={newCycleForm.end_month}
+                      onChange={(e) => setNewCycleForm({ ...newCycleForm, end_month: e.target.value })}
+                      style={{
+                        width: '100%',
+                        background: 'var(--bg-primary)',
+                        border: '1px solid var(--border-card)',
+                        borderRadius: 'var(--radius-md)',
+                        padding: '8px 12px',
+                        fontSize: '0.84rem',
+                        color: 'var(--text-main)',
+                        outline: 'none',
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Presets for Duration */}
+                {newCycleForm.start_month && (
+                  <div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginRight: '6px' }}>Quick Duration:</span>
+                    {[
+                      { label: '+6 Months', add: 5 },
+                      { label: '+12 Months (1 Year)', add: 11 },
+                      { label: '+24 Months (2 Years)', add: 23 },
+                    ].map((preset) => {
+                      return (
+                        <button
+                          key={preset.label}
+                          type="button"
+                          onClick={() => {
+                            const [sy, sm] = newCycleForm.start_month.split('-').map(Number);
+                            let totalM = (sy * 12 + (sm - 1)) + preset.add;
+                            let newY = Math.floor(totalM / 12);
+                            let newM = (totalM % 12) + 1;
+                            const calcEnd = `${newY}-${String(newM).padStart(2, '0')}`;
+                            setNewCycleForm({
+                              ...newCycleForm,
+                              end_month: calcEnd,
+                              name: newCycleForm.name ? newCycleForm.name : `Cycle (${formatMonth(newCycleForm.start_month).short} - ${formatMonth(calcEnd).short})`,
+                            });
+                          }}
+                          style={{
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-card)',
+                            borderRadius: '4px',
+                            color: 'var(--color-clay)',
+                            fontSize: '0.72rem',
+                            fontWeight: 700,
+                            padding: '3px 8px',
+                            marginRight: '6px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '6px' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCycleModal(false);
+                      setEditingCycle(null);
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: '1px solid var(--border-card)',
+                      color: 'var(--text-muted)',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 16px',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="submit"
+                    disabled={cycleActionLoading}
+                    style={{
+                      background: 'var(--color-clay)',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: 'var(--radius-md)',
+                      padding: '8px 20px',
+                      fontSize: '0.82rem',
+                      fontWeight: 800,
+                      cursor: cycleActionLoading ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      boxShadow: '0 2px 8px rgba(196, 154, 108, 0.4)',
+                    }}
+                  >
+                    {cycleActionLoading ? <RefreshCw size={14} className="animate-spin" /> : editingCycle ? <Pencil size={14} /> : <Plus size={14} />}
+                    <span>{editingCycle ? 'Update Cycle' : `Create Cycle ${cycles.length + 1}`}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
+
     </div>
   );
 }

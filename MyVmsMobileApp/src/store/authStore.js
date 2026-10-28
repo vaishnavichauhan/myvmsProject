@@ -26,11 +26,21 @@ export const useAuthStore = create((set, get) => {
         const cachedUser = await storage.getUser();
 
         if (token && cachedUser) {
+          if (cachedUser?.role === 'SUPER_ADMIN' || cachedUser?.role === 'super_admin') {
+            await storage.clearSession();
+            set({ token: null, user: null, isAuthenticated: false, isLoading: false });
+            return;
+          }
           set({ token, user: cachedUser, isAuthenticated: true, isLoading: false });
           // Asynchronously verify profile with backend
           try {
             const res = await authApi.getProfile();
             if (res.success && res.data?.user) {
+              if (res.data.user.role === 'SUPER_ADMIN' || res.data.user.role === 'super_admin') {
+                await storage.clearSession();
+                set({ token: null, user: null, isAuthenticated: false, isLoading: false });
+                return;
+              }
               await storage.setUser(res.data.user);
               set({ user: res.data.user });
             }
@@ -66,6 +76,14 @@ export const useAuthStore = create((set, get) => {
         const response = await authApi.login(payload);
         if (response.success && response.data?.token) {
           const { token, user } = response.data;
+
+          // Restrict Super Admin from Mobile App
+          if (user?.role === 'SUPER_ADMIN' || user?.role === 'super_admin') {
+            const msg = 'Super Admin access is only available on the Web Dashboard. Mobile app login is not permitted for Super Admin.';
+            set({ isLoading: false, error: msg });
+            return { success: false, message: msg };
+          }
+
           await storage.setToken(token);
           await storage.setUser(user);
           await storage.setSavedLoginId(trimmed);

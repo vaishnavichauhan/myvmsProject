@@ -26,6 +26,14 @@ export const maintenanceApi = {
   getPayments: (params) => apiClient.get('/maintenance/payments', { params }),
   approvePayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/approve`, data),
   rejectPayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/reject`, data),
+
+  // Cycles
+  getCycles: (params) => apiClient.get('/maintenance/cycles', { params }),
+  getActiveCycle: (params) => apiClient.get('/maintenance/cycles/active', { params }),
+  createCycle: (data) => apiClient.post('/maintenance/cycles', data),
+  updateCycle: (id, data) => apiClient.put(`/maintenance/cycles/${id}`, data),
+  activateCycle: (id) => apiClient.put(`/maintenance/cycles/${id}/activate`),
+  deleteCycle: (id) => apiClient.delete(`/maintenance/cycles/${id}`),
 };
 
 export default maintenanceApi;

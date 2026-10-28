@@ -31,6 +31,10 @@ import { SecurityHomeScreen } from '../screens/SecurityHomeScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { ResidentsScreen } from '../screens/ResidentsScreen';
+import { SocietyFinanceScreen } from '../screens/SocietyFinanceScreen';
+import { AmenitiesScreen } from '../screens/AmenitiesScreen';
+import { PollsScreen } from '../screens/PollsScreen';
+import { SubscriptionBillingScreen } from '../screens/SubscriptionBillingScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -128,10 +132,15 @@ export default function AppNavigator() {
             <Stack.Screen name="Residents" component={ResidentsScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="Society" component={SettingsScreen} />
+            <Stack.Screen name="Societies" component={SettingsScreen} />
             <Stack.Screen name="Reports" component={ReportsScreen} />
             <Stack.Screen name="Visitors" component={VisitorsScreen} />
             <Stack.Screen name="Announcements" component={AnnouncementsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="SocietyFinance" component={SocietyFinanceScreen} />
+            <Stack.Screen name="Amenities" component={AmenitiesScreen} />
+            <Stack.Screen name="Polls" component={PollsScreen} />
+            <Stack.Screen name="SubscriptionBilling" component={SubscriptionBillingScreen} />
           </>
         )}
       </Stack.Navigator>

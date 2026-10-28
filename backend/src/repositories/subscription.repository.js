@@ -474,6 +474,15 @@ class SubscriptionRepository {
       ]);
 
       await connection.commit();
+
+      // Auto-create default 12-month maintenance cycle for this society
+      try {
+        const MaintenanceService = require('../services/maintenance.service');
+        await MaintenanceService.ensureDefaultCycle(societyId);
+      } catch (cErr) {
+        console.warn('Failed to auto-create default maintenance cycle for subscription society:', cErr.message);
+      }
+
       const soc = await this.findSocietyById(societyId);
       return { ...soc, society: soc };
     } catch (err) {

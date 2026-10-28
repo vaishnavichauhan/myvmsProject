@@ -31,6 +31,10 @@ import {
   ShieldCheck,
   Briefcase,
   Megaphone,
+  Wallet,
+  Sparkles,
+  Vote,
+  CreditCard,
 } from 'lucide-react-native';
 import { adminApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
@@ -121,7 +125,7 @@ export const AdminDashboardScreen = ({ navigation }) => {
       icon: Building2,
       iconColor: THEME.colors.clay,
       iconBg: 'rgba(196, 154, 108, 0.15)',
-      screen: 'Settings',
+      screen: 'Residents',
     },
     {
       id: 'occupied-homes',
@@ -255,9 +259,57 @@ export const AdminDashboardScreen = ({ navigation }) => {
       iconBg: 'rgba(135, 206, 235, 0.25)',
       screen: 'Gates',
     },
+    {
+      id: 'society-finance',
+      title: 'Society Finance',
+      value: '₹12,020',
+      subtitle: 'Maintenance & special charges',
+      valueColor: '#10B981',
+      icon: Wallet,
+      iconColor: '#10B981',
+      iconBg: 'rgba(16, 185, 129, 0.15)',
+      screen: 'SocietyFinance',
+    },
+    {
+      id: 'amenities-bookings',
+      title: 'Amenities & Bookings',
+      value: '4 Venues',
+      subtitle: 'Clubhouse, sports, gym & hall',
+      valueColor: '#0284c7',
+      icon: Sparkles,
+      iconColor: '#0284c7',
+      iconBg: 'rgba(2, 132, 199, 0.15)',
+      screen: 'Amenities',
+    },
+    {
+      id: 'polls-surveys',
+      title: 'Polls & Surveys',
+      value: '2 Active',
+      subtitle: 'Community opinions & voting',
+      valueColor: '#8b5cf6',
+      icon: Vote,
+      iconColor: '#8b5cf6',
+      iconBg: 'rgba(139, 92, 246, 0.15)',
+      screen: 'Polls',
+    },
+    {
+      id: 'subscription-billing',
+      title: 'Subscription & Plan',
+      value: 'ACTIVE',
+      subtitle: 'Plan limits & platform invoices',
+      valueColor: THEME.colors.clay,
+      icon: CreditCard,
+      iconColor: THEME.colors.clay,
+      iconBg: 'rgba(196, 154, 108, 0.15)',
+      screen: 'SubscriptionBilling',
+    },
   ];
 
   const quickShortcuts = [
+    { name: 'Society Finance', screen: 'SocietyFinance', icon: Wallet, label: 'Accounts, dues & maintenance bills' },
+    { name: 'Amenities Booking', screen: 'Amenities', icon: Sparkles, label: 'Manage clubhouse, sports & hall slots' },
+    { name: 'Polls & Surveys', screen: 'Polls', icon: Vote, label: 'Community opinions, feedback & voting' },
+    { name: 'Plan & Billing', screen: 'SubscriptionBilling', icon: CreditCard, label: 'Society license, limits & invoices' },
     { name: 'Society Settings', screen: 'Settings', icon: Settings, label: 'Configure rules, policies & permissions' },
     { name: 'Audit Reports', screen: 'Reports', icon: FileText, label: 'Export activity records & analytics' },
   ];

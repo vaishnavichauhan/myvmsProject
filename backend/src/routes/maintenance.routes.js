@@ -31,4 +31,12 @@ router.post('/payments', MaintenanceController.recordPayment);
 router.post('/payments/:id/approve', MaintenanceController.approvePayment);
 router.post('/payments/:id/reject', MaintenanceController.rejectPayment);
 
+// Maintenance Cycles
+router.get('/cycles', MaintenanceController.getAllCycles);
+router.get('/cycles/active', MaintenanceController.getActiveCycle);
+router.post('/cycles', MaintenanceController.createCycle);
+router.put('/cycles/:id', MaintenanceController.updateCycle);
+router.put('/cycles/:id/activate', MaintenanceController.activateCycle);
+router.delete('/cycles/:id', MaintenanceController.deleteCycle);
+
 module.exports = router;

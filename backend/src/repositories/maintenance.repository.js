@@ -189,6 +189,27 @@ class MaintenanceRepository {
   }
 
   /**
+   * Helper to get list of YYYY-MM strings between two months inclusive
+   */
+  static getMonthsBetween(startMonth, endMonth) {
+    if (!startMonth || !endMonth) return [];
+    const [sY, sM] = String(startMonth).split('-').map(Number);
+    const [eY, eM] = String(endMonth).split('-').map(Number);
+    const result = [];
+    let curY = sY;
+    let curM = sM;
+    while (curY < eY || (curY === eY && curM <= eM)) {
+      result.push(`${curY}-${String(curM).padStart(2, '0')}`);
+      curM++;
+      if (curM > 12) {
+        curM = 1;
+        curY++;
+      }
+    }
+    return result;
+  }
+
+  /**
    * Helper to determine which monthly periods are covered by a given billing period and cycle
    */
   static getCoveredMonthsForPeriod(period, cycle) {
@@ -212,7 +233,7 @@ class MaintenanceRepository {
       if (h === 1) return [`${y}-01`, `${y}-02`, `${y}-03`, `${y}-04`, `${y}-05`, `${y}-06`];
       return [`${y}-07`, `${y}-08`, `${y}-09`, `${y}-10`, `${y}-11`, `${y}-12`];
     }
-    if (cycle === 'YEARLY' || String(period).startsWith('FY-')) {
+    if (cycle === 'YEARLY' && String(period).startsWith('FY-')) {
       const y = String(period).replace(/\D/g, '') || new Date().getFullYear();
       const months = [];
       for (let i = 1; i <= 12; i++) {
@@ -222,12 +243,48 @@ class MaintenanceRepository {
     }
     const mMatch = String(period).match(/(\d{4})[-_](\d{1,2})/);
     if (mMatch) {
+      const startY = parseInt(mMatch[1], 10);
+      const startM = parseInt(mMatch[2], 10);
+      // Rolling quarterly: 3 months from start
+      if (cycle === 'QUARTERLY') {
+        const months = [];
+        for (let i = 0; i < 3; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
+      // Rolling half-yearly: 6 months from start
+      if (cycle === 'HALF_YEARLY') {
+        const months = [];
+        for (let i = 0; i < 6; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
+      // Rolling yearly: 12 months from start
+      if (cycle === 'YEARLY') {
+        const months = [];
+        for (let i = 0; i < 12; i++) {
+          let nm = startM + i;
+          let ny = startY;
+          if (nm > 12) { nm -= 12; ny++; }
+          months.push(`${ny}-${String(nm).padStart(2, '0')}`);
+        }
+        return months;
+      }
       const y = mMatch[1];
       const m = String(parseInt(mMatch[2], 10)).padStart(2, '0');
       return [`${y}-${m}`];
     }
     return [];
   }
+
 
   /**
    * Reconciles overlapping bills: cleans up redundant unpaid monthly bills when an overlapping quarterly or annual bill is paid
@@ -501,53 +558,103 @@ class MaintenanceRepository {
       });
     };
 
-    // Helper to check if a quarter (e.g. "Q4-2026") has any month already paid for this home
+    // Helper to check if a quarter (e.g. "Q1-2026") is fully paid for this home.
+    // A quarter is "paid" only when ALL its months are covered by paid bills,
+    // OR an explicit paid quarterly bill exists for that exact period.
     const isQuarterPaid = (qStr) => {
       const qMonths = MaintenanceRepository.getCoveredMonthsForPeriod(qStr, 'QUARTERLY');
-      return homeBills.some((b) => {
-        if (b.status !== 'PAID') return false;
-        if (b.billing_period === qStr) return true;
-        const bMonths = MaintenanceRepository.getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
-        return qMonths.some((qm) => bMonths.includes(qm));
+      // Case 1: An explicit quarterly bill for this period is paid
+      const hasExplicitQtrBill = homeBills.some(
+        (b) => b.status === 'PAID' && b.billing_period === qStr && b.billing_cycle === 'QUARTERLY'
+      );
+      if (hasExplicitQtrBill) return true;
+      // Case 2: ALL months of the quarter are individually covered by paid bills
+      return qMonths.every((qm) => {
+        return homeBills.some((b) => {
+          if (b.status !== 'PAID') return false;
+          if (b.billing_period === qm) return true;
+          const bMonths = MaintenanceRepository.getCoveredMonthsForPeriod(b.billing_period, b.billing_cycle);
+          return bMonths.includes(qm);
+        });
       });
     };
 
-    if (!billing_period) {
-      if (plan.billing_cycle === 'QUARTERLY') {
-        const curQ = Math.ceil((today.getMonth() + 1) / 3);
-        let qYear = yyyy;
-        let qNum = curQ;
-        // Find first unpaid quarter starting from current
-        while (true) {
-          const testPeriod = `Q${qNum}-${qYear}`;
-          if (!isQuarterPaid(testPeriod)) {
-            billing_period = testPeriod;
-            break;
+    const activeCycle = await MaintenanceRepository.findActiveCycle(societyId);
+
+    const planDuration =
+      plan.billing_cycle === 'YEARLY'
+        ? 12
+        : plan.billing_cycle === 'HALF_YEARLY'
+        ? 6
+        : plan.billing_cycle === 'QUARTERLY'
+        ? 3
+        : 1;
+
+    if (activeCycle) {
+      const cycleMonths = MaintenanceRepository.getMonthsBetween(activeCycle.start_month, activeCycle.end_month);
+      const unpaidCycleMonths = cycleMonths.filter((m) => !isMonthPaid(m));
+
+      if (unpaidCycleMonths.length === 0) {
+        throw new Error(
+          `All maintenance dues for active cycle "${activeCycle.name}" (${activeCycle.start_month} to ${activeCycle.end_month}) are already fully paid!`
+        );
+      }
+
+      if (planDuration > unpaidCycleMonths.length) {
+        throw new Error(
+          `Selected plan (${plan.name} - ${planDuration} months) exceeds the remaining ${unpaidCycleMonths.length} unpaid month(s) in active cycle "${activeCycle.name}".`
+        );
+      }
+
+      if (unpaidCycleMonths.length % planDuration !== 0) {
+        throw new Error(
+          `Cannot select ${plan.name} (${planDuration} months) because there are only ${unpaidCycleMonths.length} unpaid month(s) remaining in active cycle "${activeCycle.name}". Please pay using the Monthly plan.`
+        );
+      }
+
+      if (!billing_period) {
+        billing_period = unpaidCycleMonths[0];
+      }
+
+      const covered = MaintenanceRepository.getCoveredMonthsForPeriod(billing_period, plan.billing_cycle);
+      const outOfBounds = covered.some((m) => m < activeCycle.start_month || m > activeCycle.end_month);
+      if (outOfBounds) {
+        throw new Error(
+          `Selected plan (${plan.name}) covers months outside active cycle "${activeCycle.name}" (${activeCycle.start_month} to ${activeCycle.end_month}).`
+        );
+      }
+    } else {
+      if (!billing_period) {
+        if (plan.billing_cycle === 'QUARTERLY') {
+          let mMonth = today.getMonth() + 1;
+          let mYear = yyyy;
+          while (true) {
+            const testPeriod = `${mYear}-${String(mMonth).padStart(2, '0')}`;
+            if (!isMonthPaid(testPeriod)) {
+              billing_period = testPeriod;
+              break;
+            }
+            mMonth++;
+            if (mMonth > 12) { mMonth = 1; mYear++; }
           }
-          qNum++;
-          if (qNum > 4) {
-            qNum = 1;
-            qYear++;
+        } else if (plan.billing_cycle === 'MONTHLY') {
+          let mYear = yyyy;
+          let mMonth = today.getMonth() + 1;
+          while (true) {
+            const testPeriod = `${mYear}-${String(mMonth).padStart(2, '0')}`;
+            if (!isMonthPaid(testPeriod)) {
+              billing_period = testPeriod;
+              break;
+            }
+            mMonth++;
+            if (mMonth > 12) {
+              mMonth = 1;
+              mYear++;
+            }
           }
+        } else {
+          billing_period = `${yyyy}-${mm}`;
         }
-      } else if (plan.billing_cycle === 'MONTHLY') {
-        let mYear = yyyy;
-        let mMonth = today.getMonth() + 1;
-        // Find first unpaid month starting from current
-        while (true) {
-          const testPeriod = `${mYear}-${String(mMonth).padStart(2, '0')}`;
-          if (!isMonthPaid(testPeriod)) {
-            billing_period = testPeriod;
-            break;
-          }
-          mMonth++;
-          if (mMonth > 12) {
-            mMonth = 1;
-            mYear++;
-          }
-        }
-      } else {
-        billing_period = `${yyyy}-${mm}`;
       }
     }
 
@@ -1256,6 +1363,76 @@ class MaintenanceRepository {
       ...billStats[0],
       total_plans: planCount[0]?.total_plans || 0,
     };
+  }
+
+  // ==========================================================================
+  // MAINTENANCE CYCLES
+  // ==========================================================================
+  // MAINTENANCE CYCLES
+  // ==========================================================================
+
+  static async createCycle({ society_id, name, start_month, end_month }) {
+    const [res] = await pool.query(
+      `INSERT INTO maintenance_cycles (society_id, name, start_month, end_month, is_active)
+       VALUES (?, ?, ?, ?, 1)`,
+      [society_id, name.trim(), start_month, end_month]
+    );
+
+    return await this.findCycleById(res.insertId);
+  }
+
+  static async updateCycle(id, { name, start_month, end_month }) {
+    const fields = [];
+    const values = [];
+    if (name !== undefined) {
+      fields.push('name = ?');
+      values.push(name.trim());
+    }
+    if (start_month !== undefined) {
+      fields.push('start_month = ?');
+      values.push(start_month);
+    }
+    if (end_month !== undefined) {
+      fields.push('end_month = ?');
+      values.push(end_month);
+    }
+    if (fields.length > 0) {
+      values.push(id);
+      await pool.query(`UPDATE maintenance_cycles SET ${fields.join(', ')} WHERE id = ?`, values);
+    }
+    return await this.findCycleById(id);
+  }
+
+  static async findCycleById(id) {
+    const [rows] = await pool.query('SELECT * FROM maintenance_cycles WHERE id = ?', [id]);
+    return rows[0] || null;
+  }
+
+  static async findAllCycles(society_id) {
+    const [rows] = await pool.query(
+      'SELECT * FROM maintenance_cycles WHERE society_id = ? ORDER BY start_month ASC, id ASC',
+      [society_id]
+    );
+    return rows;
+  }
+
+  static async findActiveCycle(society_id) {
+    const [rows] = await pool.query(
+      'SELECT * FROM maintenance_cycles WHERE society_id = ? ORDER BY start_month ASC, id ASC LIMIT 1',
+      [society_id]
+    );
+    return rows[0] || null;
+  }
+
+  static async activateCycle(arg1, arg2) {
+    const cycle_id = arg2 !== undefined ? arg2 : arg1;
+    return await this.findCycleById(cycle_id);
+  }
+
+  static async deleteCycle(arg1, arg2) {
+    const cycle_id = arg2 !== undefined ? arg2 : arg1;
+    await pool.query('DELETE FROM maintenance_cycles WHERE id = ?', [cycle_id]);
+    return true;
   }
 }
 

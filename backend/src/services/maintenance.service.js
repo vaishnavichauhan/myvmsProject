@@ -1,5 +1,6 @@
 const MaintenanceRepository = require('../repositories/maintenance.repository');
 const ApiError = require('../utils/apiError');
+const { pool } = require('../config/db');
 
 /**
  * Maintenance Service
@@ -164,6 +165,230 @@ class MaintenanceService {
 
   static async getStats(societyId, homeId = null) {
     return await MaintenanceRepository.getStats(societyId, homeId);
+  }
+
+  // ==========================================================================
+  // MAINTENANCE CYCLES
+  // ==========================================================================
+
+  static getNextMonthStr(monthStr) {
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) return '';
+    const [y, m] = monthStr.split('-').map(Number);
+    let nextM = m + 1;
+    let nextY = y;
+    if (nextM > 12) {
+      nextM = 1;
+      nextY += 1;
+    }
+    return `${nextY}-${String(nextM).padStart(2, '0')}`;
+  }
+
+  static getPrevMonthStr(monthStr) {
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) return '';
+    const [y, m] = monthStr.split('-').map(Number);
+    let prevM = m - 1;
+    let prevY = y;
+    if (prevM < 1) {
+      prevM = 12;
+      prevY -= 1;
+    }
+    return `${prevY}-${String(prevM).padStart(2, '0')}`;
+  }
+
+  static addMonthsToStr(monthStr, count) {
+    if (!monthStr || !/^\d{4}-\d{2}$/.test(monthStr)) return '';
+    const [y, m] = monthStr.split('-').map(Number);
+    const totalMonths = y * 12 + (m - 1) + count;
+    const newY = Math.floor(totalMonths / 12);
+    const newM = (totalMonths % 12) + 1;
+    return `${newY}-${String(newM).padStart(2, '0')}`;
+  }
+
+  static async ensureDefaultCycle(societyId) {
+    if (!societyId) return [];
+    const existing = await MaintenanceRepository.findAllCycles(societyId);
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+
+    // Determine society creation month
+    let startMonth = new Date().toISOString().slice(0, 7); // fallback current month YYYY-MM
+    try {
+      const [socRows] = await pool.query('SELECT created_at FROM societies WHERE id = ? LIMIT 1', [societyId]);
+      if (socRows.length > 0 && socRows[0].created_at) {
+        const d = new Date(socRows[0].created_at);
+        if (!isNaN(d.getTime())) {
+          startMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch society created_at for default cycle, using current month:', err.message);
+    }
+
+    // Default maintenance cycle is 12 months (e.g. 2026-10 to 2027-09)
+    const endMonth = this.addMonthsToStr(startMonth, 11);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const [sy, sm] = startMonth.split('-').map(Number);
+    const [ey, em] = endMonth.split('-').map(Number);
+    const startLabel = `${monthNames[sm - 1]} ${sy}`;
+    const endLabel = `${monthNames[em - 1]} ${ey}`;
+
+    await MaintenanceRepository.createCycle({
+      society_id: societyId,
+      name: `Cycle 1 (${startLabel} – ${endLabel})`,
+      start_month: startMonth,
+      end_month: endMonth,
+    });
+
+    return await MaintenanceRepository.findAllCycles(societyId);
+  }
+
+  static async getAllCycles(societyId) {
+    let cycles = await MaintenanceRepository.findAllCycles(societyId);
+    if (!cycles || cycles.length === 0) {
+      cycles = await this.ensureDefaultCycle(societyId);
+    }
+    return cycles;
+  }
+
+  static async getActiveCycle(societyId) {
+    const cycles = await this.getAllCycles(societyId);
+    return cycles[0] || null;
+  }
+
+  static async createCycle(societyId, data) {
+    if (!data.name || !data.name.trim()) {
+      throw ApiError.badRequest('Cycle name is required (e.g. "Cycle 2 (Oct 2027 - Sep 2028)")');
+    }
+    if (!data.start_month || !/^\d{4}-\d{2}$/.test(data.start_month)) {
+      throw ApiError.badRequest('Valid start month (YYYY-MM) is required');
+    }
+    if (!data.end_month || !/^\d{4}-\d{2}$/.test(data.end_month)) {
+      throw ApiError.badRequest('Valid end month (YYYY-MM) is required');
+    }
+    if (data.start_month > data.end_month) {
+      throw ApiError.badRequest('Start month cannot be after end month');
+    }
+
+    // Check existing cycles for overlap and sequential continuous ordering
+    const existingCycles = await MaintenanceRepository.findAllCycles(societyId);
+
+    if (existingCycles && existingCycles.length > 0) {
+      // Sort existing cycles chronologically by end_month
+      const sorted = [...existingCycles].sort((a, b) => (a.end_month || '').localeCompare(b.end_month || ''));
+
+      // 1. Strict overlap check: no cycle can share the same month
+      for (const c of sorted) {
+        if (data.start_month <= c.end_month && c.start_month <= data.end_month) {
+          throw ApiError.badRequest(
+            `Cycles cannot share the same month. Selected period (${data.start_month} to ${data.end_month}) overlaps with existing cycle "${c.name}" (${c.start_month} to ${c.end_month}).`
+          );
+        }
+      }
+
+      // 2. Strict sequential order: new cycle must start in the immediate upcoming next month after the previous cycle ends
+      const latestCycle = sorted[sorted.length - 1];
+      const expectedStartMonth = this.getNextMonthStr(latestCycle.end_month);
+
+      if (data.start_month < expectedStartMonth) {
+        throw ApiError.badRequest(
+          `Cycles must be in increasing chronological order. Previous cycle "${latestCycle.name}" covers up to ${latestCycle.end_month}. The next cycle cannot start earlier than ${expectedStartMonth}.`
+        );
+      }
+
+      if (data.start_month > expectedStartMonth) {
+        throw ApiError.badRequest(
+          `Cycle months must be sequential without skipping months. Previous cycle "${latestCycle.name}" ends in ${latestCycle.end_month}, so the upcoming cycle must start with ${expectedStartMonth} (cannot start with ${data.start_month}).`
+        );
+      }
+    }
+
+    return await MaintenanceRepository.createCycle({
+      society_id: societyId,
+      name: data.name.trim(),
+      start_month: data.start_month,
+      end_month: data.end_month,
+    });
+  }
+
+  static async updateCycle(societyId, cycleId, data) {
+    const cycle = await MaintenanceRepository.findCycleById(cycleId);
+    if (!cycle) {
+      throw ApiError.notFound('Maintenance cycle not found');
+    }
+    if (Number(cycle.society_id) !== Number(societyId)) {
+      throw ApiError.forbidden('Cannot modify cycle of another society');
+    }
+
+    const name = data.name !== undefined ? data.name.trim() : cycle.name;
+    const start_month = data.start_month || cycle.start_month;
+    const end_month = data.end_month || cycle.end_month;
+
+    if (!name) {
+      throw ApiError.badRequest('Cycle name cannot be empty');
+    }
+    if (!/^\d{4}-\d{2}$/.test(start_month) || !/^\d{4}-\d{2}$/.test(end_month)) {
+      throw ApiError.badRequest('Valid start month and end month (YYYY-MM) are required');
+    }
+    if (start_month > end_month) {
+      throw ApiError.badRequest('Start month cannot be after end month');
+    }
+
+    // Check against all other cycles for this society
+    const otherCycles = (await MaintenanceRepository.findAllCycles(societyId)).filter(
+      (c) => Number(c.id) !== Number(cycleId)
+    );
+
+    if (otherCycles.length > 0) {
+      const sorted = [...otherCycles].sort((a, b) => a.start_month.localeCompare(b.start_month));
+
+      // Check overlap
+      for (const c of sorted) {
+        if (start_month <= c.end_month && c.start_month <= end_month) {
+          throw ApiError.badRequest(
+            `Cycle period (${start_month} to ${end_month}) overlaps with existing cycle "${c.name}" (${c.start_month} to ${c.end_month}). Cycles cannot share the same month.`
+          );
+        }
+      }
+
+      // Check continuity with predecessor and successor
+      const predecessors = sorted.filter((c) => c.end_month < start_month);
+      const successors = sorted.filter((c) => c.start_month > end_month);
+
+      if (predecessors.length > 0) {
+        const lastPred = predecessors[predecessors.length - 1];
+        const expectedStart = this.getNextMonthStr(lastPred.end_month);
+        if (start_month !== expectedStart) {
+          throw ApiError.badRequest(
+            `Cycle must start in the immediate next month after previous cycle "${lastPred.name}" ends (${lastPred.end_month}). Expected start: ${expectedStart}.`
+          );
+        }
+      }
+
+      if (successors.length > 0) {
+        const firstSucc = successors[0];
+        const expectedSuccStart = this.getNextMonthStr(end_month);
+        if (firstSucc.start_month !== expectedSuccStart) {
+          throw ApiError.badRequest(
+            `Next cycle "${firstSucc.name}" starts at ${firstSucc.start_month}. This cycle must end in ${this.getPrevMonthStr(firstSucc.start_month)} to maintain continuous cycle progression.`
+          );
+        }
+      }
+    }
+
+    return await MaintenanceRepository.updateCycle(cycleId, {
+      name,
+      start_month,
+      end_month,
+    });
+  }
+
+  static async activateCycle(societyId, cycleId) {
+    return await MaintenanceRepository.activateCycle(societyId, cycleId);
+  }
+
+  static async deleteCycle(societyId, cycleId) {
+    return await MaintenanceRepository.deleteCycle(societyId, cycleId);
   }
 }
 

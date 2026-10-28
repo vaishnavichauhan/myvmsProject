@@ -18,6 +18,7 @@ import { useAuthStore } from '../store/authStore';
 import { societyApi, familyMemberApi, authApi, gateApi } from '../services/apiServices';
 import {
   User,
+  Users,
   Building2,
   Mail,
   Phone,
@@ -39,6 +40,11 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
+  Wallet,
+  Sparkles,
+  Vote,
+  CreditCard,
+  ChevronRight,
 } from 'lucide-react-native';
 
 export const ProfileScreen = ({ navigation }) => {
@@ -382,40 +388,40 @@ export const ProfileScreen = ({ navigation }) => {
 
   const activeSociety = hasSociety
     ? {
-        name:
-          societyData?.name ||
-          home?.society_name ||
-          user?.society?.name ||
-          user?.societyName ||
-          '',
-        code:
-          societyData?.code ||
-          societyData?.society_code ||
-          home?.society_code ||
-          user?.society?.code ||
-          user?.societyCode ||
-          '',
-        address:
-          societyData?.address ||
-          societyData?.address_line1 ||
-          home?.society_address ||
-          user?.society?.address ||
-          user?.societyAddress ||
-          'Not configured',
-        contact_number:
-          societyData?.contact_number ||
-          societyData?.contact_phone ||
-          home?.society_contact ||
-          user?.society?.contact_number ||
-          user?.societyContactNumber ||
-          'Not provided',
-        emergency_number:
-          societyData?.emergency_number ||
-          home?.society_emergency ||
-          user?.society?.emergency_number ||
-          user?.societyEmergencyNumber ||
-          '112 / Not provided',
-      }
+      name:
+        societyData?.name ||
+        home?.society_name ||
+        user?.society?.name ||
+        user?.societyName ||
+        '',
+      code:
+        societyData?.code ||
+        societyData?.society_code ||
+        home?.society_code ||
+        user?.society?.code ||
+        user?.societyCode ||
+        '',
+      address:
+        societyData?.address ||
+        societyData?.address_line1 ||
+        home?.society_address ||
+        user?.society?.address ||
+        user?.societyAddress ||
+        'Not configured',
+      contact_number:
+        societyData?.contact_number ||
+        societyData?.contact_phone ||
+        home?.society_contact ||
+        user?.society?.contact_number ||
+        user?.societyContactNumber ||
+        'Not provided',
+      emergency_number:
+        societyData?.emergency_number ||
+        home?.society_emergency ||
+        user?.society?.emergency_number ||
+        user?.societyEmergencyNumber ||
+        'Not provided',
+    }
     : null;
 
   return (
@@ -883,6 +889,120 @@ export const ProfileScreen = ({ navigation }) => {
           </View>
 
           {/* ======================================================== */}
+          {/* ADMIN OPERATIONS & ADMINISTRATION SHORTCUTS              */}
+          {/* ======================================================== */}
+          {isAdmin && (
+            <View style={styles.glassCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.cardHeaderLeft}>
+                  <View style={[styles.headerIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
+                    <ShieldCheck size={16} color="#7C3AED" />
+                  </View>
+                  <Text style={styles.cardTitle}>Society Operations & Administration</Text>
+                </View>
+              </View>
+
+              <View style={styles.adminActionList}>
+                {/* 1. Society Management */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Societies')}
+                  style={styles.adminActionRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
+                    <Building2 size={16} color={THEME.colors.clay} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Society Management</Text>
+                    <Text style={styles.adminActionSub}>Society profile, homes, units allocation & export</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* 2. Resident Management */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Residents')}
+                  style={styles.adminActionRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(2, 132, 199, 0.12)' }]}>
+                    <Users size={16} color="#0284C7" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Resident Management</Text>
+                    <Text style={styles.adminActionSub}>Units inventory, resident accounts & allotment</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* 3. Society Finance */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('SocietyFinance')}
+                  style={styles.adminActionRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
+                    <Wallet size={16} color="#10B981" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Society Finance</Text>
+                    <Text style={styles.adminActionSub}>Maintenance bills & special charges</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* 2. Amenities & Bookings */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Amenities')}
+                  style={styles.adminActionRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(2, 132, 199, 0.12)' }]}>
+                    <Sparkles size={16} color="#0284C7" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Amenities & Bookings</Text>
+                    <Text style={styles.adminActionSub}>Clubhouse, swimming pool, sports & slots</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* 3. Polls & Surveys */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('Polls')}
+                  style={styles.adminActionRow}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(139, 92, 246, 0.12)' }]}>
+                    <Vote size={16} color="#8B5CF6" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Polls & Surveys</Text>
+                    <Text style={styles.adminActionSub}>Resident voting & community feedback</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+
+                {/* 4. Subscription & Billing */}
+                <TouchableOpacity
+                  onPress={() => navigation.navigate('SubscriptionBilling')}
+                  style={[styles.adminActionRow, { borderBottomWidth: 0 }]}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
+                    <CreditCard size={16} color={THEME.colors.clay} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.adminActionTitle}>Subscription & Billing</Text>
+                    <Text style={styles.adminActionSub}>Platform plan, limits & invoices</Text>
+                  </View>
+                  <ChevronRight size={16} color={THEME.colors.textMuted} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* ======================================================== */}
           {/* SECTION 3: ACTIVE SOCIETY INFORMATION                    */}
           {/* ======================================================== */}
           <View style={styles.glassCard}>
@@ -945,7 +1065,7 @@ export const ProfileScreen = ({ navigation }) => {
                       </View>
                       <Text style={styles.detailLabel}>Helpline:</Text>
                       <Text style={styles.detailVal} numberOfLines={1}>
-                        {activeSociety.emergency_number || '112 / Not provided'}
+                        {activeSociety.emergency_number || 'Not provided'}
                       </Text>
                     </View>
                   </View>
@@ -1317,6 +1437,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  adminActionList: {
+    gap: 2,
+  },
+  adminActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(214, 194, 161, 0.3)',
+    gap: 12,
+  },
+  adminActionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminActionTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+  },
+  adminActionSub: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 1,
   },
   headerIconBox: {
     width: 28,

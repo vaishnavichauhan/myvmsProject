@@ -1571,13 +1571,14 @@ export default function WorkersPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(4px)',
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px 16px',
+            zIndex: 9999,
+            padding: '36px 16px',
             overflowY: 'auto',
           }}
           onClick={(e) => {
@@ -1585,38 +1586,41 @@ export default function WorkersPage() {
           }}
         >
           <div
-            className="glass-panel"
             style={{
               width: '100%',
-              maxWidth: '540px',
-              maxHeight: 'min(90vh, 860px)',
+              maxWidth: '560px',
+              maxHeight: 'calc(100vh - 72px)',
               display: 'flex',
               flexDirection: 'column',
               background: 'var(--bg-secondary)',
               borderRadius: 'var(--radius-lg)',
-              boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
               border: '1px solid var(--border-card)',
               overflow: 'hidden',
-              margin: 'auto',
+              margin: 'auto 0',
+              position: 'relative',
             }}
           >
             {/* Sticky Header: Never gets cut off */}
             <div
               style={{
                 padding: '20px 24px 16px',
-                borderBottom: '1px solid var(--border-subtle)',
+                borderBottom: '1px solid var(--border-card)',
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 flexShrink: 0,
                 background: 'var(--bg-secondary)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10,
               }}
             >
               <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-heading)' }}>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-main)', letterSpacing: '-0.01em' }}>
                   {isAdmin ? 'Register Society Helper' : 'Add Helper to My Home'}
                 </h2>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '4px 0 0', lineHeight: 1.4 }}>
                   {isAdmin
                     ? 'Register a verified worker into the society pool. No home number is assigned directly.'
                     : `Connect an existing society worker or register a new helper for your home.`}
@@ -1626,17 +1630,19 @@ export default function WorkersPage() {
                 type="button"
                 onClick={() => setShowAddModal(false)}
                 style={{
-                  background: 'none',
-                  border: 'none',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-card)',
                   color: 'var(--text-muted)',
                   cursor: 'pointer',
-                  padding: '4px',
+                  padding: '6px',
+                  borderRadius: 'var(--radius-sm)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
+                title="Close"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
@@ -1652,9 +1658,9 @@ export default function WorkersPage() {
             {/* VIEW A: ADMIN REGISTERS SOCIETY WORKER                    */}
             {/* ======================================================== */}
             {isAdmin ? (
-              <form onSubmit={handleAdminCreateWorker}>
+              <form onSubmit={handleAdminCreateWorker} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                 {/* Target Society */}
-                <div className="input-group">
+                <div className="input-group" style={{ margin: 0 }}>
                   <label className="input-label">Target Society *</label>
                   <select
                     required
@@ -1670,61 +1676,67 @@ export default function WorkersPage() {
                   </select>
                 </div>
 
-                <div className="input-group">
-                  <label className="input-label">Worker Type *</label>
-                  <select
-                    className="input-field"
-                    value={adminWorkerForm.worker_type}
-                    onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, worker_type: e.target.value })}
-                  >
-                    {WORKER_TYPES.filter((t) => t.value !== 'ALL').map((t) => (
-                      <option key={t.value} value={t.value}>
-                        {t.label}
-                      </option>
-                    ))}
-                  </select>
+                {/* Worker Type & Worker Full Name - 2 Column Alignment */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '12px' }}>
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label className="input-label">Worker Type *</label>
+                    <select
+                      className="input-field"
+                      value={adminWorkerForm.worker_type}
+                      onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, worker_type: e.target.value })}
+                    >
+                      {WORKER_TYPES.filter((t) => t.value !== 'ALL').map((t) => (
+                        <option key={t.value} value={t.value}>
+                          {t.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label className="input-label">Worker Full Name *</label>
+                    <input
+                      type="text"
+                      required
+                      className="input-field"
+                      placeholder="e.g. BHURI"
+                      value={adminWorkerForm.name}
+                      onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, name: e.target.value })}
+                    />
+                  </div>
                 </div>
 
-                <div className="input-group">
-                  <label className="input-label">Worker Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    placeholder="e.g. BHURI"
-                    value={adminWorkerForm.name}
-                    onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, name: e.target.value })}
-                  />
-                </div>
+                {/* Phone Number & AdharCard No - 2 Column Alignment */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '12px' }}>
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label className="input-label">Phone Number * (10 Digits)</label>
+                    <input
+                      type="text"
+                      required
+                      className="input-field"
+                      placeholder="e.g. 9876543210"
+                      value={adminWorkerForm.phone}
+                      onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, phone: e.target.value })}
+                    />
+                  </div>
 
-                <div className="input-group">
-                  <label className="input-label">Phone Number * (10 Digits)</label>
-                  <input
-                    type="text"
-                    required
-                    className="input-field"
-                    placeholder="e.g. 9876543210"
-                    value={adminWorkerForm.phone}
-                    onChange={(e) => setAdminWorkerForm({ ...adminWorkerForm, phone: e.target.value })}
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>AdharCard No (Optional)</span>
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>12 Digits (UIDAI)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="input-field"
-                    placeholder="e.g. 1234 5678 9012"
-                    maxLength={16}
-                    value={adminWorkerForm.aadhar_number || ''}
-                    onChange={(e) => {
-                      const val = e.target.value.replace(/[^\d\s]/g, '');
-                      setAdminWorkerForm({ ...adminWorkerForm, aadhar_number: val });
-                    }}
-                  />
+                  <div className="input-group" style={{ margin: 0 }}>
+                    <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>AdharCard No (Optional)</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>12 Digits (UIDAI)</span>
+                    </label>
+                    <input
+                      type="text"
+                      className="input-field"
+                      placeholder="e.g. 1234 5678 9012"
+                      maxLength={16}
+                      value={adminWorkerForm.aadhar_number || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^\d\s]/g, '');
+                        setAdminWorkerForm({ ...adminWorkerForm, aadhar_number: val });
+                      }}
+                    />
+                  </div>
                 </div>
 
                 {/* Photo / Camera Option */}
@@ -1734,7 +1746,7 @@ export default function WorkersPage() {
                   label="Helper Photo / Camera (Optional)"
                 />
 
-                <div className="input-group">
+                <div className="input-group" style={{ margin: 0 }}>
                   <label className="input-label">Address / Local Details (Optional)</label>
                   <input
                     type="text"
@@ -1753,13 +1765,13 @@ export default function WorkersPage() {
                     border: '1px solid rgba(245, 158, 11, 0.25)',
                     padding: '8px 12px',
                     borderRadius: 'var(--radius-sm)',
-                    marginTop: '8px',
+                    marginTop: '2px',
                   }}
                 >
                   ℹ️ <strong>Admin Notice:</strong> Admin registers helpers into the general society pool. No home number is assigned directly. Residents log in and assign helpers to their homes.
                 </div>
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '22px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
                   <button type="button" onClick={() => setShowAddModal(false)} className="btn btn-secondary">
                     Cancel
                   </button>
@@ -2070,13 +2082,14 @@ export default function WorkersPage() {
           style={{
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.75)',
-            backdropFilter: 'blur(4px)',
+            background: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
             display: 'flex',
-            alignItems: 'center',
+            alignItems: 'flex-start',
             justifyContent: 'center',
-            zIndex: 1000,
-            padding: '24px 16px',
+            zIndex: 9999,
+            padding: '36px 16px',
             overflowY: 'auto',
           }}
           onClick={(e) => {
@@ -2084,29 +2097,65 @@ export default function WorkersPage() {
           }}
         >
           <div
-            className="glass-panel"
             style={{
               width: '100%',
-              maxWidth: '460px',
-              maxHeight: 'min(90vh, 760px)',
-              overflowY: 'auto',
-              padding: '24px',
+              maxWidth: '480px',
+              maxHeight: 'calc(100vh - 72px)',
+              display: 'flex',
+              flexDirection: 'column',
               background: 'var(--bg-secondary)',
               borderRadius: 'var(--radius-lg)',
-              boxShadow: '0 24px 48px rgba(0,0,0,0.35)',
+              boxShadow: '0 24px 60px rgba(0,0,0,0.45)',
               border: '1px solid var(--border-card)',
-              margin: 'auto',
+              overflow: 'hidden',
+              margin: 'auto 0',
+              position: 'relative',
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ fontSize: '1.2rem', margin: 0 }}>Edit Timings: {selectedAssignment.full_name}</h3>
+            {/* Sticky Header */}
+            <div
+              style={{
+                padding: '18px 24px 14px',
+                borderBottom: '1px solid var(--border-card)',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexShrink: 0,
+                background: 'var(--bg-secondary)',
+                position: 'sticky',
+                top: 0,
+                zIndex: 10,
+              }}
+            >
+              <div>
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, color: 'var(--text-main)' }}>
+                  Edit Timings: {selectedAssignment.full_name}
+                </h3>
+                <span style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                  Update helper details and allocated duty hours
+                </span>
+              </div>
               <button
                 onClick={() => setShowEditModal(false)}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid var(--border-card)',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: '6px',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+                title="Close"
               >
                 <X size={18} />
               </button>
             </div>
+
+            {/* Scrollable Form Body */}
+            <div style={{ padding: '20px 24px 24px', overflowY: 'auto', flex: 1 }}>
 
             <form onSubmit={handleEditAssignment}>
               <div className="input-group">
@@ -2199,6 +2248,7 @@ export default function WorkersPage() {
                 </button>
               </div>
             </form>
+            </div>
           </div>
         </div>
       )}

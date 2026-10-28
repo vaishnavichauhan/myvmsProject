@@ -98,15 +98,15 @@ export default function SettingsPage() {
   // Format full address
   const formattedAddress = selectedSociety
     ? [
-        selectedSociety.address || selectedSociety.address_line1,
-        selectedSociety.address_line2,
-        selectedSociety.city,
-        selectedSociety.state,
-        selectedSociety.pincode ? `PIN: ${selectedSociety.pincode}` : null,
-        selectedSociety.country && selectedSociety.country !== 'India' ? selectedSociety.country : null,
-      ]
-        .filter(Boolean)
-        .join(', ') || 'Address not registered'
+      selectedSociety.address || selectedSociety.address_line1,
+      selectedSociety.address_line2,
+      selectedSociety.city,
+      selectedSociety.state,
+      selectedSociety.pincode ? `PIN: ${selectedSociety.pincode}` : null,
+      selectedSociety.country && selectedSociety.country !== 'India' ? selectedSociety.country : null,
+    ]
+      .filter(Boolean)
+      .join(', ') || 'Address not registered'
     : '';
 
   // Society structure type formatting
@@ -744,7 +744,7 @@ export default function SettingsPage() {
                         {selectedSociety.emergency_number}
                       </a>
                     ) : (
-                      '112 / Not Provided'
+                      'Not Provided'
                     )}
                   </div>
                 </div>

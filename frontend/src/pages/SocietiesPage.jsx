@@ -556,23 +556,7 @@ export default function SocietiesPage() {
     }
   }, [location.state, societies.length, loading, isAdmin]);
 
-  const handleOpenHomes = async (society) => {
-    setSelectedSociety(society);
-    setShowManageHomesModal(true);
-    fetchHomes(society.id);
-  };
 
-  const fetchHomes = async (societyId) => {
-    setLoadingHomes(true);
-    try {
-      const res = await societyApi.getHomesBySociety(societyId);
-      setSocietyHomes(res.data?.homes || []);
-    } catch (err) {
-      setErrorMsg(err.message || 'Failed to load homes.');
-    } finally {
-      setLoadingHomes(false);
-    }
-  };
 
   const handleCreateSociety = async (e) => {
     e.preventDefault();
@@ -1228,15 +1212,7 @@ export default function SocietiesPage() {
                             <span>Edit Details</span>
                           </button>
 
-                          <button
-                            id={`btn-del-soc-${soc.id}`}
-                            onClick={() => handleDeleteSociety(soc.id, soc.name)}
-                            className="btn btn-danger"
-                            style={{ padding: '8px 12px', fontSize: '0.85rem' }}
-                            title="Delete / Deactivate Society"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+
                         </div>
                       )}
                     </div>

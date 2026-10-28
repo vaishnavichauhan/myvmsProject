@@ -319,6 +319,77 @@ class MaintenanceController {
       next(error);
     }
   }
+
+  // ==========================================================================
+  // CYCLES
+  // ==========================================================================
+
+  static async createCycle(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      if (!societyId) throw ApiError.badRequest('Society not found');
+      const cycle = await MaintenanceService.createCycle(societyId, req.body);
+      return ApiResponse.success(res, 'Maintenance cycle created successfully', { cycle });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async updateCycle(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      if (!societyId) throw ApiError.badRequest('Society not found');
+      const { id } = req.params;
+      const cycle = await MaintenanceService.updateCycle(societyId, Number(id), req.body);
+      return ApiResponse.success(res, 'Maintenance cycle updated successfully', { cycle });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getAllCycles(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      if (!societyId) return ApiResponse.success(res, 'No society selected', { cycles: [] });
+      const cycles = await MaintenanceService.getAllCycles(societyId);
+      return ApiResponse.success(res, 'Maintenance cycles retrieved', { cycles });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async getActiveCycle(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      if (!societyId) return ApiResponse.success(res, 'No society selected', { cycle: null });
+      const cycle = await MaintenanceService.getActiveCycle(societyId);
+      return ApiResponse.success(res, 'Active maintenance cycle retrieved', { cycle });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async activateCycle(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      const { id } = req.params;
+      const cycle = await MaintenanceService.activateCycle(societyId, Number(id));
+      return ApiResponse.success(res, 'Maintenance cycle activated successfully', { cycle });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  static async deleteCycle(req, res, next) {
+    try {
+      const societyId = await MaintenanceController.resolveSocietyId(req);
+      const { id } = req.params;
+      await MaintenanceService.deleteCycle(societyId, Number(id));
+      return ApiResponse.success(res, 'Maintenance cycle deleted successfully', null);
+    } catch (error) {
+      next(error);
+    }
+  }
 }
 
 module.exports = MaintenanceController;

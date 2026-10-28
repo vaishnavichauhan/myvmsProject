@@ -154,6 +154,14 @@ class SocietyService {
       }
     }
 
+    // Auto-create default 12-month maintenance cycle from society creation month
+    try {
+      const MaintenanceService = require('./maintenance.service');
+      await MaintenanceService.ensureDefaultCycle(newSociety.id);
+    } catch (cycleErr) {
+      console.warn('Failed to auto-create default maintenance cycle for new society:', cycleErr.message);
+    }
+
     return newSociety;
   }
 

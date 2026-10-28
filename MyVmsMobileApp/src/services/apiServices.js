@@ -201,6 +201,8 @@ export const societyApi = {
   updateHome: (id, data) => apiClient.put(`/homes/${id}`, data),
 };
 
+export const homeApi = societyApi;
+
 /**
  * 12. Resident Management API
  */
@@ -220,6 +222,11 @@ export const residentApi = {
   resetResidentPassword: (id, newPassword) =>
     apiClient.post(`/residents/${id}/reset-password`, { newPassword }),
   deleteResident: (id) => apiClient.delete(`/residents/${id}`),
+  getSocietyUsers: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/residents/society-users${qs ? `?${qs}` : ''}`);
+  },
+  importBatchResidents: (data) => apiClient.post('/residents/import-batch', data),
 };
 
 /**
@@ -257,5 +264,92 @@ export const securityApi = {
   recordGateEntry: (data) => apiClient.post('/security/gate/entry', data),
   recordGateExit: (id) => apiClient.patch(`/security/gate/exit/${id}`),
   contactResident: (data) => apiClient.post('/security/gate/contact-resident', data),
+};
+
+/**
+ * 14. Society Finance API (Accounts, Maintenance & Special Charges)
+ */
+export const financeApi = {
+  getOverview: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/accounts/overview${qs ? `?${qs}` : ''}`);
+  },
+  getMonthlyBreakdown: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/accounts/monthly${qs ? `?${qs}` : ''}`);
+  },
+  getTransactions: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/accounts/transactions${qs ? `?${qs}` : ''}`);
+  },
+  getMaintenanceStats: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/stats${qs ? `?${qs}` : ''}`);
+  },
+  getMaintenanceBills: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/bills${qs ? `?${qs}` : ''}`);
+  },
+  getSpecialCharges: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges${qs ? `?${qs}` : ''}`);
+  },
+};
+
+/**
+ * 15. Amenities & Facility Bookings API
+ */
+export const amenityApi = {
+  getAmenities: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/amenities${qs ? `?${qs}` : ''}`);
+  },
+  getBookings: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/amenities/bookings/list${qs ? `?${qs}` : ''}`);
+  },
+  getAmenityById: (id) => apiClient.get(`/amenities/${id}`),
+  createAmenity: (data) => apiClient.post('/amenities', data),
+  updateAmenity: (id, data) => apiClient.put(`/amenities/${id}`, data),
+  deleteAmenity: (id) => apiClient.delete(`/amenities/${id}`),
+  getSlotsForDate: (id, date) => apiClient.get(`/amenities/${id}/slots?date=${date}`),
+  createBooking: (data) => apiClient.post('/amenities/bookings', data),
+  approveBooking: (id) => apiClient.patch(`/amenities/bookings/${id}/approve`),
+  rejectBooking: (id, rejection_reason = '') =>
+    apiClient.patch(`/amenities/bookings/${id}/reject`, { rejection_reason }),
+  cancelBooking: (id, cancellation_reason = '') =>
+    apiClient.patch(`/amenities/bookings/${id}/cancel`, { cancellation_reason }),
+  updateBookingApproval: (id, decision, remarks = '') => {
+    if (decision === 'APPROVED') {
+      return apiClient.patch(`/amenities/bookings/${id}/approve`);
+    } else {
+      return apiClient.patch(`/amenities/bookings/${id}/reject`, { rejection_reason: remarks });
+    }
+  },
+};
+
+/**
+ * 16. Polls & Community Surveys API
+ */
+export const pollApi = {
+  getPolls: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/polls${qs ? `?${qs}` : ''}`);
+  },
+  getStats: () => apiClient.get('/polls/stats'),
+  getPollById: (id) => apiClient.get(`/polls/${id}`),
+  castVote: (id, optionIndex) => apiClient.post(`/polls/${id}/vote`, { optionIndex }),
+  createPoll: (data) => apiClient.post('/polls', data),
+  closePoll: (id) => apiClient.patch(`/polls/${id}/close`),
+  deletePoll: (id) => apiClient.delete(`/polls/${id}`),
+};
+
+/**
+ * 17. Society Subscription & Billing API
+ */
+export const subscriptionApi = {
+  getSubscriptionBilling: () => apiClient.get('/admin/subscription'),
+  submitInvoicePayment: (invoiceId, data) =>
+    apiClient.post(`/admin/subscription/invoices/${invoiceId}/pay`, data),
 };
 

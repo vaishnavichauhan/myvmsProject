@@ -197,6 +197,20 @@ async function migrate() {
       `).catch(() => {});
     }
 
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`maintenance_cycles\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`society_id\` INT NOT NULL,
+        \`name\` VARCHAR(150) NOT NULL,
+        \`start_month\` VARCHAR(7) NOT NULL,
+        \`end_month\` VARCHAR(7) NOT NULL,
+        \`is_active\` BOOLEAN NOT NULL DEFAULT FALSE,
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX \`idx_maint_cycle_soc\` (\`society_id\`, \`is_active\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
     console.log('✓ Maintenance system tables verified.');
 
     // 2c. Ensure Special Charges System Tables Exist

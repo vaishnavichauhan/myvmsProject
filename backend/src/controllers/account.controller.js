@@ -1,15 +1,52 @@
 const AccountRepository = require('../repositories/account.repository');
 const ApiResponse = require('../utils/apiResponse');
+const { pool } = require('../config/db');
 
 class AccountController {
   /**
-   * Helper to determine society_id based on user role and query.
+   * Robust helper to determine society_id based on query, headers, user payload or database fallback.
    */
-  static getSocietyId(req) {
-    if (['SUPER_ADMIN'].includes(req.user.role)) {
-      return req.query.society_id || req.user.society_id || null;
+  static async resolveSocietyId(req) {
+    let societyId =
+      req.query?.society_id ||
+      req.query?.societyId ||
+      req.headers?.['x-society-id'] ||
+      req.user?.society_id ||
+      req.user?.societyId;
+
+    if (['SUPER_ADMIN'].includes(req.user?.role) && societyId) {
+      return Number(societyId);
     }
-    return req.user.society_id;
+
+    if (!societyId && req.user?.id) {
+      try {
+        const [userRows] = await pool.query(
+          `SELECT u.society_id, r.society_id AS resident_society_id, h.society_id AS home_society_id
+           FROM users u
+           LEFT JOIN residents r ON r.user_id = u.id AND r.status = 'ACTIVE'
+           LEFT JOIN homes h ON r.home_id = h.id
+           WHERE u.id = ? LIMIT 1`,
+          [req.user.id]
+        );
+        if (userRows.length > 0) {
+          societyId = userRows[0].society_id || userRows[0].resident_society_id || userRows[0].home_society_id;
+        }
+      } catch (err) {
+        console.error('Error resolving user society in AccountController:', err.message);
+      }
+    }
+
+    // Fallback to active society
+    if (!societyId) {
+      try {
+        const [socs] = await pool.query('SELECT id FROM societies WHERE status = "ACTIVE" ORDER BY id ASC LIMIT 1');
+        societyId = socs[0]?.id || null;
+      } catch (err) {
+        console.error('Error fallback society in AccountController:', err.message);
+      }
+    }
+
+    return societyId ? Number(societyId) : null;
   }
 
   /**
@@ -19,7 +56,7 @@ class AccountController {
    */
   static async getOverview(req, res, next) {
     try {
-      const societyId = AccountController.getSocietyId(req);
+      const societyId = await AccountController.resolveSocietyId(req);
       if (!societyId) {
         return ApiResponse.error(res, 'Society ID is required', 400);
       }
@@ -39,7 +76,7 @@ class AccountController {
    */
   static async getMonthly(req, res, next) {
     try {
-      const societyId = AccountController.getSocietyId(req);
+      const societyId = await AccountController.resolveSocietyId(req);
       if (!societyId) {
         return ApiResponse.error(res, 'Society ID is required', 400);
       }
@@ -62,7 +99,7 @@ class AccountController {
    */
   static async getTransactions(req, res, next) {
     try {
-      const societyId = AccountController.getSocietyId(req);
+      const societyId = await AccountController.resolveSocietyId(req);
       if (!societyId) {
         return ApiResponse.error(res, 'Society ID is required', 400);
       }
