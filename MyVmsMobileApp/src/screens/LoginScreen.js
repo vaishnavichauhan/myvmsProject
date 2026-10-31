@@ -139,19 +139,19 @@ export const LoginScreen = ({ navigation }) => {
             <Text style={styles.demoSectionTitle}>QUICK DEMO ROLES (TAP TO FILL)</Text>
             <View style={styles.demoGrid}>
               <TouchableOpacity
-                onPress={() => quickFillCredentials('9800000000', 'Password@123')}
+                onPress={() => quickFillCredentials('1234567890', '123456')}
                 style={styles.demoChip}
               >
-                <Text style={styles.demoRole}>System Admin</Text>
-                <Text style={styles.demoPhone}>9800000000</Text>
+                <Text style={styles.demoRole}>Society Admin</Text>
+                <Text style={styles.demoPhone}>1234567890</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => quickFillCredentials('1212121212', '123456')}
+                onPress={() => quickFillCredentials('9876543220', 'Password@123')}
                 style={styles.demoChip}
               >
                 <Text style={styles.demoRole}>Resident (Owner)</Text>
-                <Text style={styles.demoPhone}>1212121212</Text>
+                <Text style={styles.demoPhone}>9876543220</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -163,11 +163,11 @@ export const LoginScreen = ({ navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                onPress={() => quickFillCredentials('2121212121', '123456')}
+                onPress={() => quickFillCredentials('2421432131', '123456')}
                 style={styles.demoChip}
               >
                 <Text style={styles.demoRole}>Family Member</Text>
-                <Text style={styles.demoPhone}>2121212121</Text>
+                <Text style={styles.demoPhone}>2421432131</Text>
               </TouchableOpacity>
             </View>
           </View>

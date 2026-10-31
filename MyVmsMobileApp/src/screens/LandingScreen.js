@@ -26,6 +26,7 @@ import {
   KeyRound,
   Users,
   BellRing,
+  Landmark,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -235,6 +236,14 @@ export const LandingScreen = ({ navigation }) => {
         bg: '#F1EBE3', // Warm Beige
         border: '#DFD2C2',
         color: THEME.colors.darkBrown,
+      },
+      {
+        id: 'finance',
+        title: 'Finance Support',
+        icon: Landmark,
+        bg: '#f0c6b8ff', // Warm Beige
+        border: '#e7ba84ff',
+        color: '#d4552bff',
       },
     ];
 

@@ -983,7 +983,7 @@ export default function SecurityStaffPage() {
 
               <div>
                 <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Agency Name (Optional)
+                  Agency Name
                 </label>
                 <input
                   type="text"
@@ -1001,28 +1001,6 @@ export default function SecurityStaffPage() {
                   }}
                 />
               </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '6px' }}>
-                  Photo / Avatar URL (Optional)
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://..."
-                  value={createForm.photo}
-                  onChange={(e) => setCreateForm({ ...createForm, photo: e.target.value })}
-                  style={{
-                    width: '100%',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: '#FFFFFF',
-                    border: '1px solid var(--border-subtle)',
-                    color: 'var(--text-main)',
-                    outline: 'none',
-                  }}
-                />
-              </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '12px' }}>
                 <button
                   type="button"

@@ -16,6 +16,7 @@ import {
   Linking,
   Platform,
   Image,
+  StatusBar,
 } from 'react-native';
 import { THEME } from '../constants/theme';
 import { HeaderBar } from '../components/HeaderBar';
@@ -665,11 +666,13 @@ export const CommitteeScreen = ({ navigation }) => {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <HeaderBar
         title="Society Committees & Directory"
-        // subtitle="Direct contact directory of dedicated society committees"
         showBack
+      // rightActionIcon="refresh"
+
       />
 
       <FlatList
@@ -690,40 +693,27 @@ export const CommitteeScreen = ({ navigation }) => {
         }
         ListHeaderComponent={
           <View style={styles.headerComponentContainer}>
-            {/* Top Action Buttons (Refresh, Create Committee, Assign Member) */}
-            <View style={styles.topActionBar}>
-              <TouchableOpacity
-                style={styles.refreshIconBtn}
-                onPress={fetchInitialData}
-                activeOpacity={0.7}
-                disabled={loading}
-              >
-                <CustomIcon name="refresh" size={16} color={THEME.colors.darkBrown} />
-              </TouchableOpacity>
+            {isAdmin && (
+              <View style={styles.topActionBar}>
+                <TouchableOpacity
+                  style={styles.createComHeaderBtn}
+                  onPress={handleOpenCreateCommittee}
+                  activeOpacity={0.8}
+                >
+                  <CustomIcon name="folderPlus" size={14} color={THEME.colors.darkBrown} />
+                  <Text style={styles.createComHeaderBtnText}>+ Create Committee</Text>
+                </TouchableOpacity>
 
-              {isAdmin && (
-                <>
-                  <TouchableOpacity
-                    style={styles.createComHeaderBtn}
-                    onPress={handleOpenCreateCommittee}
-                    activeOpacity={0.8}
-                  >
-                    <CustomIcon name="folderPlus" size={14} color={THEME.colors.darkBrown} />
-                    <Text style={styles.createComHeaderBtnText}>+ Create Committee</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.assignHeaderBtn}
-                    onPress={handleOpenAssignModal}
-                    activeOpacity={0.8}
-                  >
-                    <CustomIcon name="plus" size={15} color="#FFFFFF" />
-                    <Text style={styles.assignHeaderBtnText}>Assign Member</Text>
-                  </TouchableOpacity>
-                </>
-              )}
-            </View>
-
+                <TouchableOpacity
+                  style={styles.assignHeaderBtn}
+                  onPress={handleOpenAssignModal}
+                  activeOpacity={0.8}
+                >
+                  <CustomIcon name="plus" size={15} color="#FFFFFF" />
+                  <Text style={styles.assignHeaderBtnText}>Assign Member</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {/* Official Committee Appointment Banner (If user is appointed) */}
             {userCommittees && userCommittees.length > 0 && (
               <View style={styles.officialBanner}>
@@ -792,23 +782,6 @@ export const CommitteeScreen = ({ navigation }) => {
                   </TouchableOpacity>
                 ) : null}
               </View>
-
-              {/* 2. Committee Wing Dropdown (Full Width for long committee names) */}
-              <TouchableOpacity
-                style={styles.dropdownBtnFull}
-                onPress={() => setShowCommitteeFilterPicker(true)}
-                activeOpacity={0.7}
-              >
-                <View style={styles.dropdownLeftGroup}>
-                  <CustomIcon name="tag" size={13} color={THEME.colors.clay} />
-                  <Text style={styles.dropdownLabel}>Wing:</Text>
-                  <Text style={styles.dropdownValue} numberOfLines={1}>
-                    {selectedCommitteeLabel}
-                  </Text>
-                </View>
-                <CustomIcon name="chevronDown" size={14} color={THEME.colors.textMuted} />
-              </TouchableOpacity>
-
               {/* 3. Position and Status Dropdowns Row */}
               <View style={styles.dropdownRow}>
                 {/* Position Filter */}

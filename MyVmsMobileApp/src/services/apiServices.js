@@ -269,6 +269,46 @@ export const securityApi = {
 /**
  * 14. Society Finance API (Accounts, Maintenance & Special Charges)
  */
+export const maintenanceApi = {
+  getStats: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/stats${qs ? `?${qs}` : ''}`);
+  },
+  getPlans: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/plans${qs ? `?${qs}` : ''}`);
+  },
+  getPlanById: (id) => apiClient.get(`/maintenance/plans/${id}`),
+  createPlan: (data) => apiClient.post('/maintenance/plans', data),
+  updatePlan: (id, data) => apiClient.put(`/maintenance/plans/${id}`, data),
+  deletePlan: (id) => apiClient.delete(`/maintenance/plans/${id}`),
+  getBills: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/bills${qs ? `?${qs}` : ''}`);
+  },
+  getBillById: (id) => apiClient.get(`/maintenance/bills/${id}`),
+  generateBatchBills: (data) => apiClient.post('/maintenance/bills/generate', data),
+  recordPayment: (data) => apiClient.post('/maintenance/payments', data),
+  getPayments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/payments${qs ? `?${qs}` : ''}`);
+  },
+  approvePayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/approve`, data),
+  rejectPayment: (id, data = {}) => apiClient.post(`/maintenance/payments/${id}/reject`, data),
+  getCycles: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/cycles${qs ? `?${qs}` : ''}`);
+  },
+  getActiveCycle: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/maintenance/cycles/active${qs ? `?${qs}` : ''}`);
+  },
+  createCycle: (data) => apiClient.post('/maintenance/cycles', data),
+  updateCycle: (id, data) => apiClient.put(`/maintenance/cycles/${id}`, data),
+  activateCycle: (id) => apiClient.put(`/maintenance/cycles/${id}/activate`),
+  deleteCycle: (id) => apiClient.delete(`/maintenance/cycles/${id}`),
+};
+
 export const financeApi = {
   getOverview: (params = {}) => {
     const qs = new URLSearchParams(params).toString();
@@ -295,6 +335,40 @@ export const financeApi = {
     return apiClient.get(`/special-charges${qs ? `?${qs}` : ''}`);
   },
 };
+
+/**
+ * 14b. Special Charges API (One-time or occasional assessments, repairs, festival funds)
+ */
+export const specialChargeApi = {
+  getStats: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges/stats${qs ? `?${qs}` : ''}`);
+  },
+  getResidentCharges: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges/my-charges${qs ? `?${qs}` : ''}`);
+  },
+  getAllCharges: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges${qs ? `?${qs}` : ''}`);
+  },
+  getChargeById: (id) => apiClient.get(`/special-charges/${id}`),
+  createCharge: (data) => apiClient.post('/special-charges', data),
+  updateCharge: (id, data) => apiClient.put(`/special-charges/${id}`, data),
+  deleteCharge: (id) => apiClient.delete(`/special-charges/${id}`),
+  getAssignmentsByCharge: (id, params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges/${id}/assignments${qs ? `?${qs}` : ''}`);
+  },
+  recordPayment: (data) => apiClient.post('/special-charges/payments', data),
+  approvePayment: (id, data = {}) => apiClient.post(`/special-charges/payments/${id}/approve`, data),
+  rejectPayment: (id, data = {}) => apiClient.post(`/special-charges/payments/${id}/reject`, data),
+  getAllPayments: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/special-charges/payments${qs ? `?${qs}` : ''}`);
+  },
+};
+
 
 /**
  * 15. Amenities & Facility Bookings API
@@ -336,9 +410,16 @@ export const pollApi = {
     const qs = new URLSearchParams(params).toString();
     return apiClient.get(`/polls${qs ? `?${qs}` : ''}`);
   },
-  getStats: () => apiClient.get('/polls/stats'),
+  getStats: (params = {}) => {
+    const qs = new URLSearchParams(params).toString();
+    return apiClient.get(`/polls/stats${qs ? `?${qs}` : ''}`);
+  },
   getPollById: (id) => apiClient.get(`/polls/${id}`),
-  castVote: (id, optionIndex) => apiClient.post(`/polls/${id}/vote`, { optionIndex }),
+  castVote: (id, optionId) =>
+    apiClient.post(
+      `/polls/${id}/vote`,
+      typeof optionId === 'object' && optionId !== null ? optionId : { option_id: optionId }
+    ),
   createPoll: (data) => apiClient.post('/polls', data),
   closePoll: (id) => apiClient.patch(`/polls/${id}/close`),
   deletePoll: (id) => apiClient.delete(`/polls/${id}`),

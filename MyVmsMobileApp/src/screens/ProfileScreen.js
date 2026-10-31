@@ -18,7 +18,6 @@ import { useAuthStore } from '../store/authStore';
 import { societyApi, familyMemberApi, authApi, gateApi } from '../services/apiServices';
 import {
   User,
-  Users,
   Building2,
   Mail,
   Phone,
@@ -40,11 +39,10 @@ import {
   AlertCircle,
   Eye,
   EyeOff,
-  Wallet,
-  Sparkles,
-  Vote,
-  CreditCard,
   ChevronRight,
+  Hash,
+  FileText,
+  PhoneCall,
 } from 'lucide-react-native';
 
 export const ProfileScreen = ({ navigation }) => {
@@ -424,84 +422,46 @@ export const ProfileScreen = ({ navigation }) => {
     }
     : null;
 
+  // Active Society Object for Admin & Profile
+  const activeSocietyObj =
+    societyData ||
+    (user?.society && (user?.society?.name || user?.society?.id) ? user.society : null) ||
+    (user?.societyDetails && (user?.societyDetails?.name || user?.societyDetails?.id) ? user.societyDetails : null) ||
+    (activeSociety?.name ? activeSociety : null) ||
+    null;
+
+  // Format full address matching frontend SettingsPage.jsx
+  const formattedAddress = activeSocietyObj
+    ? [
+        activeSocietyObj.address || activeSocietyObj.address_line1,
+        activeSocietyObj.address_line2,
+        activeSocietyObj.city,
+        activeSocietyObj.state,
+        activeSocietyObj.pincode ? `PIN: ${activeSocietyObj.pincode}` : null,
+        activeSocietyObj.country && activeSocietyObj.country !== 'India' ? activeSocietyObj.country : null,
+      ]
+        .filter(Boolean)
+        .join(', ') || activeSocietyObj.address || 'Address not registered'
+    : 'Address not registered';
+
+  // Society structure type formatting matching frontend SettingsPage.jsx
+  const structureType = activeSocietyObj
+    ? activeSocietyObj.society_type
+      ? String(activeSocietyObj.society_type).replace(/_/g, ' ')
+      : activeSocietyObj.property_configuration || 'Residential Gated Complex'
+    : 'Residential Gated Complex';
+
+  // Total Units matching frontend SettingsPage.jsx
+  const totalUnits = activeSocietyObj
+    ? activeSocietyObj.total_homes ?? activeSocietyObj.max_units ?? activeSocietyObj.total_units ?? 0
+    : 0;
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* ========================================================== */}
-      {/* 1. TOP SOCIETY HERO COVER IMAGE BANNER                     */}
-      {/* ========================================================== */}
-      <View style={styles.heroCoverWrapper}>
-        <Image
-          source={require('../assets/images/community-hero.jpg')}
-          style={styles.heroCoverImage}
-          resizeMode="cover"
-        />
-        <View style={styles.heroGradientOverlay} />
-
-        {/* Optional Floating Back Button if opened from stack */}
-        {navigation?.canGoBack && navigation.canGoBack() && (
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={[styles.floatingBackBtn, { top: Math.max(insets.top, 16) }]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <ChevronLeft size={22} color="#FFFFFF" />
-          </TouchableOpacity>
-        )}
-
-
-      </View>
-
-      {/* ========================================================== */}
-      {/* 2. PROFILE SQUIRCLE AVATAR OVERLAPPING COVER IMAGE         */}
-      {/* (Top half inside hero image, identical to frontend)       */}
-      {/* ========================================================== */}
-      <View style={styles.avatarOverlapContainer}>
-        {/* Squircle Avatar with rounded border matching frontend */}
-        <View
-          style={[
-            styles.squircleAvatar,
-            { backgroundColor: roleTheme.avatarBg },
-          ]}
-        >
-          {user?.avatarUrl ? (
-            <Image source={{ uri: user.avatarUrl }} style={styles.avatarPhoto} />
-          ) : (
-            <View style={styles.avatarMonogramWrap}>
-              <Text style={styles.avatarInitialsText}>
-                {getInitials(user?.fullName || user?.name || user?.full_name)}
-              </Text>
-
-            </View>
-          )}
-        </View>
-
-        {/* Account Identifier Card below avatar (same as frontend) */}
-        <View style={styles.accountIdentifierCard}>
-          <Text style={styles.accountIdText}>
-            Account ID: <Text style={styles.accountIdBold}>#USR-{user?.id || '01'}</Text>
-          </Text>
-          <View style={styles.verifiedRow}>
-            <BadgeCheck size={14} color={isSecurity ? '#059669' : isAdmin ? '#7c3aed' : '#059669'} />
-            <Text
-              style={[
-                styles.verifiedText,
-                { color: isSecurity ? '#059669' : isAdmin ? '#7c3aed' : '#059669' },
-              ]}
-            >
-              {isSecurity
-                ? 'Verified Officer'
-                : isAdmin
-                  ? 'Verified Administrator'
-                  : 'Verified Resident'}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* ========================================================== */}
-      {/* BODY CONTENT WRAPPER                                       */}
+      {/* BODY CONTENT SCROLLVIEW                                    */}
       {/* ========================================================== */}
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -515,6 +475,75 @@ export const ProfileScreen = ({ navigation }) => {
           />
         }
       >
+        {/* ========================================================== */}
+        {/* 1. TOP SOCIETY HERO COVER IMAGE BANNER                     */}
+        {/* ========================================================== */}
+        <View style={styles.heroCoverWrapper}>
+          <Image
+            source={require('../assets/images/community-hero.jpg')}
+            style={styles.heroCoverImage}
+            resizeMode="cover"
+          />
+          <View style={styles.heroGradientOverlay} />
+
+          {/* Optional Floating Back Button if opened from stack */}
+          {navigation?.canGoBack && navigation.canGoBack() && (
+            <TouchableOpacity
+              onPress={() => navigation.goBack()}
+              style={[styles.floatingBackBtn, { top: Math.max(insets.top, 16) }]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <ChevronLeft size={22} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* ========================================================== */}
+        {/* 2. PROFILE SQUIRCLE AVATAR OVERLAPPING COVER IMAGE         */}
+        {/* (Top half inside hero image, identical to frontend)       */}
+        {/* ========================================================== */}
+        <View style={styles.avatarOverlapContainer}>
+          {/* Squircle Avatar with rounded border matching frontend */}
+          <View
+            style={[
+              styles.squircleAvatar,
+              { backgroundColor: roleTheme.avatarBg },
+            ]}
+          >
+            {user?.avatarUrl ? (
+              <Image source={{ uri: user.avatarUrl }} style={styles.avatarPhoto} />
+            ) : (
+              <View style={styles.avatarMonogramWrap}>
+                <Text style={styles.avatarInitialsText}>
+                  {getInitials(user?.fullName || user?.name || user?.full_name)}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Account Identifier Card below avatar (same as frontend) */}
+          <View style={styles.accountIdentifierCard}>
+            <Text style={styles.accountIdText}>
+              Account ID: <Text style={styles.accountIdBold}>#USR-{user?.id || '01'}</Text>
+            </Text>
+            <View style={styles.verifiedRow}>
+              <BadgeCheck size={14} color={isSecurity ? '#059669' : isAdmin ? '#7c3aed' : '#059669'} />
+              <Text
+                style={[
+                  styles.verifiedText,
+                  { color: isSecurity ? '#059669' : isAdmin ? '#7c3aed' : '#059669' },
+                ]}
+              >
+                {isSecurity
+                  ? 'Verified Officer'
+                  : isAdmin
+                    ? 'Verified Administrator'
+                    : 'Verified Resident'}
+              </Text>
+            </View>
+          </View>
+        </View>
+
         <View style={styles.bodyContent}>
           {/* ======================================================== */}
           {/* USER HEADER: NAME, ROLE BADGE & CHANGE PASSWORD BUTTON   */}
@@ -556,7 +585,7 @@ export const ProfileScreen = ({ navigation }) => {
                       </Text>
                     </>
                   )}
-                  {!isSecurity && user?.flatNumber && (
+                  {isResident && user?.flatNumber && (
                     <>
                       <Text style={{ color: THEME.colors.sand }}> • </Text>
                       <Text style={{ color: '#059669', fontWeight: '700' }}>
@@ -718,7 +747,7 @@ export const ProfileScreen = ({ navigation }) => {
                 <View style={styles.headerIconBox}>
                   <User size={16} color={THEME.colors.clay} />
                 </View>
-                <Text style={styles.cardTitle}>Personal Details</Text>
+                <Text style={styles.cardTitle}>Personal Information</Text>
               </View>
               <View
                 style={[
@@ -780,319 +809,547 @@ export const ProfileScreen = ({ navigation }) => {
           </View>
 
           {/* ======================================================== */}
-          {/* SECTION 2: SOCIETY & RESIDENCE / DUTY ALLOCATION         */}
-          {/* (Matches Frontend Section 2 Exactly)                     */}
-          {/* ======================================================== */}
-          <View style={styles.glassCard}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderLeft}>
-                <View
-                  style={[
-                    styles.headerIconBox,
-                    isSecurity && { backgroundColor: 'rgba(5, 150, 105, 0.15)' },
-                  ]}
-                >
-                  {isSecurity ? (
-                    <Shield size={16} color="#059669" />
-                  ) : (
-                    <Home size={16} color="#059669" />
-                  )}
-                </View>
-                <Text style={styles.cardTitle}>
-                  {isSecurity
-                    ? 'Society & Checkpoint Allocation'
-                    : 'Society & Residence Allocation'}
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.infoFieldsList}>
-              {/* Residential Complex */}
-              <View style={styles.infoFieldBox}>
-                <Text style={styles.infoFieldLabel}>Residential Complex</Text>
-                <View style={styles.complexRow}>
-                  <Text style={styles.infoFieldValMain} numberOfLines={1}>
-                    {activeSociety?.name || 'No Society Registered'}
-                  </Text>
-                  {activeSociety?.code ? (
-                    <View style={styles.codePillSmall}>
-                      <Text style={styles.codePillSmallText}>Code: {activeSociety.code}</Text>
-                    </View>
-                  ) : null}
-                </View>
-              </View>
-
-              {/* Allocated Unit / Flat (or Gate Post for Security) */}
-              <View style={styles.infoFieldBox}>
-                <Text style={styles.infoFieldLabel}>
-                  {isSecurity ? 'Assigned Duty Station / Post' : 'Allocated Unit / Flat'}
-                </Text>
-                <View style={styles.iconValRow}>
-                  {isSecurity ? (
-                    <DoorOpen size={15} color="#059669" />
-                  ) : (
-                    <Home size={15} color="#059669" />
-                  )}
-                  <Text style={[styles.infoFieldValText, { color: '#059669', fontWeight: '800' }]}>
-                    {unitNoDisplay}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Block / Tower & Floor Level (Two columns like frontend) */}
-              <View style={styles.twoColRow}>
-                <View style={[styles.infoFieldBox, { flex: 1 }]}>
-                  <Text style={styles.infoFieldLabel}>
-                    {isSecurity ? 'Checkpoint Zone' : 'Block / Tower'}
-                  </Text>
-                  <Text style={styles.infoFieldValSub} numberOfLines={1}>
-                    {wingDisplay}
-                  </Text>
-                </View>
-
-                <View style={[styles.infoFieldBox, { flex: 1 }]}>
-                  <Text style={styles.infoFieldLabel}>
-                    {isSecurity ? 'Level' : 'Floor Level'}
-                  </Text>
-                  <Text style={styles.infoFieldValSub} numberOfLines={1}>
-                    {floorDisplay}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Occupancy Status (Matching frontend line 1093) */}
-              <View style={styles.infoFieldBox}>
-                <Text style={styles.infoFieldLabel}>
-                  {isSecurity ? 'Guard Duty Role' : 'Occupancy Status'}
-                </Text>
-                <View style={styles.occupancyBadge}>
-                  <View
-                    style={[
-                      styles.occupancyDot,
-                      { backgroundColor: isSecurity ? '#059669' : '#16a34a' },
-                    ]}
-                  />
-                  <Text
-                    style={[
-                      styles.occupancyBadgeText,
-                      { color: isSecurity ? '#059669' : THEME.colors.fernGreenDark },
-                    ]}
-                  >
-                    {occupancyStatusDisplay}
-                  </Text>
-                </View>
-              </View>
-
-              {/* Security Gate Station Operational Details (If role is SECURITY) */}
-
-            </View>
-          </View>
-
-          {/* ======================================================== */}
-          {/* ADMIN OPERATIONS & ADMINISTRATION SHORTCUTS              */}
+          {/* SECTION 2 (ADMIN): ALLOCATED SOCIETY INFORMATION         */}
           {/* ======================================================== */}
           {isAdmin && (
             <View style={styles.glassCard}>
-              <View style={styles.cardHeaderRow}>
-                <View style={styles.cardHeaderLeft}>
-                  <View style={[styles.headerIconBox, { backgroundColor: 'rgba(124, 58, 237, 0.15)' }]}>
-                    <ShieldCheck size={16} color="#7C3AED" />
+              {/* Card Header matching frontend */}
+              <View style={styles.adminSocietyHeaderRow}>
+                <View style={styles.adminHeaderLeft}>
+                  <View style={styles.adminHeaderIconBox}>
+                    <Building2 size={20} color={THEME.colors.clay} />
                   </View>
-                  <Text style={styles.cardTitle}>Society Operations & Administration</Text>
+                  <View style={styles.adminHeaderTitles}>
+                    <Text style={styles.cardTitle}>Allocated Society Information</Text>
+                    <Text style={styles.cardSubtitle}>
+                      Official registration, structure type, units capacity, and communication details
+                    </Text>
+                  </View>
                 </View>
+                {activeSocietyObj ? (
+                  <View style={styles.activeStatusBadge}>
+                    <View style={styles.activeStatusDot} />
+                    <Text style={styles.activeStatusText}>
+                      {activeSocietyObj.status || 'ACTIVE'}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
-              <View style={styles.adminActionList}>
-                {/* 1. Society Management */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Societies')}
-                  style={styles.adminActionRow}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
-                    <Building2 size={16} color={THEME.colors.clay} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Society Management</Text>
-                    <Text style={styles.adminActionSub}>Society profile, homes, units allocation & export</Text>
-                  </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
+              {activeSocietyObj ? (
+                <>
+                  {/* Society Top Banner matching frontend */}
+                  <View style={styles.adminSocietyBanner}>
+                    <View style={styles.adminBannerLeft}>
+                      <View style={styles.adminBannerIconBox}>
+                        <Building size={24} color={THEME.colors.clay} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.adminBannerSocietyName} numberOfLines={1}>
+                          {activeSocietyObj.name}
+                        </Text>
+                        <View style={styles.adminBannerBadgesRow}>
+                          {activeSocietyObj.code ? (
+                            <View style={styles.adminBannerCodePill}>
+                              <Text style={styles.adminBannerCodePillText}>
+                                Code: {activeSocietyObj.code}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {structureType ? (
+                            <View style={styles.adminBannerTypePill}>
+                              <Text style={styles.adminBannerTypePillText}>
+                                {structureType}
+                              </Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                    </View>
 
-                {/* 2. Resident Management */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Residents')}
-                  style={styles.adminActionRow}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(2, 132, 199, 0.12)' }]}>
-                    <Users size={16} color="#0284C7" />
+                    <View style={styles.adminBannerUnitsBox}>
+                      <Text style={styles.adminBannerUnitsLabel}>TOTAL UNITS CAPACITY</Text>
+                      <Text style={styles.adminBannerUnitsValue}>{totalUnits} Units</Text>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Resident Management</Text>
-                    <Text style={styles.adminActionSub}>Units inventory, resident accounts & allotment</Text>
-                  </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
 
-                {/* 3. Society Finance */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('SocietyFinance')}
-                  style={styles.adminActionRow}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(16, 185, 129, 0.12)' }]}>
-                    <Wallet size={16} color="#10B981" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Society Finance</Text>
-                    <Text style={styles.adminActionSub}>Maintenance bills & special charges</Text>
-                  </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
+                  {/* 9 Information Tiles Grid matching frontend SettingsPage.jsx */}
+                  <View style={styles.adminTilesList}>
+                    {/* 1. Society Name */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Building2 size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>SOCIETY NAME</Text>
+                        <Text style={styles.adminTileValue}>{activeSocietyObj.name || 'N/A'}</Text>
+                      </View>
+                    </View>
 
-                {/* 2. Amenities & Bookings */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Amenities')}
-                  style={styles.adminActionRow}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(2, 132, 199, 0.12)' }]}>
-                    <Sparkles size={16} color="#0284C7" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Amenities & Bookings</Text>
-                    <Text style={styles.adminActionSub}>Clubhouse, swimming pool, sports & slots</Text>
-                  </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
+                    {/* 2. Society Code */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Hash size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>SOCIETY CODE</Text>
+                        <View style={styles.adminCodeBadge}>
+                          <Text style={styles.adminCodeBadgeText}>{activeSocietyObj.code || 'N/A'}</Text>
+                        </View>
+                      </View>
+                    </View>
 
-                {/* 3. Polls & Surveys */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('Polls')}
-                  style={styles.adminActionRow}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(139, 92, 246, 0.12)' }]}>
-                    <Vote size={16} color="#8B5CF6" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Polls & Surveys</Text>
-                    <Text style={styles.adminActionSub}>Resident voting & community feedback</Text>
-                  </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
+                    {/* 3. Registration Number */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <FileText size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>REGISTRATION NUMBER</Text>
+                        <Text style={styles.adminTileValue}>
+                          {activeSocietyObj.registration_number || 'REG-PENDING'}
+                        </Text>
+                      </View>
+                    </View>
 
-                {/* 4. Subscription & Billing */}
-                <TouchableOpacity
-                  onPress={() => navigation.navigate('SubscriptionBilling')}
-                  style={[styles.adminActionRow, { borderBottomWidth: 0 }]}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.adminActionIcon, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
-                    <CreditCard size={16} color={THEME.colors.clay} />
+                    {/* 4. Society Structure Type */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Layers size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>SOCIETY STRUCTURE TYPE</Text>
+                        <Text style={[styles.adminTileValue, { textTransform: 'capitalize' }]}>
+                          {structureType}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* 5. Our Society Total Units */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Home size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>OUR SOCIETY TOTAL UNITS</Text>
+                        <Text style={styles.adminTileValue}>
+                          {totalUnits} Units
+                          {activeSocietyObj.actual_homes_count != null ? (
+                            <Text style={styles.adminActualHomesText}>
+                              {' '}({activeSocietyObj.actual_homes_count} Homes Configured)
+                            </Text>
+                          ) : null}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* 6. Email */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Mail size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>EMAIL</Text>
+                        <Text style={[styles.adminTileValue, { color: THEME.colors.clay }]}>
+                          {activeSocietyObj.contact_email || 'Not Provided'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* 7. Phone Number */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <Phone size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>PHONE NUMBER</Text>
+                        <Text style={[styles.adminTileValue, { color: THEME.colors.clay }]}>
+                          {activeSocietyObj.contact_number || activeSocietyObj.contact_phone || 'Not Provided'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* 8. Emergency Number */}
+                    <View style={[styles.adminTile, styles.adminTileEmergency]}>
+                      <View style={[styles.adminTileIconBox, styles.adminTileIconBoxEmergency]}>
+                        <PhoneCall size={18} color="#DC2626" />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={[styles.adminTileLabel, { color: '#DC2626' }]}>
+                          EMERGENCY NUMBER
+                        </Text>
+                        <Text style={[styles.adminTileValue, { color: '#DC2626', fontWeight: '800' }]}>
+                          {activeSocietyObj.emergency_number || 'Not Provided'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* 9. Society Address (Full Span) */}
+                    <View style={styles.adminTile}>
+                      <View style={styles.adminTileIconBox}>
+                        <MapPin size={18} color={THEME.colors.clay} />
+                      </View>
+                      <View style={styles.adminTileContent}>
+                        <Text style={styles.adminTileLabel}>SOCIETY ADDRESS</Text>
+                        <Text style={[styles.adminTileValue, { lineHeight: 20 }]}>
+                          {formattedAddress}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.adminActionTitle}>Subscription & Billing</Text>
-                    <Text style={styles.adminActionSub}>Platform plan, limits & invoices</Text>
+                </>
+              ) : (
+                <View style={styles.noSocietyWrap}>
+                  <View style={styles.noSocietyIconWrap}>
+                    <Building2 size={24} color={THEME.colors.clay} />
                   </View>
-                  <ChevronRight size={16} color={THEME.colors.textMuted} />
-                </TouchableOpacity>
-              </View>
+                  <Text style={styles.noSocietyTitle}>No Society Registered</Text>
+                  <Text style={styles.noSocietySub}>
+                    Currently no active society profile is linked to this account.
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
           {/* ======================================================== */}
-          {/* SECTION 3: ACTIVE SOCIETY INFORMATION                    */}
+          {/* SECTION 2 (SECURITY): ALLOCATED SOCIETY INFORMATION      */}
           {/* ======================================================== */}
-          <View style={styles.glassCard}>
-            <View style={styles.cardHeaderRow}>
-              <View style={styles.cardHeaderLeft}>
-                <View style={styles.headerIconBox}>
-                  <Building2 size={16} color={THEME.colors.clay} />
-                </View>
-                <Text style={styles.cardTitle}>Active Society Information</Text>
-              </View>
-            </View>
-
-            {activeSociety ? (
-              <View style={styles.cardMainRow}>
-                {/* Square Society Icon Badge */}
-                <View style={styles.squareSocietyBadge}>
-                  <Building2 size={26} color="#FFFFFF" />
-                </View>
-
-                {/* Society Info */}
-                <View style={styles.cardContentCol}>
-                  <View style={styles.nameBadgeRow}>
-                    <Text style={styles.societyNameText} numberOfLines={1}>
-                      {activeSociety.name}
+          {isSecurity && (
+            <View style={styles.glassCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.cardHeaderLeft}>
+                  <View
+                    style={[
+                      styles.headerIconBox,
+                      { backgroundColor: 'rgba(5, 150, 105, 0.15)' },
+                    ]}
+                  >
+                    <Shield size={16} color="#059669" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>Allocated Society Information</Text>
+                    <Text style={styles.cardSubtitle}>
+                      Allocated society details, assigned checkpoint station, and emergency contacts
                     </Text>
-                    {activeSociety.code ? (
-                      <View style={styles.codePill}>
-                        <Text style={styles.codePillText}>Code: {activeSociety.code}</Text>
-                      </View>
-                    ) : null}
+                  </View>
+                </View>
+                <View style={styles.activeStatusBadge}>
+                  <View style={styles.activeStatusDot} />
+                  <Text style={styles.activeStatusText}>ON DUTY</Text>
+                </View>
+              </View>
+
+              {activeSociety ? (
+                <>
+                  {/* Top Society & Station Summary Banner */}
+                  <View style={styles.securityDutyBanner}>
+                    <View style={styles.securityDutyBannerHeader}>
+                      <ShieldCheck size={16} color="#059669" />
+                      <Text style={styles.securityDutyBannerTitle}>ASSIGNED PATROL & GATE POST</Text>
+                    </View>
+                    <Text style={styles.securityDutyBannerText}>
+                      Officer assigned to <Text style={{ fontWeight: '800', color: THEME.colors.darkBrown }}>{unitNoDisplay}</Text> at <Text style={{ fontWeight: '800', color: THEME.colors.darkBrown }}>{activeSociety.name}</Text>.
+                    </Text>
                   </View>
 
-                  <View style={styles.detailsGroup}>
-                    {/* Address */}
-                    <View style={styles.detailItemTop}>
-                      <View style={styles.detailIconBox}>
-                        <MapPin size={12} color={THEME.colors.clay} />
+                  <View style={[styles.infoFieldsList, { marginTop: 12 }]}>
+                    {/* Residential Complex */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Allocated Residential Complex</Text>
+                      <View style={styles.complexRow}>
+                        <Text style={styles.infoFieldValMain} numberOfLines={1}>
+                          {activeSociety.name}
+                        </Text>
+                        {activeSociety.code ? (
+                          <View style={styles.codePillSmall}>
+                            <Text style={styles.codePillSmallText}>Code: {activeSociety.code}</Text>
+                          </View>
+                        ) : null}
                       </View>
-                      <Text style={styles.detailLabel}>Address:</Text>
-                      <Text style={styles.detailValMultiline}>
-                        {activeSociety.address || 'Address not configured'}
-                      </Text>
                     </View>
 
-                    {/* Office Contact */}
-                    <View style={styles.detailItem}>
-                      <View style={styles.detailIconBox}>
-                        <Phone size={12} color={THEME.colors.clay} />
+                    {/* Assigned Duty Station / Post */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Assigned Duty Station / Post</Text>
+                      <View style={styles.iconValRow}>
+                        <DoorOpen size={15} color="#059669" />
+                        <Text
+                          style={[
+                            styles.infoFieldValText,
+                            { color: '#059669', fontWeight: '800' },
+                          ]}
+                        >
+                          {unitNoDisplay}
+                        </Text>
                       </View>
-                      <Text style={styles.detailLabel}>Office:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {activeSociety.contact_number || 'Not provided'}
-                      </Text>
+                    </View>
+
+                    {/* Checkpoint Zone & Duty Level */}
+                    <View style={styles.twoColRow}>
+                      <View style={[styles.infoFieldBox, { flex: 1 }]}>
+                        <Text style={styles.infoFieldLabel}>Checkpoint Zone</Text>
+                        <Text style={styles.infoFieldValSub} numberOfLines={1}>
+                          {wingDisplay}
+                        </Text>
+                      </View>
+
+                      <View style={[styles.infoFieldBox, { flex: 1 }]}>
+                        <Text style={styles.infoFieldLabel}>Duty Level</Text>
+                        <Text style={styles.infoFieldValSub} numberOfLines={1}>
+                          {floorDisplay}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Guard Duty Role */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Guard Duty Role</Text>
+                      <View style={styles.occupancyBadge}>
+                        <View
+                          style={[
+                            styles.occupancyDot,
+                            { backgroundColor: '#059669' },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.occupancyBadgeText,
+                            { color: '#059669' },
+                          ]}
+                        >
+                          {occupancyStatusDisplay}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Society Address */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Allocated Society Address</Text>
+                      <View style={[styles.iconValRow, { alignItems: 'flex-start' }]}>
+                        <MapPin size={15} color={THEME.colors.clay} style={{ marginTop: 2 }} />
+                        <Text style={[styles.infoFieldValText, { flex: 1, lineHeight: 18 }]}>
+                          {formattedAddress}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Society Office Contact */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Society Office Phone</Text>
+                      <View style={styles.iconValRow}>
+                        <Phone size={14} color={THEME.colors.clay} />
+                        <Text style={styles.infoFieldValText}>
+                          {activeSociety.contact_number || 'Not provided'}
+                        </Text>
+                      </View>
                     </View>
 
                     {/* Emergency Helpline */}
-                    <View style={styles.detailItem}>
-                      <View style={[styles.detailIconBox, styles.detailIconBoxGreen]}>
-                        <Phone size={12} color={THEME.colors.fernGreen} />
-                      </View>
-                      <Text style={styles.detailLabel}>Helpline:</Text>
-                      <Text style={styles.detailVal} numberOfLines={1}>
-                        {activeSociety.emergency_number || 'Not provided'}
+                    <View style={[styles.infoFieldBox, styles.adminTileEmergency]}>
+                      <Text style={[styles.infoFieldLabel, { color: '#DC2626' }]}>
+                        EMERGENCY HELPLINE
                       </Text>
+                      <View style={styles.iconValRow}>
+                        <PhoneCall size={14} color="#DC2626" />
+                        <Text style={[styles.infoFieldValText, { color: '#DC2626', fontWeight: '800' }]}>
+                          {activeSociety.emergency_number || 'Not provided'}
+                        </Text>
+                      </View>
                     </View>
                   </View>
+                </>
+              ) : (
+                <View style={styles.noSocietyWrap}>
+                  <View style={styles.noSocietyIconWrap}>
+                    <Shield size={24} color="#059669" />
+                  </View>
+                  <Text style={styles.noSocietyTitle}>No Society Allocated</Text>
+                  <Text style={styles.noSocietySub}>
+                    Currently no active society profile is linked to this security account.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* ======================================================== */}
+          {/* SECTION 2 (OWNER & FAMILY MEMBER): SOCIETY INFORMATION   */}
+          {/* ======================================================== */}
+          {!isAdmin && !isSecurity && (
+            <View style={styles.glassCard}>
+              <View style={styles.cardHeaderRow}>
+                <View style={styles.cardHeaderLeft}>
+                  <View
+                    style={[
+                      styles.headerIconBox,
+                      { backgroundColor: 'rgba(196, 154, 108, 0.16)' },
+                    ]}
+                  >
+                    <Home size={16} color={THEME.colors.clay} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.cardTitle}>Society Information</Text>
+                    <Text style={styles.cardSubtitle}>
+                      Residential complex details, flat allocation, and society contact helplines
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.activeStatusBadge}>
+                  <View style={styles.activeStatusDot} />
+                  <Text style={styles.activeStatusText}>ACTIVE</Text>
                 </View>
               </View>
-            ) : (
-              <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
-                <View style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 26,
-                  backgroundColor: 'rgba(196, 154, 108, 0.12)',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginBottom: 10,
-                }}>
-                  <Building2 size={24} color={THEME.colors.clay} />
+
+              {activeSociety ? (
+                <>
+                  {/* Top Society Summary Banner for Resident */}
+                  <View style={styles.adminSocietyBanner}>
+                    <View style={styles.adminBannerLeft}>
+                      <View style={styles.adminBannerIconBox}>
+                        <Building size={24} color={THEME.colors.clay} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.adminBannerSocietyName} numberOfLines={1}>
+                          {activeSociety.name}
+                        </Text>
+                        <View style={styles.adminBannerBadgesRow}>
+                          {activeSociety.code ? (
+                            <View style={styles.adminBannerCodePill}>
+                              <Text style={styles.adminBannerCodePillText}>
+                                Code: {activeSociety.code}
+                              </Text>
+                            </View>
+                          ) : null}
+                          <View style={styles.adminBannerTypePill}>
+                            <Text style={styles.adminBannerTypePillText}>
+                              {unitNoDisplay}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+
+                  <View style={[styles.infoFieldsList, { marginTop: 12 }]}>
+                    {/* Residential Complex */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Residential Complex</Text>
+                      <View style={styles.complexRow}>
+                        <Text style={styles.infoFieldValMain} numberOfLines={1}>
+                          {activeSociety.name}
+                        </Text>
+                        {activeSociety.code ? (
+                          <View style={styles.codePillSmall}>
+                            <Text style={styles.codePillSmallText}>Code: {activeSociety.code}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {/* Allocated Unit / Flat */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Allocated Unit / Flat</Text>
+                      <View style={styles.iconValRow}>
+                        <Home size={15} color="#059669" />
+                        <Text
+                          style={[
+                            styles.infoFieldValText,
+                            { color: '#059669', fontWeight: '800' },
+                          ]}
+                        >
+                          {unitNoDisplay}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Block / Tower & Floor Level */}
+                    <View style={styles.twoColRow}>
+                      <View style={[styles.infoFieldBox, { flex: 1 }]}>
+                        <Text style={styles.infoFieldLabel}>Block / Tower</Text>
+                        <Text style={styles.infoFieldValSub} numberOfLines={1}>
+                          {wingDisplay}
+                        </Text>
+                      </View>
+
+                      <View style={[styles.infoFieldBox, { flex: 1 }]}>
+                        <Text style={styles.infoFieldLabel}>Floor Level</Text>
+                        <Text style={styles.infoFieldValSub} numberOfLines={1}>
+                          {floorDisplay}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Occupancy Status */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Occupancy Status</Text>
+                      <View style={styles.occupancyBadge}>
+                        <View
+                          style={[
+                            styles.occupancyDot,
+                            { backgroundColor: '#16a34a' },
+                          ]}
+                        />
+                        <Text
+                          style={[
+                            styles.occupancyBadgeText,
+                            { color: THEME.colors.fernGreenDark },
+                          ]}
+                        >
+                          {occupancyStatusDisplay}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Society Address */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Society Address</Text>
+                      <View style={[styles.iconValRow, { alignItems: 'flex-start' }]}>
+                        <MapPin size={15} color={THEME.colors.clay} style={{ marginTop: 2 }} />
+                        <Text style={[styles.infoFieldValText, { flex: 1, lineHeight: 18 }]}>
+                          {formattedAddress}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Society Office Contact */}
+                    <View style={styles.infoFieldBox}>
+                      <Text style={styles.infoFieldLabel}>Society Office Phone</Text>
+                      <View style={styles.iconValRow}>
+                        <Phone size={14} color={THEME.colors.clay} />
+                        <Text style={styles.infoFieldValText}>
+                          {activeSociety.contact_number || 'Not provided'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Emergency Helpline */}
+                    <View style={[styles.infoFieldBox, styles.adminTileEmergency]}>
+                      <Text style={[styles.infoFieldLabel, { color: '#DC2626' }]}>
+                        EMERGENCY HELPLINE
+                      </Text>
+                      <View style={styles.iconValRow}>
+                        <PhoneCall size={14} color="#DC2626" />
+                        <Text style={[styles.infoFieldValText, { color: '#DC2626', fontWeight: '800' }]}>
+                          {activeSociety.emergency_number || 'Not provided'}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.noSocietyWrap}>
+                  <View style={styles.noSocietyIconWrap}>
+                    <Building2 size={24} color={THEME.colors.clay} />
+                  </View>
+                  <Text style={styles.noSocietyTitle}>No Society Configured</Text>
+                  <Text style={styles.noSocietySub}>
+                    Currently no active society profile is linked to this resident account.
+                  </Text>
                 </View>
-                <Text style={{ fontSize: 15, fontWeight: '700', color: THEME.colors.textDark, marginBottom: 4 }}>
-                  No Society Configured
-                </Text>
-                <Text style={{ fontSize: 13, color: THEME.colors.textMuted, textAlign: 'center', paddingHorizontal: 20 }}>
-                  Currently no society is registered in the database. Please create a society in Society Management.
-                </Text>
-              </View>
-            )}
-          </View>
+              )}
+            </View>
+          )}
 
           {/* ======================================================== */}
           {/* SECTION 4: SIGN OUT BUTTON                               */}
@@ -1438,34 +1695,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  adminActionList: {
-    gap: 2,
-  },
-  adminActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(214, 194, 161, 0.3)',
-    gap: 12,
-  },
-  adminActionIcon: {
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  adminActionTitle: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: THEME.colors.darkBrown,
-  },
-  adminActionSub: {
-    fontSize: 11,
-    color: THEME.colors.textMuted,
-    marginTop: 1,
-  },
   headerIconBox: {
     width: 28,
     height: 28,
@@ -1721,6 +1950,235 @@ const styles = StyleSheet.create({
     flex: 1,
     fontWeight: '500',
     lineHeight: 16,
+  },
+
+  /* Admin Active Society Information Styles */
+  adminSocietyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  adminHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    flex: 1,
+  },
+  adminHeaderIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminHeaderTitles: {
+    flex: 1,
+  },
+  cardSubtitle: {
+    fontSize: 11.5,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  activeStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(107, 142, 90, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 90, 0.35)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  activeStatusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#15803D',
+  },
+  activeStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  adminSocietyBanner: {
+    backgroundColor: '#F6EFE6',
+    borderWidth: 1,
+    borderColor: '#E8DED1',
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+  },
+  adminBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  adminBannerIconBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: 'rgba(196, 154, 108, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(196, 154, 108, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  adminBannerSocietyName: {
+    fontSize: 16.5,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+  },
+  adminBannerBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  adminBannerCodePill: {
+    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(196, 154, 108, 0.3)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  adminBannerCodePillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: THEME.colors.clay,
+  },
+  adminBannerTypePill: {
+    backgroundColor: 'rgba(107, 142, 90, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 90, 0.25)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  adminBannerTypePillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#15803D',
+    textTransform: 'uppercase',
+  },
+  adminBannerUnitsBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E8DED1',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  adminBannerUnitsLabel: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  adminBannerUnitsValue: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+  },
+  adminTilesList: {
+    gap: 10,
+  },
+  adminTile: {
+    backgroundColor: '#FAF6EE',
+    borderWidth: 1,
+    borderColor: '#EFE9E1',
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  adminTileEmergency: {
+    backgroundColor: 'rgba(239, 68, 68, 0.04)',
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  adminTileIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: 'rgba(196, 154, 108, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  adminTileIconBoxEmergency: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  adminTileContent: {
+    flex: 1,
+  },
+  adminTileLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  adminTileValue: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+  },
+  adminActualHomesText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: THEME.colors.textMuted,
+  },
+  adminCodeBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(196, 154, 108, 0.15)',
+    borderWidth: 1,
+    borderColor: 'rgba(196, 154, 108, 0.3)',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
+    marginTop: 2,
+  },
+  adminCodeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.clay,
+  },
+  noSocietyWrap: {
+    paddingVertical: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noSocietyIconWrap: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: 'rgba(196, 154, 108, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  noSocietyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+    marginBottom: 4,
+  },
+  noSocietySub: {
+    fontSize: 12.5,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+    paddingHorizontal: 16,
   },
 
   /* 4. Logout Button */

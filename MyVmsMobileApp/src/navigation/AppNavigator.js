@@ -32,9 +32,12 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { ReportsScreen } from '../screens/ReportsScreen';
 import { ResidentsScreen } from '../screens/ResidentsScreen';
 import { SocietyFinanceScreen } from '../screens/SocietyFinanceScreen';
+import { AccountOverviewScreen } from '../screens/AccountOverviewScreen';
+import { MaintenanceBillingScreen } from '../screens/MaintenanceBillingScreen';
 import { AmenitiesScreen } from '../screens/AmenitiesScreen';
 import { PollsScreen } from '../screens/PollsScreen';
 import { SubscriptionBillingScreen } from '../screens/SubscriptionBillingScreen';
+import { SpecialChargesScreen } from '../screens/SpecialChargesScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -138,6 +141,11 @@ export default function AppNavigator() {
             <Stack.Screen name="Announcements" component={AnnouncementsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="SocietyFinance" component={SocietyFinanceScreen} />
+            <Stack.Screen name="AccountOverview" component={AccountOverviewScreen} />
+            <Stack.Screen name="MaintenanceBilling" component={MaintenanceBillingScreen} />
+            <Stack.Screen name="Maintenance" component={MaintenanceBillingScreen} />
+            <Stack.Screen name="SpecialCharges" component={SpecialChargesScreen} />
+            <Stack.Screen name="SpecialChargesScreen" component={SpecialChargesScreen} />
             <Stack.Screen name="Amenities" component={AmenitiesScreen} />
             <Stack.Screen name="Polls" component={PollsScreen} />
             <Stack.Screen name="SubscriptionBilling" component={SubscriptionBillingScreen} />

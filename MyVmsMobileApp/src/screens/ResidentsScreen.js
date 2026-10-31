@@ -23,9 +23,12 @@ import * as XLSX from 'xlsx';
 // Dynamic getters to avoid require-time crash if native modules aren't linked in running APK
 const getRNFS = () => {
   try {
+    const { NativeModules } = require('react-native');
+    if (!NativeModules.RNFSManager || !NativeModules.RNFSManager.writeFile) {
+      return null;
+    }
     const fs = require('react-native-fs');
-    if (fs && (fs.writeFile || fs.readFile)) return fs;
-    return null;
+    return fs;
   } catch (e) {
     return null;
   }
@@ -33,9 +36,13 @@ const getRNFS = () => {
 
 const getDocumentPicker = () => {
   try {
+    const { TurboModuleRegistry } = require('react-native');
+    if (TurboModuleRegistry && typeof TurboModuleRegistry.get === 'function') {
+      const mod = TurboModuleRegistry.get('RNDocumentPicker');
+      if (!mod) return null;
+    }
     const dp = require('@react-native-documents/picker');
-    if (dp && dp.pick) return dp;
-    return null;
+    return dp;
   } catch (e) {
     return null;
   }
@@ -1397,6 +1404,7 @@ export const ResidentsScreen = ({ navigation }) => {
               style={styles.btnExcelActionPrimary}
               activeOpacity={0.8}
               onPress={() => {
+                setImportFile(null);
                 setImportInputText('');
                 setImportParsedRows([]);
                 setImportError(null);

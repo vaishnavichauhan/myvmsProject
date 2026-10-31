@@ -35,6 +35,7 @@ import {
   Sparkles,
   Vote,
   CreditCard,
+  ChevronRight,
 } from 'lucide-react-native';
 import { adminApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
@@ -191,7 +192,7 @@ export const AdminDashboardScreen = ({ navigation }) => {
       icon: ShieldCheck,
       iconColor: '#0284c7',
       iconBg: 'rgba(135, 206, 235, 0.25)',
-      screen: 'Gates',
+      screen: 'SecurityGate',
     },
     {
       id: 'workers',
@@ -306,12 +307,54 @@ export const AdminDashboardScreen = ({ navigation }) => {
   ];
 
   const quickShortcuts = [
-    { name: 'Society Finance', screen: 'SocietyFinance', icon: Wallet, label: 'Accounts, dues & maintenance bills' },
-    { name: 'Amenities Booking', screen: 'Amenities', icon: Sparkles, label: 'Manage clubhouse, sports & hall slots' },
-    { name: 'Polls & Surveys', screen: 'Polls', icon: Vote, label: 'Community opinions, feedback & voting' },
-    { name: 'Plan & Billing', screen: 'SubscriptionBilling', icon: CreditCard, label: 'Society license, limits & invoices' },
-    { name: 'Society Settings', screen: 'Settings', icon: Settings, label: 'Configure rules, policies & permissions' },
-    { name: 'Audit Reports', screen: 'Reports', icon: FileText, label: 'Export activity records & analytics' },
+    {
+      name: 'Society Finance',
+      screen: 'SocietyFinance',
+      icon: Wallet,
+      label: 'Accounts, dues & maintenance bills',
+      color: '#059669',
+      bg: 'rgba(5, 150, 105, 0.12)',
+    },
+    {
+      name: 'Amenities Booking',
+      screen: 'Amenities',
+      icon: Sparkles,
+      label: 'Manage clubhouse, sports & hall slots',
+      color: '#8B5CF6',
+      bg: 'rgba(139, 92, 246, 0.12)',
+    },
+    {
+      name: 'Polls & Surveys',
+      screen: 'Polls',
+      icon: Vote,
+      label: 'Community opinions, feedback & voting',
+      color: '#0284C7',
+      bg: 'rgba(2, 132, 199, 0.12)',
+    },
+    {
+      name: 'Plan & Billing',
+      screen: 'SubscriptionBilling',
+      icon: CreditCard,
+      label: 'Society license, limits & invoices',
+      color: '#D97706',
+      bg: 'rgba(217, 119, 6, 0.12)',
+    },
+    {
+      name: 'Society Settings',
+      screen: 'Settings',
+      icon: Settings,
+      label: 'Configure rules, policies & permissions',
+      color: '#C49A6C',
+      bg: 'rgba(196, 154, 108, 0.15)',
+    },
+    {
+      name: 'Audit Reports',
+      screen: 'Reports',
+      icon: FileText,
+      label: 'Export activity records & analytics',
+      color: '#64748B',
+      bg: 'rgba(100, 116, 139, 0.12)',
+    },
   ];
 
   const userInitial = (user?.fullName || user?.full_name || 'A').charAt(0).toUpperCase();
@@ -742,6 +785,46 @@ export const AdminDashboardScreen = ({ navigation }) => {
                       <Text style={styles.statCardSubtitle} numberOfLines={2}>
                         {item.subtitle}
                       </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* ========================================================
+                  Quick Menu & Shortcuts (Featuring Society Finance)
+                  ======================================================== */}
+              <View style={[styles.sectionHeaderRow, { marginTop: 22 }]}>
+                <View style={styles.sectionHeaderLeft}>
+                  <View style={[styles.sectionIconBox, { backgroundColor: '#059669' }]}>
+                    <Wallet size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.sectionTitleCol}>
+                    <Text style={styles.sectionHeading}>Quick Menu & Shortcuts</Text>
+                    <Text style={styles.sectionSubHeading} numberOfLines={1}>
+                      Direct access to Society Finance & key modules
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.quickShortcutsRow}>
+                {quickShortcuts.map((sc, idx) => {
+                  const ShortcutIcon = sc.icon;
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.quickShortcutCard}
+                      onPress={() => navigation.navigate(sc.screen)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.quickShortcutIconBox, { backgroundColor: sc.bg || 'rgba(196, 154, 108, 0.15)' }]}>
+                        <ShortcutIcon size={18} color={sc.color || THEME.colors.clay} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.quickShortcutName}>{sc.name}</Text>
+                        <Text style={styles.quickShortcutLabel}>{sc.label}</Text>
+                      </View>
+                      <ChevronRight size={18} color="#A89F91" />
                     </TouchableOpacity>
                   );
                 })}

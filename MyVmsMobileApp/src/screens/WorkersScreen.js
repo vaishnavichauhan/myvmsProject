@@ -15,6 +15,7 @@ import {
   Platform,
   Linking,
   Image,
+  PermissionsAndroid,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -43,7 +44,10 @@ import {
   Check,
   Building2,
   Info,
+  Camera,
+  Upload,
 } from 'lucide-react-native';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 import { THEME } from '../constants/theme';
 import { workerApi, societyApi } from '../services/apiServices';
 import { useAuthStore } from '../store/authStore';
@@ -142,6 +146,208 @@ const WORKER_TYPES = [
   },
 ];
 
+// Sample helper avatars for quick preview / emulator testing
+
+function PhotoCameraPicker({ value, onChange, label = 'Helper Photo / Camera (Optional)' }) {
+  // const [showUrlModal, setShowUrlModal] = useState(false);
+  const [urlInput, setUrlInput] = useState('');
+
+  const requestCameraPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        {
+          title: 'Camera Permission',
+          message: 'MyVms needs access to your camera to capture helper photos.',
+          buttonNeutral: 'Ask Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'Allow',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.warn('Camera permission request error:', err);
+      return false;
+    }
+  };
+
+  const requestGalleryPermission = async () => {
+    if (Platform.OS !== 'android') return true;
+    if (Platform.Version >= 33) {
+      // Android 13+ Photo Picker doesn't require runtime storage permission
+      return true;
+    }
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+        {
+          title: 'Gallery Permission',
+          message: 'MyVms needs access to your photos to choose helper photos.',
+          buttonNeutral: 'Ask Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'Allow',
+        }
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.warn('Gallery permission request error:', err);
+      return false;
+    }
+  };
+
+  const handleCamera = async () => {
+    try {
+      const hasPermission = await requestCameraPermission();
+      if (!hasPermission) {
+        Alert.alert(
+          'Camera Permission Denied',
+          'Camera permission is required to capture photos directly. Please grant permission in device settings.'
+        );
+        return;
+      }
+
+      const res = await launchCamera({
+        mediaType: 'photo',
+        cameraType: 'back',
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        includeBase64: true,
+        saveToPhotos: false,
+      });
+
+      if (res.didCancel) return;
+
+      if (res.errorCode) {
+        console.warn('launchCamera error:', res.errorCode, res.errorMessage);
+        Alert.alert('Camera Notice', res.errorMessage || `Could not open camera (${res.errorCode})`);
+        return;
+      }
+
+      if (res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        const photoData = asset.base64
+          ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        onChange(photoData);
+      }
+    } catch (err) {
+      console.error('Camera notice:', err);
+      Alert.alert('Camera Error', 'Could not open camera. Please try again.');
+    }
+  };
+
+  const handleGallery = async () => {
+    try {
+      const hasPermission = await requestGalleryPermission();
+      if (!hasPermission) {
+        Alert.alert(
+          'Gallery Permission Denied',
+          'Storage permission is required to select photos from your gallery. Please grant permission in device settings.'
+        );
+        return;
+      }
+
+      const res = await launchImageLibrary({
+        mediaType: 'photo',
+        quality: 0.8,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        includeBase64: true,
+        selectionLimit: 1,
+      });
+
+      if (res.didCancel) return;
+
+      if (res.errorCode) {
+        console.warn('launchImageLibrary error:', res.errorCode, res.errorMessage);
+        Alert.alert('Gallery Notice', res.errorMessage || `Could not open gallery (${res.errorCode})`);
+        return;
+      }
+
+      if (res.assets && res.assets.length > 0) {
+        const asset = res.assets[0];
+        const photoData = asset.base64
+          ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}`
+          : asset.uri;
+        onChange(photoData);
+      }
+    } catch (err) {
+      console.error('Gallery notice:', err);
+      Alert.alert('Gallery Error', 'Could not open photo gallery. Please try again.');
+    }
+  };
+
+
+
+  return (
+    <View style={styles.photoPickerContainer}>
+      <View style={styles.photoPickerLabelRow}>
+        <Text style={styles.inputLabel}>{label.toUpperCase()}</Text>
+        <View style={styles.optionalBadge}>
+          <Text style={styles.optionalBadgeText}>Optional</Text>
+        </View>
+      </View>
+
+      {value ? (
+        <View style={styles.photoPickerPreviewCard}>
+          <View style={styles.photoThumbnailBox}>
+            <Image source={{ uri: value }} style={styles.photoThumbnailImage} resizeMode="cover" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <View style={styles.photoAddedHeader}>
+              <CheckCircle2 size={15} color="#10B981" />
+              <Text style={styles.photoAddedText}>Photo Added</Text>
+            </View>
+            <Text style={styles.photoAddedSubtext}>Snapshot ready. You can retake or upload new.</Text>
+            <View style={styles.photoPreviewActionsRow}>
+              <TouchableOpacity style={styles.photoActionBtn} onPress={handleCamera} activeOpacity={0.7}>
+                <Camera size={12} color={THEME.colors.darkBrown} />
+                <Text style={styles.photoActionBtnText}>Retake</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoActionBtn} onPress={handleGallery} activeOpacity={0.7}>
+                <Upload size={12} color={THEME.colors.darkBrown} />
+                <Text style={styles.photoActionBtnText}>Upload</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoRemoveBtn} onPress={() => onChange('')} activeOpacity={0.7}>
+                <Trash2 size={12} color="#EF4444" />
+                <Text style={styles.photoRemoveBtnText}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View>
+          <View style={styles.photoPickerEmptyCard}>
+            <View style={styles.photoPickerLeft}>
+              <View style={styles.photoCameraCircle}>
+                <Camera size={18} color={THEME.colors.clay} />
+              </View>
+              <View style={{ flex: 1, paddingRight: 6 }}>
+                <Text style={styles.photoPickerTitle}>No Photo Attached</Text>
+                <Text style={styles.photoPickerSubtitle}>Take a camera snapshot or upload</Text>
+              </View>
+            </View>
+            <View style={styles.photoPickerBtnRow}>
+              <TouchableOpacity style={styles.photoCameraBtn} onPress={handleCamera} activeOpacity={0.8}>
+                <Camera size={13} color="#0891B2" />
+                <Text style={styles.photoCameraBtnText}>Camera</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.photoUploadBtn} onPress={handleGallery} activeOpacity={0.8}>
+                <Upload size={13} color={THEME.colors.darkBrown} />
+                <Text style={styles.photoUploadBtnText}>Upload</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+
+        </View>
+      )}
+    </View>
+  );
+}
+
 export const WorkersScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
@@ -205,6 +411,7 @@ export const WorkersScreen = ({ navigation }) => {
     society_id: null,
     address: '',
     aadhar_number: '',
+    photo_url: '',
     expected_time_in: '08:00',
     expected_time_out: '19:00',
     police_verified: true,
@@ -218,6 +425,7 @@ export const WorkersScreen = ({ navigation }) => {
     phone: '',
     worker_type: 'GARDENER',
     address: '',
+    photo_url: '',
     expected_time_in: '08:00',
     expected_time_out: '19:00',
     status: 'ACTIVE',
@@ -449,6 +657,8 @@ export const WorkersScreen = ({ navigation }) => {
         worker_type: 'GARDENER',
         society_id: defaultSocId,
         address: '',
+        aadhar_number: '',
+        photo_url: '',
         expected_time_in: '08:00',
         expected_time_out: '19:00',
         police_verified: true,
@@ -542,6 +752,7 @@ export const WorkersScreen = ({ navigation }) => {
         worker_type: registerForm.worker_type || 'GARDENER',
         address: registerForm.address ? registerForm.address.trim() : '',
         aadhar_number: registerForm.aadhar_number ? registerForm.aadhar_number.trim() : null,
+        photo_url: registerForm.photo_url || null,
         society_id: targetSocId,
         expected_time_in: registerForm.expected_time_in || '08:00',
         expected_time_out: registerForm.expected_time_out || '19:00',
@@ -570,6 +781,7 @@ export const WorkersScreen = ({ navigation }) => {
       phone: worker.phone || '',
       worker_type: worker.worker_type || 'GARDENER',
       address: worker.address || '',
+      photo_url: worker.photo_url || '',
       expected_time_in: worker.expected_time_in ? String(worker.expected_time_in).slice(0, 5) : '08:00',
       expected_time_out: worker.expected_time_out ? String(worker.expected_time_out).slice(0, 5) : '19:00',
       status: worker.assignment_status || 'ACTIVE',
@@ -593,6 +805,7 @@ export const WorkersScreen = ({ navigation }) => {
           name: editForm.name,
           phone: editForm.phone,
           address: editForm.address,
+          photo_url: editForm.photo_url || null,
           worker_type: editForm.worker_type,
         });
       } else {
@@ -600,10 +813,9 @@ export const WorkersScreen = ({ navigation }) => {
           id: editForm.id,
           name: editForm.name,
           phone: editForm.phone,
-          worker_type: editForm.worker_type,
           address: editForm.address,
-          expected_time_in: editForm.expected_time_in,
-          expected_time_out: editForm.expected_time_out,
+          photo_url: editForm.photo_url || null,
+          worker_type: editForm.worker_type,
         });
       }
 
@@ -986,8 +1198,8 @@ export const WorkersScreen = ({ navigation }) => {
                 {searchTerm || filterType !== 'ALL'
                   ? 'No workers match your filter or search criteria.'
                   : isAdmin
-                  ? 'Tap "Register Society Helper" to add domestic workers.'
-                  : 'Tap "+ Add Worker to Home" to assign helpers to your home.'}
+                    ? 'Tap "Register Society Helper" to add domestic workers.'
+                    : 'Tap "+ Add Worker to Home" to assign helpers to your home.'}
               </Text>
               <TouchableOpacity
                 style={styles.emptyAddBtn}
@@ -1270,6 +1482,13 @@ export const WorkersScreen = ({ navigation }) => {
                     />
                   </View>
 
+                  {/* Photo / Camera Option */}
+                  <PhotoCameraPicker
+                    value={registerForm.photo_url}
+                    onChange={(url) => setRegisterForm((p) => ({ ...p, photo_url: url }))}
+                    label="Helper Photo / Camera (Optional)"
+                  />
+
                   {/* Address / Local Details */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>ADDRESS / LOCAL DETAILS (OPTIONAL)</Text>
@@ -1486,6 +1705,13 @@ export const WorkersScreen = ({ navigation }) => {
                           />
                         </View>
                       </View>
+
+                      {/* Photo / Camera Option */}
+                      <PhotoCameraPicker
+                        value={newWorkerForm.photo_url}
+                        onChange={(url) => setNewWorkerForm((p) => ({ ...p, photo_url: url }))}
+                        label="Helper Photo / Camera (Optional)"
+                      />
 
                       <View style={styles.inputGroup}>
                         <Text style={styles.inputLabel}>ADDRESS (OPTIONAL)</Text>
@@ -1844,6 +2070,13 @@ export const WorkersScreen = ({ navigation }) => {
                   />
                 </View>
               </View>
+
+              {/* Photo / Camera Option */}
+              <PhotoCameraPicker
+                value={editForm.photo_url}
+                onChange={(url) => setEditForm((p) => ({ ...p, photo_url: url }))}
+                label="Helper Photo / Camera (Optional)"
+              />
 
               {/* Address */}
               <View style={styles.inputGroup}>
@@ -2801,5 +3034,249 @@ const styles = StyleSheet.create({
     color: '#059669',
     fontSize: 10.5,
     fontWeight: '700',
+  },
+  photoPickerContainer: {
+    marginBottom: 16,
+  },
+  photoPickerLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  optionalBadge: {
+    backgroundColor: '#F5EFEB',
+    borderColor: '#E5D9CB',
+    borderWidth: 1,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  optionalBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: THEME.colors.clay,
+  },
+  photoPickerEmptyCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1.2,
+    borderColor: 'rgba(196, 154, 108, 0.45)',
+    borderStyle: 'dashed',
+    borderRadius: 12,
+  },
+  photoPickerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  photoCameraCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(196, 154, 108, 0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPickerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+  },
+  photoPickerSubtitle: {
+    fontSize: 10.5,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+  },
+  photoPickerBtnRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  photoCameraBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#06B6D4',
+    backgroundColor: 'rgba(6, 182, 212, 0.12)',
+  },
+  photoCameraBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#0891B2',
+  },
+  photoUploadBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D9C3B0',
+    backgroundColor: '#FAF7F2',
+  },
+  photoUploadBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+  },
+  sampleAvatarsWrap: {
+    marginTop: 8,
+    paddingHorizontal: 2,
+  },
+  sampleAvatarsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  enterUrlLinkText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: THEME.colors.clay,
+    textDecorationLine: 'underline',
+  },
+  sampleAvatarsLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.clay,
+    textTransform: 'uppercase',
+  },
+  sampleAvatarChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FAF6EE',
+    borderColor: '#E5D9CB',
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 16,
+  },
+  sampleAvatarImg: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  sampleAvatarText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: THEME.colors.darkBrown,
+  },
+  photoPickerPreviewCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    backgroundColor: '#FAF8F5',
+    borderWidth: 1,
+    borderColor: '#D9C3B0',
+    borderRadius: 12,
+  },
+  photoThumbnailBox: {
+    width: 62,
+    height: 62,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: THEME.colors.clay,
+    overflow: 'hidden',
+    backgroundColor: '#E5D9CB',
+  },
+  photoThumbnailImage: {
+    width: '100%',
+    height: '100%',
+  },
+  photoAddedHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  photoAddedText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#10B981',
+  },
+  photoAddedSubtext: {
+    fontSize: 10.5,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+  },
+  photoPreviewActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 6,
+  },
+  photoActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: '#D9C3B0',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: '#FFFFFF',
+  },
+  photoActionBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.darkBrown,
+  },
+  photoRemoveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+  },
+  photoRemoveBtnText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  urlModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  urlModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 380,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  urlModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  urlModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: THEME.colors.darkBrown,
+  },
+  urlModalSubtitle: {
+    fontSize: 12,
+    color: THEME.colors.textMuted,
+    lineHeight: 16,
+    marginBottom: 12,
   },
 });

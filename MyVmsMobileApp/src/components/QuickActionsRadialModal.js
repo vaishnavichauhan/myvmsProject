@@ -12,6 +12,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { THEME } from '../constants/theme';
 import { useAuthStore } from '../store/authStore';
+import { useNavigation } from '@react-navigation/native';
 import { ROLES } from '../constants/roles';
 import {
   Building2,
@@ -22,7 +23,10 @@ import {
   Award,
   X,
   UserCheck,
-  Package,
+  Landmark,
+  Sparkles,
+  Vote,
+  Wallet,
 } from 'lucide-react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -33,19 +37,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
  * Displays pure circular icon buttons radiating in a half-circle (semi-circle arc)
  * above the center navigation action button without text labels.
  * Matches frontend module icons:
- * Society, Resident, Workers, Security, Gates, Committee
+ * Society, Resident, Finance, Workers, Security, Gates, Committee, Polls
  */
 export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
   const insets = useSafeAreaInsets();
+  const rootNav = useNavigation();
+  const activeNav = navigation || rootNav;
   const { user } = useAuthStore();
-  const isSecurity = user?.role === ROLES.SECURITY || user?.role === 'SECURITY';
-
-  if (isSecurity) {
-    return null;
-  }
-
-  const isAdmin = user?.role === ROLES.ADMIN || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
-
   const animValue = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -69,12 +67,29 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     }).start(() => {
       onClose();
       if (targetScreen) {
-        navigation.navigate(targetScreen);
+        try {
+          if (navigation?.navigate) {
+            navigation.navigate(targetScreen);
+          } else if (navigation?.getParent()?.navigate) {
+            navigation.getParent().navigate(targetScreen);
+          } else if (rootNav?.navigate) {
+            rootNav.navigate(targetScreen);
+          }
+        } catch (e) {
+          console.log('Radial navigation error:', e);
+        }
       }
     });
   };
 
-  // 6 Admin Quick Actions matching frontend icons & colors
+  const isSecurity = user?.role === ROLES.SECURITY || user?.role === 'SECURITY';
+  const isAdmin = user?.role === ROLES.ADMIN || user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+
+  if (isSecurity) {
+    return null;
+  }
+
+  // Admin Quick Actions matching frontend icons & colors
   const adminActions = [
     {
       id: 'society',
@@ -91,6 +106,13 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       color: '#0284C7', // Sky Blue
     },
     {
+      id: 'finance',
+      title: 'Finance',
+      icon: Landmark,
+      screen: 'SocietyFinance',
+      color: '#059669', // Emerald
+    },
+    {
       id: 'workers',
       title: 'Workers',
       icon: Briefcase,
@@ -102,7 +124,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       title: 'Security',
       icon: ShieldCheck,
       screen: 'SecurityGate',
-      color: '#10B981', // Emerald
+      color: '#10B981', // Mint/Emerald
     },
     {
       id: 'gates',
@@ -118,10 +140,24 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       screen: 'Committee',
       color: '#F59E0B', // Gold
     },
+    {
+      id: 'polls',
+      title: 'Polls & Surveys',
+      icon: Vote,
+      screen: 'Polls',
+      color: '#6366F1', // Indigo / Purple
+    },
   ];
 
-  // Resident / Owner / Family Member Quick Actions (worker, committee, security/gate)
+  // Resident / Owner / Family Member Quick Actions (finance, worker, committee, security/gate, polls)
   const residentActions = [
+    {
+      id: 'finance',
+      title: 'Finance',
+      icon: Landmark,
+      screen: 'SocietyFinance',
+      color: '#059669', // Emerald
+    },
     {
       id: 'workers',
       title: 'Workers',
@@ -143,12 +179,23 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       screen: 'Gates',
       color: '#0284C7', // Sky Blue
     },
+    {
+      id: 'polls',
+      title: 'Polls & Surveys',
+      icon: Vote,
+      screen: 'Polls',
+      color: '#6366F1', // Indigo
+    },
   ];
 
   const actions = isAdmin ? adminActions : residentActions;
 
-  // Responsive half-circle radius
-  const RADIUS = Math.min(SCREEN_WIDTH * 0.35, 130);
+  // Responsive half-circle radius dynamically adjusted for item count
+  const RADIUS = actions.length >= 8
+    ? Math.min(SCREEN_WIDTH * 0.43, 158)
+    : actions.length >= 7
+      ? Math.min(SCREEN_WIDTH * 0.39, 142)
+      : Math.min(SCREEN_WIDTH * 0.35, 130);
 
   // Compute half-circle arc coordinates
   const actionItemsWithCoords = useMemo(() => {
@@ -174,8 +221,8 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
       });
     }
 
-    const startAngle = 165;
-    const endAngle = 15;
+    const startAngle = count >= 8 ? 173 : (count >= 7 ? 168 : 165);
+    const endAngle = count >= 8 ? 7 : (count >= 7 ? 12 : 15);
     const step = (startAngle - endAngle) / (count - 1);
 
     return actions.map((item, index) => {
@@ -202,8 +249,10 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
     outputRange: ['0deg', '90deg'],
   });
 
+  const isExtraLargeSet = actions.length >= 8;
+  const isLargeSet = actions.length >= 7;
   const isSmallSet = actions.length <= 4;
-  const itemWrapperWidth = isSmallSet ? 104 : 54;
+  const itemWrapperWidth = isSmallSet ? 104 : (isExtraLargeSet ? 44 : (isLargeSet ? 48 : 54));
 
   if (!visible) return null;
 
@@ -231,21 +280,21 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
           />
         </Pressable>
 
-        {/* Center Anchor Point - Aligned with the bottom tab bar plus button */}
+        {/* Center Anchor Point - Full screen container with pointerEvents="box-none" so Android touches inside transformed children are NEVER clipped */}
         <View
-          style={[styles.centerAnchor, { bottom: centerBottom }]}
+          style={styles.centerAnchor}
           pointerEvents="box-none"
         >
           {/* Half-Circle Radiating Module Buttons */}
           {actionItemsWithCoords.map((item) => {
             const translateX = animValue.interpolate({
               inputRange: [0, 1],
-              outputRange: [0, item.targetX],
+              outputRange: [-item.targetX, 0],
             });
 
             const translateY = animValue.interpolate({
               inputRange: [0, 1],
-              outputRange: [0, item.targetY],
+              outputRange: [item.targetY, 0],
             });
 
             const scale = animValue.interpolate({
@@ -258,19 +307,22 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
               outputRange: [0, 1, 1],
             });
 
+            const actualLeft = (SCREEN_WIDTH - itemWrapperWidth) / 2 + item.targetX;
+            const actualBottom = centerBottom - item.targetY;
+
             return (
               <Animated.View
                 key={item.id}
                 style={[
                   styles.radialItemWrapper,
                   {
+                    bottom: actualBottom,
+                    left: actualLeft,
                     width: itemWrapperWidth,
-                    left: (SCREEN_WIDTH - itemWrapperWidth) / 2,
                     transform: [{ translateX }, { translateY }, { scale }],
                     opacity,
                   },
                 ]}
-                pointerEvents="box-none"
               >
                 <TouchableOpacity
                   accessibilityRole="button"
@@ -282,14 +334,25 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
                   <View
                     style={[
                       styles.circularButton,
+                      isExtraLargeSet
+                        ? { width: 44, height: 44, borderRadius: 22, borderWidth: 2 }
+                        : isLargeSet && { width: 48, height: 48, borderRadius: 24, borderWidth: 2 },
                       {
                         borderColor: item.color,
                         shadowColor: item.color,
                       },
                     ]}
                   >
-                    <View style={[styles.iconInnerCircle, { backgroundColor: `${item.color}15` }]}>
-                      <item.icon size={24} color={item.color} strokeWidth={2.4} />
+                    <View
+                      style={[
+                        styles.iconInnerCircle,
+                        isExtraLargeSet
+                          ? { width: 34, height: 34, borderRadius: 17 }
+                          : isLargeSet && { width: 38, height: 38, borderRadius: 19 },
+                        { backgroundColor: `${item.color}15` },
+                      ]}
+                    >
+                      <item.icon size={isExtraLargeSet ? 19 : isLargeSet ? 21 : 24} color={item.color} strokeWidth={2.4} />
                     </View>
                   </View>
 
@@ -306,7 +369,7 @@ export const QuickActionsRadialModal = ({ visible, onClose, navigation }) => {
           })}
 
           {/* Center Close Floating Action Button (X) */}
-          <View style={styles.closeBtnWrapper}>
+          <View style={[styles.closeBtnWrapper, { bottom: centerBottom }]}>
             <TouchableOpacity
               accessibilityRole="button"
               accessibilityLabel="Close quick actions"
@@ -334,19 +397,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(22, 17, 14, 0.65)',
   },
   centerAnchor: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    height: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
+    ...StyleSheet.absoluteFillObject,
   },
   radialItemWrapper: {
     position: 'absolute',
-    height: 84,
-    top: 0,
+    height: 52,
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
   },
   itemTouchable: {
     alignItems: 'center',
@@ -393,6 +450,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   closeBtnWrapper: {
+    position: 'absolute',
+    alignSelf: 'center',
     width: 54,
     height: 54,
     alignItems: 'center',

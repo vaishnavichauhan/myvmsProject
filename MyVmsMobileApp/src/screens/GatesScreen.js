@@ -13,6 +13,7 @@ import {
   Alert,
   Linking,
   Platform,
+  StatusBar,
 } from 'react-native';
 import { THEME } from '../constants/theme';
 import { HeaderBar } from '../components/HeaderBar';
@@ -28,6 +29,7 @@ export const GatesScreen = ({ navigation }) => {
 
   // Data states
   const [gates, setGates] = useState([]);
+  const [maxGates, setMaxGates] = useState(1);
   const [securityStaffList, setSecurityStaffList] = useState([]);
   const [myAssignedGate, setMyAssignedGate] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -116,10 +118,15 @@ export const GatesScreen = ({ navigation }) => {
 
       const [gatesRes, staffRes, assignedRes] = await Promise.all(promises);
 
-      const gatesData = gatesRes.data?.gates || gatesRes.data || [];
+      const gatesData = gatesRes.data?.gates || gatesRes.gates || gatesRes.data || [];
       setGates(Array.isArray(gatesData) ? gatesData : []);
 
-      const staffData = staffRes.data?.staffList || staffRes.data || [];
+      const limitVal = gatesRes.data?.max_gates ?? gatesRes.max_gates;
+      if (limitVal !== undefined && limitVal !== null) {
+        setMaxGates(Number(limitVal));
+      }
+
+      const staffData = staffRes.data?.staffList || staffRes.staffList || staffRes.data || [];
       setSecurityStaffList(Array.isArray(staffData) ? staffData : []);
 
       if (assignedRes.data?.has_assignment && assignedRes.data?.gate) {
@@ -208,10 +215,49 @@ export const GatesScreen = ({ navigation }) => {
     setShowAssignModal(true);
   };
 
+  // Assign Staff Handler
+  const handleAssignStaff = async () => {
+    if (!assignForm.gate_id || !assignForm.security_staff_id) {
+      showToastError('Please select both a gate and a security guard.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      showToastSuccess('Guard assigned to gate successfully!');
+      setShowAssignModal(false);
+      fetchInitialData();
+    } catch (err) {
+      showToastError(err.message || 'Failed to assign staff.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Open Create Gate Modal with Max Gates Check
+  const handleOpenCreateModal = () => {
+    if (gates.length >= maxGates) {
+      const msg = `Cannot create gate. Your society's plan allows a maximum of ${maxGates} gate(s) (${gates.length}/${maxGates} created).`;
+      showToastError(msg);
+      Alert.alert(
+        'Plan Limit Reached',
+        msg,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setShowCreateModal(true);
+  };
+
   // Create Gate Handler
   const handleCreateGate = async () => {
     if (!createForm.name.trim()) {
       showToastError('Please enter gate name.');
+      return;
+    }
+    if (gates.length >= maxGates) {
+      const msg = `Cannot create gate. Your society's plan allows a maximum of ${maxGates} gate(s) (${gates.length}/${maxGates} created). Please upgrade your subscription plan.`;
+      showToastError(msg);
+      Alert.alert('Plan Limit Reached', msg);
       return;
     }
     setSubmitting(true);
@@ -230,7 +276,7 @@ export const GatesScreen = ({ navigation }) => {
       });
       fetchInitialData();
     } catch (err) {
-      showToastError(err.message || 'Failed to create gate.');
+      showToastError(err.response?.data?.message || err.message || 'Failed to create gate.');
     } finally {
       setSubmitting(false);
     }
@@ -571,8 +617,8 @@ export const GatesScreen = ({ navigation }) => {
                       onPress={() => handleCallGuard(guard)}
                       activeOpacity={0.8}
                     >
-                      <CustomIcon name="phoneCall" size={14} color="#FFFFFF" />
-                      {/* <Text style={styles.callBtnText}>Call</Text> */}
+                      <CustomIcon name="phoneCall" size={13} color="#FFFFFF" />
+                      <Text style={styles.callBtnText}>Call</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -580,8 +626,8 @@ export const GatesScreen = ({ navigation }) => {
                       onPress={() => handleOpenMessageGuard(guard, gateName)}
                       activeOpacity={0.8}
                     >
-                      <CustomIcon name="messageSquare" size={14} color="#FFFFFF" />
-                      {/* <Text style={styles.messageBtnText}>Message</Text> */}
+                      <CustomIcon name="messageSquare" size={13} color="#FFFFFF" />
+                      <Text style={styles.messageBtnText}>Message</Text>
                     </TouchableOpacity>
 
                     {isSecurity && guard.security_user_id === user?.id && (
@@ -607,8 +653,8 @@ export const GatesScreen = ({ navigation }) => {
 
           {/* Admin Action Toolbar at Card Bottom */}
           {isAdmin && (
-            <View style={[styles.cardAdminFooter, { justifyContent: 'flex-end' }]}>
-
+            <View style={styles.cardAdminFooter}>
+              <View style={{ flex: 1 }} />
               <View style={styles.editDeleteBtnGroup}>
                 <TouchableOpacity
                   style={styles.iconActionBtn}
@@ -633,8 +679,88 @@ export const GatesScreen = ({ navigation }) => {
     );
   };
 
+  const renderListHeader = () => (
+    <View style={styles.listHeaderWrapper}>
+      {/* Plan Limit Warning Banner if reached */}
+      {isAdmin && gates.length >= maxGates && (
+        <View style={styles.planLimitAlertBox}>
+          <View style={styles.planLimitAlertLeft}>
+            <View style={styles.planLimitIconWrap}>
+              <CustomIcon name="alert" size={18} color="#D97706" />
+            </View>
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.planLimitAlertTitle}>Plan Limit Reached</Text>
+                <View style={styles.planLimitPill}>
+                  <Text style={styles.planLimitPillText}>{gates.length}/{maxGates} Used</Text>
+                </View>
+              </View>
+              <Text style={styles.planLimitAlertSub}>
+                Your society's plan allows a maximum of {maxGates} gate(s). All checkpoint slots are currently created.
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* 3 KPI Stats Cards (Total Gates / maxGates, Active Posts, Guards on Duty) */}
+      <View style={styles.kpiContainer}>
+        {/* Total Society Gates */}
+        <View style={styles.kpiCard}>
+          <View style={styles.kpiTopRow}>
+            <Text style={styles.kpiLabel}>Total Gates</Text>
+            <View style={[styles.kpiIconWrap, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
+              <CustomIcon name="doorOpen" size={15} color={THEME.colors.clay} />
+            </View>
+          </View>
+          <View style={styles.kpiValueRow}>
+            <Text style={styles.kpiValue}>{totalGates}</Text>
+            <Text style={styles.kpiValueMax}>/ {maxGates}</Text>
+            {totalGates >= maxGates && (
+              <View style={styles.kpiLimitBadge}>
+                <Text style={styles.kpiLimitBadgeText}>Limit Reached</Text>
+              </View>
+            )}
+          </View>
+          <Text style={styles.kpiSubText} numberOfLines={1}>
+            Plan limit: {maxGates} for {societyName}
+          </Text>
+        </View>
+
+        {/* Active Checkpoints */}
+        <View style={styles.kpiCard}>
+          <View style={styles.kpiTopRow}>
+            <Text style={styles.kpiLabel}>Active Posts</Text>
+            <View style={[styles.kpiIconWrap, { backgroundColor: 'rgba(107, 142, 90, 0.15)' }]}>
+              <CustomIcon name="checkCircle" size={15} color={THEME.colors.fernGreenDark} />
+            </View>
+          </View>
+          <View style={styles.kpiValueRow}>
+            <Text style={[styles.kpiValue, { color: THEME.colors.fernGreenDark }]}>{activeGates}</Text>
+          </View>
+          <Text style={styles.kpiSubText}>Currently open for entry & exit</Text>
+        </View>
+
+        {/* Security Staff on Duty */}
+        <View style={styles.kpiCard}>
+          <View style={styles.kpiTopRow}>
+            <Text style={styles.kpiLabel}>Guards on Duty</Text>
+            <View style={[styles.kpiIconWrap, { backgroundColor: 'rgba(196, 154, 108, 0.15)' }]}>
+              <CustomIcon name="userCheck" size={15} color={THEME.colors.clay} />
+            </View>
+          </View>
+          <View style={styles.kpiValueRow}>
+            <Text style={[styles.kpiValue, { color: THEME.colors.clay }]}>{guardsOnDuty}</Text>
+          </View>
+          <Text style={styles.kpiSubText}>Guards stationed at gates</Text>
+        </View>
+      </View>
+    </View>
+  );
+
   return (
     <View style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <HeaderBar
         title={isSecurity ? 'Gate Activity' : (isAdmin ? 'Society Gates & Security' : 'Society Gates & Assigned Security')}
         showBack={!isSecurity && navigation?.canGoBack ? navigation.canGoBack() : false}
@@ -642,24 +768,27 @@ export const GatesScreen = ({ navigation }) => {
 
       {/* Pinned / Non-scrolling Top Section (Action buttons, banner, search, and dropdowns) */}
       <View style={styles.topFixedSection}>
-        {/* Action Bar (Add Gate, Assign Staff, Refresh) */}
+        {/* Action Bar (Add Gate for Admin) */}
         <View style={styles.topActionBar}>
           {isAdmin && (
             <TouchableOpacity
-              style={styles.addGateHeaderBtn}
-              onPress={() => setShowCreateModal(true)}
+              style={[
+                styles.addGateHeaderBtn,
+                gates.length >= maxGates && styles.addGateBtnDisabled,
+              ]}
+              onPress={handleOpenCreateModal}
               activeOpacity={0.8}
             >
-              <CustomIcon name="plus" size={15} color="#FFFFFF" />
+              <CustomIcon name="plus" size={14} color="#FFFFFF" />
               <Text style={styles.addGateHeaderBtnText}>Add New Gate</Text>
+              <View style={styles.gateCountBadge}>
+                <Text style={styles.gateCountBadgeText}>
+                  {gates.length}/{maxGates}
+                </Text>
+              </View>
             </TouchableOpacity>
           )}
-
-
         </View>
-
-        {/* Security Guard Duty Assignment Banner (If role is SECURITY) */}
-
 
         {/* Toast Notifications */}
         {errorMsg && (
@@ -745,6 +874,7 @@ export const GatesScreen = ({ navigation }) => {
         data={filteredGates}
         keyExtractor={(item, index) => String(item.id || item.gate_id || index)}
         renderItem={renderGateCard}
+        ListHeaderComponent={renderListHeader}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -891,6 +1021,45 @@ export const GatesScreen = ({ navigation }) => {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              {/* Gate Capacity & Plan Usage Banner */}
+              <View style={[
+                styles.modalCapacityBanner,
+                gates.length >= maxGates ? styles.modalCapacityBannerWarning : styles.modalCapacityBannerNormal,
+              ]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <CustomIcon
+                      name={gates.length >= maxGates ? 'alert' : 'doorOpen'}
+                      size={15}
+                      color={gates.length >= maxGates ? '#D97706' : THEME.colors.clay}
+                    />
+                    <Text style={styles.modalCapacityTitle}>
+                      Society Gate Capacity
+                    </Text>
+                  </View>
+                  <View style={[
+                    styles.modalCapacityPill,
+                    { backgroundColor: gates.length >= maxGates ? '#FEF3C7' : 'rgba(196, 154, 108, 0.2)' }
+                  ]}>
+                    <Text style={[
+                      styles.modalCapacityPillText,
+                      { color: gates.length >= maxGates ? '#92400E' : THEME.colors.clay }
+                    ]}>
+                      {gates.length} of {maxGates} Gates Created
+                    </Text>
+                  </View>
+                </View>
+                {gates.length >= maxGates ? (
+                  <Text style={styles.modalCapacitySubWarning}>
+                    Maximum gate capacity reached for your society plan. Please upgrade your subscription plan to add more gates.
+                  </Text>
+                ) : (
+                  <Text style={styles.modalCapacitySub}>
+                    You can create {maxGates - gates.length} more gate(s) under your current plan.
+                  </Text>
+                )}
+              </View>
+
               {/* Quick Presets */}
               <View style={styles.presetSection}>
                 <Text style={styles.presetSectionTitle}>Quick Presets (Tap to autofill):</Text>
@@ -1078,14 +1247,19 @@ export const GatesScreen = ({ navigation }) => {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.submitBtn}
+                style={[
+                  styles.submitBtn,
+                  gates.length >= maxGates && styles.submitBtnDisabled,
+                ]}
                 onPress={handleCreateGate}
-                disabled={submitting}
+                disabled={submitting || gates.length >= maxGates}
               >
                 {submitting ? (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
-                  <Text style={styles.submitBtnText}>Save Gate</Text>
+                  <Text style={styles.submitBtnText}>
+                    {gates.length >= maxGates ? 'Plan Limit Reached' : 'Save Gate'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -2668,5 +2842,219 @@ const styles = StyleSheet.create({
   pickerItemText: {
     fontSize: 13,
     color: THEME.colors.darkBrown,
+  },
+
+  /* Gate Count & Limit Badges */
+  gateCountBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    marginLeft: 4,
+  },
+  gateCountBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  addGateBtnDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.85,
+  },
+  assignGateMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(107, 142, 90, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 142, 90, 0.3)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  assignGateMiniBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.fernGreenDark,
+  },
+
+  /* List Header & KPI Cards */
+  listHeaderWrapper: {
+    marginBottom: 10,
+  },
+  planLimitAlertBox: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FCD34D',
+    borderRadius: THEME.radius.md,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  planLimitAlertLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    minWidth: 200,
+  },
+  planLimitIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(217, 119, 6, 0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  planLimitAlertTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  planLimitPill: {
+    backgroundColor: 'rgba(217, 119, 6, 0.2)',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  planLimitPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#B45309',
+  },
+  planLimitAlertSub: {
+    fontSize: 11,
+    color: '#78350F',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  upgradePlanBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#D97706',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  upgradePlanBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  kpiContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 4,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+    borderRadius: THEME.radius.md,
+    padding: 10,
+    ...THEME.shadows.card,
+  },
+  kpiTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  kpiLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  kpiIconWrap: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kpiValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 4,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  kpiValue: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: THEME.colors.darkBrown,
+  },
+  kpiValueMax: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+  },
+  kpiLimitBadge: {
+    backgroundColor: 'rgba(217, 119, 6, 0.12)',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 4,
+    marginTop: 2,
+  },
+  kpiLimitBadgeText: {
+    fontSize: 8,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  kpiSubText: {
+    fontSize: 9,
+    color: THEME.colors.textDim,
+    marginTop: 2,
+  },
+
+  /* Modal Gate Capacity Banner */
+  modalCapacityBanner: {
+    padding: 12,
+    borderRadius: THEME.radius.md,
+    marginBottom: 14,
+    borderWidth: 1,
+  },
+  modalCapacityBannerNormal: {
+    backgroundColor: 'rgba(196, 154, 108, 0.08)',
+    borderColor: 'rgba(196, 154, 108, 0.3)',
+  },
+  modalCapacityBannerWarning: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FCD34D',
+  },
+  modalCapacityTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+  },
+  modalCapacityPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  modalCapacityPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  modalCapacitySub: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 4,
+  },
+  modalCapacitySubWarning: {
+    fontSize: 11,
+    color: '#92400E',
+    marginTop: 4,
+    lineHeight: 15,
+  },
+  submitBtnDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
   },
 });

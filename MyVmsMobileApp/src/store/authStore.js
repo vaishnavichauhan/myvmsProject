@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authApi } from '../services/apiServices';
+import { authApi, gateApi } from '../services/apiServices';
 import { storage } from '../services/storage';
 import { apiClient } from '../services/apiClient';
 
@@ -109,9 +109,17 @@ export const useAuthStore = create((set, get) => {
     },
 
     /**
-     * Logout and wipe session
+     * Logout and wipe session (if security officer, auto checkout/leave gate)
      */
     logout: async () => {
+      const { user } = get();
+      if (user?.role === 'SECURITY' || user?.role === 'security') {
+        try {
+          await gateApi.selfCheckOut();
+        } catch (e) {
+          console.warn('Auto gate checkout failed on logout:', e?.message);
+        }
+      }
       try {
         await authApi.logout();
       } catch {}

@@ -36,6 +36,9 @@ import {
   AlertCircle,
   Plus,
   ChevronDown,
+  LogOut,
+  MapPin,
+  Check,
 } from 'lucide-react-native';
 
 const GATE_VISIT_TYPES = [
@@ -88,11 +91,14 @@ const GATE_VISIT_TYPES = [
 
 export const SecurityHomeScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
+  const { user, logout } = useAuthStore();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [dashboardData, setDashboardData] = useState(null);
   const [assignedGateInfo, setAssignedGateInfo] = useState(null);
+  const [gatesList, setGatesList] = useState([]);
+  const [showAllGates, setShowAllGates] = useState(false);
+  const [checkingInGateId, setCheckingInGateId] = useState(null);
   const [societyInfo, setSocietyInfo] = useState(null);
   const [homes, setHomes] = useState([]);
 
@@ -144,13 +150,24 @@ export const SecurityHomeScreen = ({ navigation }) => {
     }, 5000);
   };
 
+  const formatTime = (ts) => {
+    if (!ts) return 'Just now';
+    try {
+      const d = new Date(ts);
+      if (isNaN(d.getTime())) return String(ts);
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    } catch {
+      return String(ts);
+    }
+  };
+
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const [dashRes, assignedRes] = await Promise.all([
+      const [dashRes, assignedRes, gatesRes] = await Promise.all([
         securityApi.getGateDashboard(user?.societyId).catch((err) => {
           console.log('Error fetching gate dashboard:', err);
           return { data: null };
@@ -159,11 +176,17 @@ export const SecurityHomeScreen = ({ navigation }) => {
           console.log('Error fetching assigned gate:', err);
           return { data: { has_assignment: false, gate: null } };
         }),
+        gateApi.getGates({ society_id: user?.societyId }).catch((err) => {
+          console.log('Error fetching gates:', err);
+          return { data: { gates: [] } };
+        }),
       ]);
 
       const dData = dashRes?.data || dashRes || {};
       setDashboardData(dData);
       setAssignedGateInfo(assignedRes?.data?.gate || null);
+      const gList = gatesRes?.data?.gates || gatesRes?.gates || gatesRes?.data || [];
+      setGatesList(Array.isArray(gList) ? gList : []);
 
       // Society info fallback
       if (user?.societyId) {
@@ -198,6 +221,66 @@ export const SecurityHomeScreen = ({ navigation }) => {
       setLoading(false);
       setRefreshing(false);
     }
+  };
+
+  // Security selects gate -> Records IN TIME
+  const handleCheckInGate = async (gate) => {
+    const gateId = gate.id || gate.gate_id;
+    const gateName = gate.name || gate.gate_name;
+    setCheckingInGateId(gateId);
+    try {
+      const res = await gateApi.selfCheckIn({ gate_id: gateId });
+      showToast('success', `Checked in at "${gateName}" successfully! Your IN TIME has been recorded.`);
+      setShowAllGates(false);
+      await fetchDashboardData();
+    } catch (err) {
+      Alert.alert('Gate Check-In Failed', err.response?.data?.message || err.message || 'Failed to check in to gate.');
+    } finally {
+      setCheckingInGateId(null);
+    }
+  };
+
+  // Security exits gate -> Records EXIT GATE / OUT TIME
+  const handleCheckOutGate = () => {
+    Alert.alert(
+      'Exit Gate Duty',
+      'Are you sure you want to exit your active gate duty? Your exit time will be recorded.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Exit Gate',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await gateApi.selfCheckOut();
+              showToast('success', res.message || res.data?.message || 'Checked out from gate successfully. Exit time recorded.');
+              setAssignedGateInfo(null);
+              await fetchDashboardData();
+            } catch (err) {
+              Alert.alert('Exit Gate Failed', err.response?.data?.message || err.message || 'Failed to exit gate.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // App Logout (automatically checks out from gate duty via authStore.logout)
+  const handleAppLogout = () => {
+    Alert.alert(
+      'Leave Duty & Logout',
+      'Logging out will automatically end your gate duty shift and record your exit time. Are you sure you want to log out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Leave & Logout',
+          style: 'destructive',
+          onPress: async () => {
+            await logout();
+          },
+        },
+      ]
+    );
   };
 
   const onRefresh = () => {
@@ -483,6 +566,15 @@ export const SecurityHomeScreen = ({ navigation }) => {
                 <Text style={styles.roleTagText}>SECURITY GUARD</Text>
               </View>
             </View>
+
+            <TouchableOpacity
+              style={styles.headerLogoutBtn}
+              onPress={handleAppLogout}
+              activeOpacity={0.8}
+            >
+              <LogOut size={13} color="#FCA5A5" style={{ marginRight: 4 }} />
+              <Text style={styles.headerLogoutText}>Leave & Logout</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Hero Title Matching Mobile App Top Aesthetic */}
@@ -574,7 +666,7 @@ export const SecurityHomeScreen = ({ navigation }) => {
                         <View style={styles.stationPillInactive}>
                           <Shield size={13} color="#b45309" style={{ marginRight: 5 }} />
                           <Text style={styles.stationTextInactive}>
-                            Checkpoint: General Gate Console
+                            Checkpoint: General Gate Console (No Gate Selected)
                           </Text>
                         </View>
                       )}
@@ -582,6 +674,219 @@ export const SecurityHomeScreen = ({ navigation }) => {
                   </View>
                 </View>
               </View>
+
+              {/* ========================================================
+                  DUTY STATION & GATE SELECTION CONSOLE
+                  Matching frontend SecurityGateDashboardPage:
+                  - If assignedGateInfo && !showAllGates:
+                    Show Active Duty Station Card with IN Time, Location, Shift,
+                    "Switch Gate" and "Exit Gate" buttons.
+                  - If !assignedGateInfo || showAllGates:
+                    Show "Society Gates — Select Duty Station" listing all gates
+                    with "Select Gate & Check In (IN TIME)" button.
+                  ======================================================== */}
+              {assignedGateInfo && !showAllGates ? (
+                <View style={styles.dutyStationCard}>
+                  <View style={styles.dutyStationTopRow}>
+                    <View style={styles.activeDutyBadge}>
+                      <View style={styles.activeDutyDot} />
+                      <Text style={styles.activeDutyBadgeText}>ACTIVE DUTY STATION</Text>
+                    </View>
+                    <View style={styles.shiftBadge}>
+                      <Text style={styles.shiftBadgeText}>
+                        Shift: {assignedGateInfo.shift || 'General Shift'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.dutyGateTitle}>
+                    {assignedGateInfo.name}{' '}
+                    <Text style={styles.dutyGateSubNumber}>
+                      (Gate #{assignedGateInfo.gate_number || assignedGateInfo.id})
+                    </Text>
+                  </Text>
+
+                  <View style={styles.dutyMetaWrap}>
+                    <View style={styles.dutyMetaItem}>
+                      <Clock size={14} color="#10b981" />
+                      <Text style={styles.dutyInTimeText}>
+                        IN Time: {formatTime(assignedGateInfo.check_in_time)}
+                      </Text>
+                    </View>
+                    <View style={styles.dutyMetaItem}>
+                      <MapPin size={13} color={THEME.colors.textMuted} />
+                      <Text style={styles.dutyMetaText}>
+                        {assignedGateInfo.location || 'Society Perimeter'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.dutyStationDivider} />
+
+                  <View style={styles.dutyActionRow}>
+                    <TouchableOpacity
+                      style={styles.switchGateBtn}
+                      onPress={() => setShowAllGates(true)}
+                      activeOpacity={0.8}
+                    >
+                      <DoorOpen size={15} color={THEME.colors.darkBrown} />
+                      <Text style={styles.switchGateBtnText}>Switch Gate</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.exitGateBtn}
+                      onPress={handleCheckOutGate}
+                      activeOpacity={0.8}
+                    >
+                      <LogOut size={15} color="#dc2626" />
+                      <Text style={styles.exitGateBtnText}>Exit Gate</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.selectDutyCard}>
+                  <View style={styles.selectDutyHeader}>
+                    <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        <DoorOpen size={18} color={THEME.colors.clay} style={{ marginRight: 6 }} />
+                        <Text style={styles.selectDutyTitle}>Society Gates — Select Duty Station</Text>
+                      </View>
+                      <Text style={styles.selectDutySubtitle}>
+                        Select the gate you are stationed at. Selecting a gate logs your{' '}
+                        <Text style={{ fontWeight: '700', color: THEME.colors.darkBrown }}>IN TIME</Text>{' '}
+                        and begins your duty shift.
+                      </Text>
+                    </View>
+
+                    {assignedGateInfo && (
+                      <TouchableOpacity
+                        style={styles.keepStationBtn}
+                        onPress={() => setShowAllGates(false)}
+                        activeOpacity={0.8}
+                      >
+                        <X size={14} color={THEME.colors.textMuted} />
+                        <Text style={styles.keepStationText}>Keep Current</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {gatesList.length === 0 ? (
+                    <View style={styles.noGatesBox}>
+                      <DoorOpen size={28} color={THEME.colors.sand} />
+                      <Text style={styles.noGatesText}>No gates found for this society.</Text>
+                      <Text style={styles.noGatesSub}>Please contact society admin to configure gates.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.gatesGrid}>
+                      {gatesList.map((gate) => {
+                        const gateId = gate.id || gate.gate_id;
+                        const isCurrentStation = assignedGateInfo && (assignedGateInfo.id === gateId);
+                        const hasGuards = gate.assigned_guards && gate.assigned_guards.length > 0;
+                        const isCheckingIn = checkingInGateId === gateId;
+
+                        return (
+                          <View
+                            key={gateId}
+                            style={[
+                              styles.dutyGateItemCard,
+                              isCurrentStation && styles.dutyGateItemCurrent,
+                            ]}
+                          >
+                            <View style={styles.dutyGateItemHeader}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.dutyGateItemName} numberOfLines={1}>
+                                  {gate.name}
+                                </Text>
+                                <Text style={styles.dutyGateItemNumber}>
+                                  Gate #{gate.gate_number || gateId}
+                                </Text>
+                              </View>
+                              <View
+                                style={[
+                                  styles.gateStatusPill,
+                                  gate.status === 'ACTIVE'
+                                    ? styles.gateStatusPillActive
+                                    : styles.gateStatusPillInactive,
+                                ]}
+                              >
+                                <Text
+                                  style={[
+                                    styles.gateStatusPillText,
+                                    gate.status === 'ACTIVE'
+                                      ? styles.gateStatusPillTextActive
+                                      : styles.gateStatusPillTextInactive,
+                                  ]}
+                                >
+                                  {gate.status || 'ACTIVE'}
+                                </Text>
+                              </View>
+                            </View>
+
+                            <View style={styles.dutyGateLocationRow}>
+                              <MapPin size={12} color={THEME.colors.textMuted} />
+                              <Text style={styles.dutyGateLocationText} numberOfLines={1}>
+                                {gate.location || 'Society Perimeter'}
+                              </Text>
+                            </View>
+
+                            <View style={styles.dutyGateMannedRow}>
+                              {hasGuards ? (
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <ShieldCheck size={13} color="#10b981" style={{ marginRight: 4 }} />
+                                  <Text style={styles.mannedText} numberOfLines={1}>
+                                    Manned: {gate.assigned_guards.map((g) => g.security_name).join(', ')}
+                                  </Text>
+                                </View>
+                              ) : (
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                  <DoorOpen size={13} color={THEME.colors.textMuted} style={{ marginRight: 4 }} />
+                                  <Text style={styles.unmannedText}>Station currently unmanned</Text>
+                                </View>
+                              )}
+                            </View>
+
+                            <View style={styles.dutyGateItemFooter}>
+                              {isCurrentStation ? (
+                                <View style={styles.currentStationActionRow}>
+                                  <View style={styles.currentStationBadge}>
+                                    <CheckCircle2 size={13} color="#10b981" style={{ marginRight: 4 }} />
+                                    <Text style={styles.currentStationText}>Your Station</Text>
+                                  </View>
+                                  <TouchableOpacity
+                                    style={styles.exitMiniBtn}
+                                    onPress={handleCheckOutGate}
+                                    activeOpacity={0.8}
+                                  >
+                                    <Text style={styles.exitMiniBtnText}>Exit Gate</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ) : (
+                                <TouchableOpacity
+                                  style={styles.checkInGateBtn}
+                                  onPress={() => handleCheckInGate(gate)}
+                                  disabled={isCheckingIn}
+                                  activeOpacity={0.8}
+                                >
+                                  {isCheckingIn ? (
+                                    <ActivityIndicator size="small" color="#FFFFFF" />
+                                  ) : (
+                                    <>
+                                      <Clock size={14} color="#FFFFFF" style={{ marginRight: 6 }} />
+                                      <Text style={styles.checkInGateBtnText}>
+                                        Select Gate & Check In (IN TIME)
+                                      </Text>
+                                    </>
+                                  )}
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
 
               {/* ========================================================
                   GATE VISIT TYPE CARD SAME AS UI INSIDE FRONTEND
@@ -1858,6 +2163,345 @@ const styles = StyleSheet.create({
   },
   modalSubmitBtnText: {
     fontSize: 13,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+
+  /* Header Logout Button */
+  headerLogoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.45)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  headerLogoutText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FCA5A5',
+  },
+
+  /* Active Duty Station Card */
+  dutyStationCard: {
+    backgroundColor: THEME.colors.white,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 2,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    marginBottom: 18,
+    ...THEME.shadows.card,
+  },
+  dutyStationTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  activeDutyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  activeDutyDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: '#10b981',
+    marginRight: 6,
+  },
+  activeDutyBadgeText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#065f46',
+    letterSpacing: 0.5,
+  },
+  shiftBadge: {
+    backgroundColor: '#F3EFEA',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  shiftBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+  },
+  dutyGateTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: THEME.colors.darkBrown,
+    marginTop: 2,
+    marginBottom: 6,
+  },
+  dutyGateSubNumber: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+  },
+  dutyMetaWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  dutyMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  dutyInTimeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#065f46',
+  },
+  dutyMetaText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+  },
+  dutyStationDivider: {
+    height: 1,
+    backgroundColor: THEME.colors.sand,
+    marginVertical: 10,
+    opacity: 0.6,
+  },
+  dutyActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  switchGateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: '#F3EFEA',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+  },
+  switchGateBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+  },
+  exitGateBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+  },
+  exitGateBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#dc2626',
+  },
+
+  /* Select Duty Station Card */
+  selectDutyCard: {
+    backgroundColor: THEME.colors.white,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+    marginBottom: 18,
+    ...THEME.shadows.card,
+  },
+  selectDutyHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+  },
+  selectDutyTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: THEME.colors.darkBrown,
+  },
+  selectDutySubtitle: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  keepStationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F3EFEA',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+    marginLeft: 8,
+  },
+  keepStationText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+  },
+  noGatesBox: {
+    padding: 24,
+    alignItems: 'center',
+    backgroundColor: '#FAF7F2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+  },
+  noGatesText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.darkBrown,
+    marginTop: 6,
+  },
+  noGatesSub: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 2,
+  },
+  gatesGrid: {
+    gap: 12,
+  },
+  dutyGateItemCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.sand,
+    ...THEME.shadows.sm,
+  },
+  dutyGateItemCurrent: {
+    borderColor: '#10b981',
+    borderWidth: 2,
+    backgroundColor: 'rgba(16, 185, 129, 0.03)',
+  },
+  dutyGateItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  dutyGateItemName: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: THEME.colors.darkBrown,
+  },
+  dutyGateItemNumber: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.clay,
+    marginTop: 1,
+  },
+  gateStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gateStatusPillActive: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+  },
+  gateStatusPillInactive: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  gateStatusPillText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  gateStatusPillTextActive: {
+    color: '#065f46',
+  },
+  gateStatusPillTextInactive: {
+    color: '#dc2626',
+  },
+  dutyGateLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 6,
+  },
+  dutyGateLocationText: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    flex: 1,
+  },
+  dutyGateMannedRow: {
+    borderTopWidth: 1,
+    borderTopColor: '#F3EFEA',
+    paddingTop: 6,
+    marginBottom: 10,
+  },
+  mannedText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#065f46',
+    flex: 1,
+  },
+  unmannedText: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+  },
+  dutyGateItemFooter: {
+    marginTop: 'auto',
+  },
+  currentStationActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentStationBadge: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  currentStationText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#065f46',
+  },
+  exitMiniBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  exitMiniBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#dc2626',
+  },
+  checkInGateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.fernGreen,
+    paddingVertical: 9,
+    borderRadius: 8,
+  },
+  checkInGateBtnText: {
+    fontSize: 12,
     fontWeight: '800',
     color: '#FFFFFF',
   },

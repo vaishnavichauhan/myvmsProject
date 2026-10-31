@@ -626,6 +626,8 @@ export const SecurityGateScreen = ({ navigation }) => {
           <View style={{ flex: 1, paddingLeft: 6 }}>
             <Text style={styles.headerTitle}>Security Staff & Watchman</Text>
           </View>
+
+
         </View>
       </View>
 
